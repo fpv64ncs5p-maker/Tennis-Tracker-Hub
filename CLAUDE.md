@@ -30,3 +30,24 @@ Monorepo combining the Garmin tennis tracker app and the Training Hub web dashbo
 - Keep this CLAUDE.md updated with important decisions
 - Garmin app and web app are deployed independently
 - Supabase is the bridge between both apps
+
+## Security
+- `Secrets.mc` is excluded from git (listed in `.gitignore`) — contains API keys and credentials for the Garmin app
+- The GitHub repo is private
+
+## Deployment
+
+### Training Hub (web app)
+- Edit `index.html` in root or `apps/training-hub/`
+- Copy changes to root: `cp apps/training-hub/index.html .`
+- Commit and push to GitHub → auto-deploys via GitHub Pages
+- Live at: https://fpv64ncs5p-maker.github.io/Tennis-Tracker-Hub/
+
+### Garmin App
+- Source code in `apps/garmin/source/`
+- `Secrets.mc` is NOT in git (excluded via .gitignore) — kept locally only
+- Build for simulator: `./run.sh`
+- Build for store: `./package.sh` → generates `bin/Tennistracker.iq`
+- Submit `.iq` file to: https://developer.garmin.com/connect-iq/sdk/
+- Garmin approval takes ~2 hours
+- Users install update from ConnectIQ Store
