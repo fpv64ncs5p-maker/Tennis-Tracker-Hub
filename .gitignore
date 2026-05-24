@@ -6,3 +6,4 @@ apps/garmin/bin/
 
 # Editor
 .vscode/
+apps/garmin/source/Secrets.mc
