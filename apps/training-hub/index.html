@@ -7264,7 +7264,7 @@ async function _getGistId(){
   const cached=localStorage.getItem('_gist_id');
   if(cached)return cached;
   const res=await fetch('https://api.github.com/gists?per_page=100',{headers:_ghHeaders()});
-  if(!res.ok)throw new Error('Cannot list gists');
+  if(!res.ok)throw new Error('Cannot list gists (HTTP '+res.status+')');
   const gists=await res.json();
   const found=gists.find(g=>g.files&&g.files[_GIST_FILE]);
   if(found){localStorage.setItem('_gist_id',found.id);return found.id;}
