@@ -7257,13 +7257,14 @@ async function _pushToSupabase(){
   if(_pushInProgress)return;
   _pushInProgress=true;
   try{
-    const data={};
-    DATA_KEYS.forEach(k=>{const v=localStorage.getItem(k);if(v!==null)data[k]=JSON.parse(v);});
+    const payload={};
+    DATA_KEYS.forEach(k=>{const v=localStorage.getItem(k);if(v!==null)payload[k]=JSON.parse(v);});
     const ts=parseInt(localStorage.getItem('_local_modified')||'0')||Date.now();
+    // Store as key-value row: key='jo', value={payload:{...all data...}, last_modified:ts}
     const res=await fetch(`${_SB_URL}/rest/v1/user_data`,{
       method:'POST',
       headers:_sbSyncHeaders(),
-      body:JSON.stringify({id:_SB_ROW_ID,data,last_modified:ts})
+      body:JSON.stringify({key:_SB_ROW_ID, value:{payload, last_modified:ts}})
     });
     if(!res.ok){const t=await res.text();throw new Error(`HTTP ${res.status}: ${t}`);}
   }finally{
@@ -7273,12 +7274,14 @@ async function _pushToSupabase(){
 
 async function _pullFromSupabase(){
   const res=await fetch(
-    `${_SB_URL}/rest/v1/user_data?select=*&limit=1`,
+    `${_SB_URL}/rest/v1/user_data?key=eq.${_SB_ROW_ID}&select=value`,
     {headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}}
   );
   if(!res.ok)throw new Error(`HTTP ${res.status}`);
   const rows=await res.json();
-  return rows.length?rows[0]:null;
+  if(!rows.length) return null;
+  // rows[0].value = {payload:{...all training data...}, last_modified:ts}
+  return rows[0].value||null;
 }
 
 async function syncFromCloud(){
@@ -7286,7 +7289,7 @@ async function syncFromCloud(){
   _setSyncStatus('syncing');
   try{
     const row=await _pullFromSupabase();
-    if(!row||!row.data||Object.keys(row.data).length===0){
+    if(!row||!row.payload||Object.keys(row.payload).length===0){
       await _pushToSupabase();
       _setSyncStatus('ok');
       toast('🟢 Data uploaded to cloud!');
@@ -7294,7 +7297,7 @@ async function syncFromCloud(){
     }
     let changed=false;
     DATA_KEYS.forEach(k=>{
-      if(row.data[k]!==undefined){localStorage.setItem(k,JSON.stringify(row.data[k]));changed=true;}
+      if(row.payload[k]!==undefined){localStorage.setItem(k,JSON.stringify(row.payload[k]));changed=true;}
     });
     if(row.last_modified){localStorage.setItem('_local_modified',row.last_modified.toString());}
     _setSyncStatus('ok');
@@ -7337,7 +7340,7 @@ async function _sbInit(){
     const localTs=parseInt(localStorage.getItem('_local_modified')||'0');
     const row=await _pullFromSupabase();
 
-    if(!row||!row.data||Object.keys(row.data).length===0){
+    if(!row||!row.payload||Object.keys(row.payload).length===0){
       // Nothing in Supabase yet → seed from local data
       await _pushToSupabase();
       _setSyncStatus('ok');
@@ -7349,7 +7352,7 @@ async function _sbInit(){
     if(cloudTs>localTs){
       // Cloud is newer → pull
       DATA_KEYS.forEach(k=>{
-        if(row.data[k]!==undefined)localStorage.setItem(k,JSON.stringify(row.data[k]));
+        if(row.payload[k]!==undefined)localStorage.setItem(k,JSON.stringify(row.payload[k]));
       });
       localStorage.setItem('_local_modified',cloudTs.toString());
       _setSyncStatus('ok');
