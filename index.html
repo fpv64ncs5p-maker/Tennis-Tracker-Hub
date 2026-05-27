@@ -7273,7 +7273,7 @@ async function _pushToSupabase(){
 
 async function _pullFromSupabase(){
   const res=await fetch(
-    `${_SB_URL}/rest/v1/user_data?id=eq.${_SB_ROW_ID}&select=*`,
+    `${_SB_URL}/rest/v1/user_data?select=*&limit=1`,
     {headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}}
   );
   if(!res.ok)throw new Error(`HTTP ${res.status}`);
