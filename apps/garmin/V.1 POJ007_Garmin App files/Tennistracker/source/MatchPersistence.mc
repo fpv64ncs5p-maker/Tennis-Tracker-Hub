@@ -25,15 +25,6 @@ module MatchPersistence {
     // Storage key — the string used to look up saved data.
     const STORAGE_KEY = "tennis_match_state";
 
-    // v1.3.8: dedicated Supabase payload key — saved at the moment an
-    // upload is attempted, cleared only when onResponse() confirms
-    // success (200/201/204). Completely independent of STORAGE_KEY so
-    // clearState() (called at match end) never wipes it. On next app
-    // open, if this key exists, App.mc reconstructs the engine and
-    // retries — no match data is ever lost even if the app exits before
-    // the HTTP response arrives.
-    const SUPABASE_PAYLOAD_KEY = "supabase_payload";
-
     // ─────────────────────────────────────────────────────────
     // saveState(engine)
     // Serializes the engine's full state and writes it to storage.
@@ -70,26 +61,6 @@ module MatchPersistence {
     // ─────────────────────────────────────────────────────────
     function clearState() {
         Storage.deleteValue(STORAGE_KEY);
-    }
-
-    // ─────────────────────────────────────────────────────────
-    // Supabase payload — saved when an upload is attempted,
-    // cleared only on confirmed success. Survives clearState().
-    // ─────────────────────────────────────────────────────────
-    function saveSupabasePayload(state) {
-        Storage.setValue(SUPABASE_PAYLOAD_KEY, state);
-    }
-
-    function hasSupabasePayload() {
-        return (Storage.getValue(SUPABASE_PAYLOAD_KEY) != null);
-    }
-
-    function loadSupabasePayload() {
-        return Storage.getValue(SUPABASE_PAYLOAD_KEY);
-    }
-
-    function clearSupabasePayload() {
-        Storage.deleteValue(SUPABASE_PAYLOAD_KEY);
     }
 }
 

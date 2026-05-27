@@ -55,10 +55,6 @@ class TennisActivityManager {
     // reference stays alive while the HTTP request is in-flight.
     var _supabaseSync;
 
-    // v1.3.6: guard so earlyUpload() only fires once per match
-    // (protects against double-POST if the user somehow triggers it twice).
-    var _uploadFired;
-
     // ── SESSION fields (match totals) ────────────────────────
     var _fPointsWon;
     var _fErrors;
@@ -83,7 +79,6 @@ class TennisActivityManager {
         isRunning           = false;
         _session            = null;
         _supabaseSync       = new SupabaseSync();
-        _uploadFired        = false;
         _fPointsWon         = null;
         _fErrors            = null;
         _fDoubleFaults      = null;
@@ -205,31 +200,6 @@ class TennisActivityManager {
     }
 
     // ─────────────────────────────────────────────────────────
-    // earlyUpload(engine)
-    // v1.3.6: fires the Supabase POST the instant the last point is
-    // scored, while the activity session is still live and Bluetooth
-    // is still connected. This decouples the upload from stopSession()
-    // and PostMatchView navigation entirely — so it survives even if
-    // the Garmin OS intercepts the physical button and kills the app
-    // before PostMatchView is ever shown.
-    //
-    // _uploadFired prevents a double-POST if stopSession() is also
-    // called later (normal SAVE path). stopSession() checks the flag
-    // and skips the redundant upload.
-    // ─────────────────────────────────────────────────────────
-    function earlyUpload(engine) {
-        if (_uploadFired) { return; }
-        if (engine != null && _supabaseSync != null) {
-            _uploadFired = true;
-            // v1.3.8: save the payload before firing so it survives
-            // in Storage even if the app exits before onResponse() fires.
-            // Cleared only when Supabase confirms success (200/201/204).
-            MatchPersistence.saveSupabasePayload(engine.getState());
-            _supabaseSync.uploadMatch(engine, self);
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────
     // stopSession(engine)
     // Writes the 12 SESSION-level summary fields, stops, and saves
     // the activity to Garmin Connect.
@@ -251,11 +221,7 @@ class TennisActivityManager {
         // v1.2: push match data to Supabase (best-effort, async).
         // Only fires when stopSession is called (= match was SAVED).
         // discardSession() intentionally skips this.
-        // v1.3.6: skip if earlyUpload() already fired the POST.
-        // v1.3.8: save payload before firing so Storage survives app exit.
-        if (engine != null && _supabaseSync != null && !_uploadFired) {
-            _uploadFired = true;
-            MatchPersistence.saveSupabasePayload(engine.getState());
+        if (engine != null && _supabaseSync != null) {
             _supabaseSync.uploadMatch(engine, self);
         }
     }

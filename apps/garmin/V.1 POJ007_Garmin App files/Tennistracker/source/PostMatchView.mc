@@ -2,9 +2,6 @@
 // PostMatchView.mc — Post-Match Summary Screen
 // MatchMind Tennis Tracker for Vivoactive 6
 // ============================================================
-// v1.2.3: PostMatchDelegate gains onTap() so tapping the summary screen
-// triggers finishAndExit(). stopSession() guarded with isActive() to
-// prevent double-call when session was already stopped.
 // v1.1.2: Responsive layout. Delegate receives view by reference.
 // ============================================================
 
@@ -216,20 +213,6 @@ class PostMatchDelegate extends Ui.InputDelegate {
         view    = pmView;
         engine  = eng;
         manager = mgr;
-        // v1.3.5: fire Supabase upload immediately when PostMatchView appears,
-        // so the async HTTP request has the full time the user spends on the
-        // summary screen to reach the server. finishAndExit() guards against
-        // a double-call via manager.isActive(), so this is safe for all paths
-        // (natural match end AND MatchMenu → SAVE, which already called
-        // stopSession() in MatchMenu since v1.3.4).
-        if (manager != null && manager.isActive()) {
-            manager.stopSession(engine);
-        }
-    }
-
-    function onTap(clickEvent) {
-        finishAndExit();
-        return true;
     }
 
     function onSwipe(swipeEvent) {
@@ -273,10 +256,7 @@ class PostMatchDelegate extends Ui.InputDelegate {
     function finishAndExit() {
         // v1.3: save match to local history before clearing state
         MatchHistory.saveMatch(engine);
-        // Guard against double-call: stopSession() is now called in
-        // PostMatchDelegate.initialize() (v1.3.5) and MatchMenu SAVE path
-        // (v1.3.4), so isActive() will be false here in all normal flows.
-        if (manager != null && manager.isActive()) { manager.stopSession(engine); }
+        if (manager != null) { manager.stopSession(engine); }
         MatchPersistence.clearState();
         Ui.popView(Ui.SLIDE_RIGHT);
         Ui.popView(Ui.SLIDE_IMMEDIATE);

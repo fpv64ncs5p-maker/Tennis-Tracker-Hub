@@ -66,12 +66,8 @@ class SupabaseSync {
     function onResponse(responseCode as Lang.Number, data as Lang.Dictionary or Lang.String or Null) as Void {
         if (responseCode == 200 || responseCode == 201 || responseCode == 204) {
             Sys.println("SupabaseSync: OK (" + responseCode + ")");
-            // v1.3.8: upload confirmed — clear the saved payload so
-            // App.mc doesn't retry on next startup.
-            MatchPersistence.clearSupabasePayload();
         } else {
             Sys.println("SupabaseSync: FAILED code=" + responseCode + " data=" + data);
-            // Payload stays in Storage — App.mc will retry on next open.
         }
     }
 

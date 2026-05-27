@@ -206,14 +206,7 @@ class MatchMenuDelegate extends Ui.InputDelegate {
             // RESUME — pop self, back to the match
             Ui.popView(Ui.SLIDE_DOWN);
         } else if (option == 1) {
-            // SAVE — stop session immediately so the Supabase upload fires
-            // now, while PostMatchView is still on screen (giving the async
-            // HTTP request several seconds to reach the server via Bluetooth).
-            // finishAndExit() in PostMatchDelegate guards against a double-call
-            // via manager.isActive(), so this is safe.
-            if (manager != null && manager.isActive()) {
-                manager.stopSession(engine);
-            }
+            // SAVE — pop self, push PostMatch (which saves activity on exit)
             Ui.popView(Ui.SLIDE_IMMEDIATE);
             var pmView = new PostMatchView(engine, manager);
             Ui.pushView(

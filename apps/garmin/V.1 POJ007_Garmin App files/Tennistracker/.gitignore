@@ -1,0 +1,15 @@
+# Build artifacts
+bin/
+
+# Secrets — never commit API keys
+source/Secrets.mc
+
+# Developer key
+developer_key
+
+# macOS noise
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

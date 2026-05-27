@@ -2,13 +2,6 @@
 // MainView.mc — Main Match Screen (responsive layout)
 // MatchMind Tennis Tracker for Garmin Vivoactive 6
 // ============================================================
-// v1.3.6: earlyUpload() called in MainDelegate.onTap() the instant the last
-// point is scored (prevMatchOver false → engine.matchOver true). This fires
-// the Supabase POST before any button interaction, so it survives even if the
-// OS intercepts the physical button and kills the app.
-// v1.2.3: Match end routes through MatchMenu (Save/Discard) instead of
-// auto-navigating to PostMatch. Session is no longer stopped at match end
-// (avoids activity overlay blocking input). Hint text updated.
 // v1.1.2: All y-coordinates are now derived from dc.getHeight()
 // percentages. Button hit zones are stored in the view so the
 // delegate doesn't need to hardcode pixel ranges. Delegate
@@ -292,7 +285,7 @@ class MainView extends Ui.View {
             Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
 
         dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 90 / 100, Gfx.FONT_XTINY, "Tap to save or discard",
+        dc.drawText(w / 2, h * 90 / 100, Gfx.FONT_XTINY, "Tap for summary",
             Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
     }
 
@@ -329,7 +322,7 @@ class MainDelegate extends Ui.InputDelegate {
         var y      = coords[1];
 
         if (engine.matchOver) {
-            showConfirm();
+            goToPostMatch();
             return true;
         }
 
@@ -343,10 +336,6 @@ class MainDelegate extends Ui.InputDelegate {
         // fields (Set points won / Errors / D.Faults / Tiebreak result).
         // One lap row per set in Garmin Connect's Laps tab.
         var prevSetsTotal = engine.player[:sets] + engine.opponent[:sets];
-
-        // v1.3.6: snapshot matchOver BEFORE the point is scored so we can
-        // detect the exact moment the match ends and fire earlyUpload().
-        var prevMatchOver = engine.matchOver;
 
         if (y < btnTop) {
             engine.handleInput(engine.WON);
@@ -365,16 +354,17 @@ class MainDelegate extends Ui.InputDelegate {
             if (manager != null) { manager.markSetEnd(engine); }
         }
 
-        // v1.3.6: fire Supabase upload the instant the last point is scored.
-        // This runs while the activity session is still live and Bluetooth
-        // is still connected — decoupling the POST from whatever happens next
-        // (tap, MatchMenu SAVE, or physical button intercepted by the OS).
-        if (!prevMatchOver && engine.matchOver) {
-            if (manager != null) { manager.earlyUpload(engine); }
-        }
-
         manager.updateMetrics(engine);
         MatchPersistence.saveState(engine);
+
+        // v1.1.3: if this point just ended the match, immediately stop the
+        // ActivityRecording session. Otherwise the watch's auto-pause
+        // overlay (blue triangle "press to resume") appears on top of the
+        // app and blocks all input. Stopping the session also commits the
+        // activity to Garmin Connect — same end result the user wanted.
+        if (engine.matchOver && manager != null && manager.isActive()) {
+            manager.stopSession(engine);
+        }
 
         Ui.requestUpdate();
         return true;
@@ -411,13 +401,6 @@ class MainDelegate extends Ui.InputDelegate {
     // auto-saved on every point by MatchPersistence, so the user can
     // resume on next launch (Resume match? prompt).
     function onBack() {
-        // If the match is over, BACK should go to the summary (not silently exit
-        // and skip MatchHistory.saveMatch). Tapping and pressing BACK now both
-        // reach PostMatchDelegate.finishAndExit() which saves history correctly.
-        if (engine != null && engine.matchOver) {
-            showConfirm();
-            return true;
-        }
         Ui.popView(Ui.SLIDE_RIGHT);     // Main → Setup (or → exit if root)
         Ui.popView(Ui.SLIDE_IMMEDIATE); // Setup → exit (no-op if already exited)
         return true;
@@ -432,18 +415,22 @@ class MainDelegate extends Ui.InputDelegate {
         return true;
     }
 
-    // Always show the MatchMenu — for both mid-game and match-over.
-    // At match end: RESUME returns to result screen, SAVE → PostMatch → history saved,
-    // DISCARD → confirmation. This gives a consistent save/discard UX and avoids
-    // stopping the activity session early (which triggers the blue triangle overlay).
+    // v1.1.3: replaced the old YES/NO ConfirmEndView with a four-option
+    // MatchMenu (Resume / Save / Later / Discard) — modeled on Garmin's
+    // native activity-stop menu. Match-over still skips the menu and goes
+    // straight to the summary.
     function showConfirm() {
         if (engine == null) { return; }
-        var menuView = new MatchMenuView();
-        Ui.pushView(
-            menuView,
-            new MatchMenuDelegate(menuView, engine, manager),
-            Ui.SLIDE_UP
-        );
+        if (engine.matchOver) {
+            goToPostMatch();
+        } else {
+            var menuView = new MatchMenuView();
+            Ui.pushView(
+                menuView,
+                new MatchMenuDelegate(menuView, engine, manager),
+                Ui.SLIDE_UP
+            );
+        }
     }
 }
 

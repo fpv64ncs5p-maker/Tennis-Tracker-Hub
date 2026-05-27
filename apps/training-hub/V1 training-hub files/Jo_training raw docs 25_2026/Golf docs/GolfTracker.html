@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Golf Tracker">
+<title>Jo's Golf Tracker</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:rgba(0,0,0,0);-webkit-touch-callout:none}
+:root{
+  --g1:#1B5E20;--g2:#2E7D32;--g3:#43A047;--gl:#E8F5E9;
+  --gold:#F9A825;--goldc:#FFF9C4;
+  --red:#C62828;--orange:#E65100;
+  --w:#fff;--bg:#eef2ee;--card:#fff;
+  --bd:#e0e0e0;--tx:#212121;--tx2:#616161;
+  --r:14px;--sh:0 2px 10px rgba(0,0,0,.1);
+}
+html,body{height:100%;overflow:hidden;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;color:var(--tx)}
+
+/* LAYOUT */
+#app{display:flex;flex-direction:column;height:100%;height:-webkit-fill-available}
+#header{background:linear-gradient(160deg,var(--g1),var(--g2));color:#fff;padding:50px 16px 12px;text-align:center;flex-shrink:0}
+#header h1{font-size:19px;font-weight:700;letter-spacing:.3px}
+#header p{font-size:11px;opacity:.7;margin-top:2px}
+#content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px}
+#tabbar{background:#fff;border-top:1px solid var(--bd);display:flex;flex-shrink:0;padding-bottom:env(safe-area-inset-bottom,0px)}
+
+/* TABS */
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 2px 6px;border:none;background:none;color:var(--tx2);font-size:10px;font-weight:500;cursor:pointer;gap:2px;min-height:52px;-webkit-appearance:none}
+.tab .ti{font-size:21px;line-height:1}
+.tab.on{color:var(--g2);font-weight:700}
+
+/* SCREENS */
+.scr{display:none;padding:14px;animation:fadeIn .18s ease}
+.scr.on{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* CARD */
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);margin-bottom:12px;overflow:hidden}
+.ch{background:var(--g2);color:#fff;padding:10px 14px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
+.cb{padding:12px 14px}
+
+/* FORMS */
+label{display:block;font-size:11px;color:var(--tx2);margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+input[type=text],input[type=date],input[type=number],select,textarea{
+  width:100%;padding:10px 11px;border:1.5px solid var(--bd);border-radius:8px;
+  font-size:16px;background:#fafafa;color:var(--tx);outline:none;
+  -webkit-appearance:none;appearance:none}
+input:focus,select:focus,textarea:focus{border-color:var(--g3);background:#fff}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px}
+.field{margin-bottom:10px}
+
+/* DRILL ROWS */
+.dr{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #f5f5f5}
+.dr:last-child{border:none}
+.dl{flex:1}
+.dl b{font-size:13px;display:block}
+.dl small{font-size:11px;color:var(--tx2)}
+.di{width:58px;text-align:center;padding:7px;font-size:16px;font-weight:700;border:1.5px solid var(--bd);border-radius:8px;background:#fafafa;-webkit-appearance:none;appearance:none}
+.dp{min-width:42px;text-align:right;font-size:13px;font-weight:700}
+.dp.hi{color:var(--g2)}.dp.md{color:var(--gold)}.dp.lo{color:var(--red)}
+
+/* Y/N TOGGLE */
+.yn{display:inline-flex;border:1.5px solid var(--bd);border-radius:8px;overflow:hidden;flex-shrink:0}
+.yn button{width:36px;height:34px;border:none;background:#f5f5f5;font-size:13px;font-weight:700;cursor:pointer;-webkit-appearance:none;color:var(--tx2)}
+.yn button.yon{background:var(--g2);color:#fff}
+.yn button.ynn{background:var(--red);color:#fff}
+
+/* BUTTONS */
+.btn{display:block;width:100%;padding:13px;border-radius:10px;border:none;font-size:15px;font-weight:700;cursor:pointer;-webkit-appearance:none;letter-spacing:.2px;margin-bottom:8px}
+.btn:active{opacity:.8}
+.bp{background:var(--g2);color:#fff}
+.bo{background:transparent;border:2px solid var(--g2);color:var(--g2)}
+.br{background:var(--red);color:#fff}
+.bg{background:var(--gold);color:#000}
+.brow{display:flex;gap:8px;margin-top:12px}
+.brow .btn{flex:1;margin:0}
+.bsm{padding:8px 14px;width:auto;display:inline-block;font-size:12px;border-radius:8px;border:none;cursor:pointer;font-weight:700}
+
+/* SCORECARD TABLE */
+.sctbl{width:100%;border-collapse:collapse;font-size:12px}
+.sctbl th{background:var(--g2);color:#fff;padding:7px 3px;text-align:center;font-size:11px;white-space:nowrap}
+.sctbl td{padding:4px 2px;text-align:center;border-bottom:1px solid #f5f5f5;vertical-align:middle}
+.sctbl tr:nth-child(even) td{background:#f9fdf9}
+.sctbl tr.tot td{background:var(--goldc);font-weight:700;border-top:2px solid var(--gold)}
+.hi2{width:36px;padding:4px 2px;border:1.5px solid var(--bd);border-radius:6px;text-align:center;font-size:14px;font-weight:700;background:#fafafa;-webkit-appearance:none}
+.hi2.par3 select,.hi2 select{font-size:12px}
+.sptbl{overflow-x:auto}
+
+/* STABLEFORD BADGE */
+.sb{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;font-size:12px;font-weight:800}
+.sb0{background:#ffcdd2;color:#b71c1c}
+.sb1{background:#ffe0b2;color:#e65100}
+.sb2{background:var(--gl);color:var(--g1);border:1.5px solid var(--g3)}
+.sb3{background:#fff9c4;color:#827717}
+.sb4{background:var(--gold);color:#000}
+.sb-{background:#f5f5f5;color:#9e9e9e}
+
+/* SUMMARY GRID */
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:4px}
+.sg2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:4px}
+.sv .val{font-size:24px;font-weight:800;color:var(--g2);text-align:center}
+.sv .lbl{font-size:10px;color:var(--tx2);text-align:center;text-transform:uppercase}
+
+/* PROGRESS */
+.pb{height:8px;background:var(--bd);border-radius:4px;overflow:hidden;margin-top:4px}
+.pf{height:100%;border-radius:4px;transition:width .3s}
+.ph{background:var(--g3)}.pm{background:var(--gold)}.pl{background:var(--red)}
+
+/* HOME */
+.hsg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.hsc{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:14px;text-align:center}
+.hsc .big{font-size:28px;font-weight:800;color:var(--g2)}
+.hsc .lbl{font-size:11px;color:var(--tx2);text-transform:uppercase;margin-top:2px}
+.qb{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:15px;display:flex;align-items:center;gap:12px;margin-bottom:10px;border:none;width:100%;text-align:left;cursor:pointer;-webkit-appearance:none}
+.qb:active{opacity:.8}
+.qb .qi{font-size:26px}
+.qb .qt{font-size:15px;font-weight:700;display:block}
+.qb .qs{font-size:12px;color:var(--tx2);display:block}
+.sct{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--tx2);margin:14px 0 8px;padding-left:2px}
+
+/* HISTORY */
+.hi{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);margin-bottom:10px;overflow:hidden}
+.hih{padding:11px 13px;display:flex;justify-content:space-between;align-items:flex-start}
+.hib{padding:8px 13px;background:#f9f9f9;border-top:1px solid var(--bd);display:flex;flex-wrap:wrap;gap:6px}
+.pill{background:#fff;border:1px solid var(--bd);border-radius:20px;padding:3px 9px;font-size:11px}
+.pill span{font-weight:700;color:var(--g2)}
+.badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:12px}
+.bsc{background:var(--goldc);color:#7B5E00}
+.bsh{background:var(--gl);color:var(--g1)}
+.blg{background:#E3F2FD;color:#0D47A1}
+.delbtn{background:none;border:none;font-size:20px;cursor:pointer;padding:2px 4px;color:var(--tx2);-webkit-appearance:none}
+
+/* MY BAG */
+.bgtbl{width:100%;border-collapse:collapse;font-size:12px}
+.bgtbl th{background:var(--g2);color:#fff;padding:7px 6px;text-align:left;font-size:11px}
+.bgtbl td{padding:7px 6px;border-bottom:1px solid #f5f5f5;font-size:12px}
+.bgtbl tr:nth-child(even) td{background:#f9fdf9}
+.star{color:var(--g1);font-weight:700}
+
+/* TOAST */
+#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(27,94,32,.95);color:#fff;padding:10px 22px;border-radius:24px;font-size:14px;font-weight:600;z-index:9999;pointer-events:none;opacity:0;transition:opacity .25s;white-space:nowrap}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <h1>⛳ Jo's Golf Tracker</h1>
+    <p id="hdr-sub">Track · Improve · Score</p>
+  </div>
+
+  <div id="content">
+
+    <!-- ── HOME ─────────────────────────────────────────── -->
+    <div class="scr on" id="s-home">
+      <div class="hsg">
+        <div class="hsc"><div class="big" id="h-hcp">—</div><div class="lbl">HCP Index</div></div>
+        <div class="hsc"><div class="big" id="h-sess">0</div><div class="lbl">Sessions</div></div>
+        <div class="hsc"><div class="big" id="h-rounds">0</div><div class="lbl">Rounds</div></div>
+        <div class="hsc"><div class="big" id="h-stb">—</div><div class="lbl">Best Stb.</div></div>
+      </div>
+
+      <div class="sct">Start a session</div>
+      <button class="qb" id="go-scorecard"><span class="qi">📋</span><span><span class="qt">Game Scorecard</span><span class="qs">Log a round hole by hole</span></span></button>
+      <button class="qb" id="go-short"><span class="qi">⛳</span><span><span class="qt">Short Game Session</span><span class="qs">Putting · Chipping · Pitching</span></span></button>
+      <button class="qb" id="go-long"><span class="qi">🏌️</span><span><span class="qt">Long Game Session</span><span class="qs">Wedges · Irons · Driving</span></span></button>
+
+      <div class="sct">Settings</div>
+      <div class="card"><div class="cb">
+        <div class="row2">
+          <div><label>My HCP Index</label><input type="number" id="set-hcp" placeholder="27.7" step="0.1" inputmode="decimal"></div>
+          <div><label>Home Course</label><input type="text" id="set-course" placeholder="SGU"></div>
+        </div>
+        <button class="btn bp" id="save-settings">Save Settings</button>
+      </div></div>
+    </div>
+
+    <!-- ── SCORECARD ─────────────────────────────────────── -->
+    <div class="scr" id="s-scorecard">
+      <div class="card"><div class="ch">📋 Round Info</div><div class="cb">
+        <div class="row2">
+          <div><label>Date</label><input type="date" id="sc-date"></div>
+          <div><label>Course</label><input type="text" id="sc-course" placeholder="SGU, Campo Real…"></div>
+        </div>
+        <div class="row3">
+          <div><label>HCP</label><input type="number" id="sc-hcp" placeholder="27.7" step="0.1" inputmode="decimal"></div>
+          <div><label>Par</label><input type="number" id="sc-par" placeholder="72" inputmode="numeric"></div>
+          <div><label>Holes</label>
+            <select id="sc-holes">
+              <option value="9">9</option>
+              <option value="18" selected>18</option>
+            </select>
+          </div>
+        </div>
+        <div class="field"><label>Notes</label><input type="text" id="sc-notes" placeholder="Weather, observations…"></div>
+        <button class="btn bg" id="build-sc">Build Scorecard ▶</button>
+      </div></div>
+
+      <div class="card" id="sc-table-card" style="display:none">
+        <div class="ch">🕳️ Scorecard</div>
+        <div class="cb" style="padding:8px 4px">
+          <div class="sptbl"><table class="sctbl" id="sc-table"></table></div>
+        </div>
+      </div>
+
+      <div class="card" id="sc-sum-card" style="display:none">
+        <div class="ch">📊 Round Summary</div><div class="cb">
+          <div class="sg">
+            <div class="sv"><div class="val" id="sc-gross">—</div><div class="lbl">Gross</div></div>
+            <div class="sv"><div class="val" id="sc-net">—</div><div class="lbl">Net</div></div>
+            <div class="sv"><div class="val" id="sc-stb">—</div><div class="lbl">Stableford</div></div>
+            <div class="sv"><div class="val" id="sc-putts">—</div><div class="lbl">Putts</div></div>
+            <div class="sv"><div class="val" id="sc-fw">—</div><div class="lbl">FW%</div></div>
+            <div class="sv"><div class="val" id="sc-gir">—</div><div class="lbl">GIR</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="brow">
+        <button class="btn bp" id="save-sc">💾 Save Round</button>
+        <button class="btn bo" id="reset-sc">↺ Reset</button>
+      </div>
+    </div>
+
+    <!-- ── SHORT GAME ─────────────────────────────────────── -->
+    <div class="scr" id="s-short">
+      <div class="card"><div class="ch">⛳ Session Info</div><div class="cb">
+        <div class="row2">
+          <div><label>Date</label><input type="date" id="sg-date"></div>
+          <div><label>Location</label><input type="text" id="sg-loc" placeholder="SGU, Range…"></div>
+        </div>
+        <div class="row2">
+          <div><label>Duration</label><input type="text" id="sg-dur" placeholder="1h30"></div>
+          <div><label>HCP</label><input type="number" id="sg-hcp" placeholder="27.7" step="0.1" inputmode="decimal"></div>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="ch">🔥 Warm-Up</div><div class="cb">
+        <div class="dr"><div class="dl"><b>Stretch shoulders, hips, wrists</b></div>
+          <div class="yn" id="sg-wu1"><button data-y="sg-wu1">Y</button><button data-n="sg-wu1">N</button></div></div>
+        <div class="dr"><div class="dl"><b>20 short chips (9–13m)</b></div>
+          <div class="yn" id="sg-wu2"><button data-y="sg-wu2">Y</button><button data-n="sg-wu2">N</button></div></div>
+      </div></div>
+
+      <div class="card"><div class="ch">🎯 Putting (40 min)</div><div class="cb">
+        <div class="sct" style="margin-top:0">Short Putts</div>
+        <div class="dr">
+          <div class="dl"><b>1m — in a row</b><small>target: 25</small></div>
+          <input class="di" type="number" id="sg-sp1" min="0" max="25" placeholder="—" inputmode="numeric">
+          <div class="dp" id="sg-sp1p"></div>
+        </div>
+        <div class="dr">
+          <div class="dl"><b>2m — in a row</b><small>target: 15</small></div>
+          <input class="di" type="number" id="sg-sp2" min="0" max="15" placeholder="—" inputmode="numeric">
+          <div class="dp" id="sg-sp2p"></div>
+        </div>
+        <div class="sct">Lag Putting</div>
+        <div class="dr">
+          <div class="dl"><b>8m — in circle</b><small>of 10</small></div>
+          <input class="di" type="number" id="sg-l8" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="sg-l8p"></div>
+        </div>
+        <div class="dr">
+          <div class="dl"><b>9m — in circle</b><small>of 10</small></div>
+          <input class="di" type="number" id="sg-l9" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="sg-l9p"></div>
+        </div>
+        <div class="dr">
+          <div class="dl"><b>12m — in circle</b><small>of 10</small></div>
+          <input class="di" type="number" id="sg-l12" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="sg-l12p"></div>
+        </div>
+        <div class="sct">Pressure Ladder (1m–3m)</div>
+        <div class="dr"><div class="dl"><b>Ladder complete?</b></div>
+          <div class="yn" id="sg-lad"><button data-y="sg-lad">Y</button><button data-n="sg-lad">N</button></div></div>
+        <div class="dr">
+          <div class="dl"><b>Misses</b></div>
+          <input class="di" type="number" id="sg-miss" min="0" placeholder="0" inputmode="numeric">
+        </div>
+      </div></div>
+
+      <div class="card"><div class="ch">🏌️ Chipping & Pitching (35 min)</div><div class="cb">
+        <div class="sct" style="margin-top:0">Basic Chips</div>
+        <div class="row2">
+          <div><label>Club</label><input type="text" id="sg-cc" placeholder="SW, PW…"></div>
+          <div><label>Landing spot</label><input type="text" id="sg-cl" placeholder="Front fringe…"></div>
+        </div>
+        <div class="dr">
+          <div class="dl"><b>In zone</b><small>of 10</small></div>
+          <input class="di" type="number" id="sg-chip" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="sg-chipp"></div>
+        </div>
+        <div class="sct">Pitch Shots</div>
+        <div class="dr">
+          <div class="dl"><b>Low trajectory</b><small>of 10</small></div>
+          <input class="di" type="number" id="sg-pl" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="sg-plp"></div>
+        </div>
+        <div class="dr">
+          <div class="dl"><b>High trajectory</b><small>of 10</small></div>
+          <input class="di" type="number" id="sg-ph" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="sg-php"></div>
+        </div>
+        <div class="sct">Up & Down Challenge</div>
+        <div class="dr">
+          <div class="dl"><b>Successful</b><small>of 10</small></div>
+          <input class="di" type="number" id="sg-ud" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="sg-udp"></div>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="ch">🧘 Cool-Down & Notes</div><div class="cb">
+        <div class="dr"><div class="dl"><b>10 smooth putts ✓</b></div>
+          <div class="yn" id="sg-cd"><button data-y="sg-cd">Y</button><button data-n="sg-cd">N</button></div></div>
+        <div class="field" style="margin-top:10px"><label>Session Notes</label>
+          <textarea id="sg-notes" rows="2" placeholder="How did it feel? Focus for next time…"></textarea></div>
+      </div></div>
+
+      <div class="card" id="sg-sum"><div class="ch">📊 Session Score</div><div class="cb">
+        <div class="sg">
+          <div class="sv"><div class="val" id="sg-pp">—</div><div class="lbl">Putting %</div></div>
+          <div class="sv"><div class="val" id="sg-cp">—</div><div class="lbl">Chipping %</div></div>
+          <div class="sv"><div class="val" id="sg-op">—</div><div class="lbl">Overall %</div></div>
+        </div>
+        <div style="margin-top:12px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+            <span>Session score</span><span id="sg-bv">—</span></div>
+          <div class="pb"><div class="pf" id="sg-bar" style="width:0"></div></div>
+        </div>
+      </div></div>
+
+      <div class="brow">
+        <button class="btn bp" id="save-sg">💾 Save Session</button>
+        <button class="btn bo" id="reset-sg">↺ Reset</button>
+      </div>
+    </div>
+
+    <!-- ── LONG GAME ──────────────────────────────────────── -->
+    <div class="scr" id="s-long">
+      <div class="card"><div class="ch">🏌️ Session Info</div><div class="cb">
+        <div class="row2">
+          <div><label>Date</label><input type="date" id="lg-date"></div>
+          <div><label>Location</label><input type="text" id="lg-loc" placeholder="Range, SGU…"></div>
+        </div>
+        <div class="row2">
+          <div><label>Duration</label><input type="text" id="lg-dur" placeholder="1h30"></div>
+          <div><label>HCP</label><input type="number" id="lg-hcp" placeholder="27.7" step="0.1" inputmode="decimal"></div>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="ch">🔥 Warm-Up</div><div class="cb">
+        <div class="dr"><div class="dl"><b>Stretch shoulders, hips, back, wrists</b></div>
+          <div class="yn" id="lg-wu1"><button data-y="lg-wu1">Y</button><button data-n="lg-wu1">N</button></div></div>
+        <div class="dr"><div class="dl"><b>10–15 smooth wedge shots (45–75m)</b></div>
+          <div class="yn" id="lg-wu2"><button data-y="lg-wu2">Y</button><button data-n="lg-wu2">N</button></div></div>
+      </div></div>
+
+      <div class="card"><div class="ch">🎯 Wedge Distance Control (20 min)</div><div class="cb">
+        <div class="dr">
+          <div class="dl"><b>45m zone</b><small>of 10</small></div>
+          <input class="di" type="number" id="lg-45" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="lg-45p"></div>
+        </div>
+        <div class="dr">
+          <div class="dl"><b>65m zone</b><small>of 10</small></div>
+          <input class="di" type="number" id="lg-65" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="lg-65p"></div>
+        </div>
+        <div class="dr">
+          <div class="dl"><b>90m zone</b><small>of 10</small></div>
+          <input class="di" type="number" id="lg-90" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="lg-90p"></div>
+        </div>
+        <div class="sct">Trajectory Drill — 5 each</div>
+        <div class="row3">
+          <div><label>Low ✓</label><input class="hi2" type="number" id="lg-tl" min="0" max="5" placeholder="—" inputmode="numeric" style="width:100%"></div>
+          <div><label>Stock ✓</label><input class="hi2" type="number" id="lg-ts" min="0" max="5" placeholder="—" inputmode="numeric" style="width:100%"></div>
+          <div><label>High ✓</label><input class="hi2" type="number" id="lg-th" min="0" max="5" placeholder="—" inputmode="numeric" style="width:100%"></div>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="ch">⛳ Irons (25 min)</div><div class="cb">
+        <div class="sct" style="margin-top:0">Mid Irons 7–8i — of 10</div>
+        <div class="dr">
+          <div class="dl"><b>Solid contact</b></div>
+          <input class="di" type="number" id="lg-ms" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="lg-msp"></div>
+        </div>
+        <div class="dr">
+          <div class="dl"><b>In target area</b></div>
+          <input class="di" type="number" id="lg-mt" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="lg-mtp"></div>
+        </div>
+        <div class="sct">Long Irons / Hybrids — of 10</div>
+        <div class="dr">
+          <div class="dl"><b>Solid contact</b></div>
+          <input class="di" type="number" id="lg-ls" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="lg-lsp"></div>
+        </div>
+        <div class="dr">
+          <div class="dl"><b>In target area</b></div>
+          <input class="di" type="number" id="lg-lt" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="lg-ltp"></div>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="ch">🚀 Driving (20 min)</div><div class="cb">
+        <div class="dr">
+          <div class="dl"><b>Fairway Finder</b><small>in zone — of 10</small></div>
+          <input class="di" type="number" id="lg-fw" min="0" max="10" placeholder="—" inputmode="numeric">
+          <div class="dp" id="lg-fwp"></div>
+        </div>
+        <div class="sct">Shape Practice — 5 each</div>
+        <div class="row2">
+          <div><label>Fades executed</label><input class="hi2" type="number" id="lg-fa" min="0" max="5" placeholder="—" inputmode="numeric" style="width:100%"></div>
+          <div><label>Draws executed</label><input class="hi2" type="number" id="lg-dr" min="0" max="5" placeholder="—" inputmode="numeric" style="width:100%"></div>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="ch">🏁 On-Course Sim & Cool-Down</div><div class="cb">
+        <div class="dr"><div class="dl"><b>Hole 1 — Fairway hit?</b></div>
+          <div class="yn" id="lg-h1"><button data-y="lg-h1">Y</button><button data-n="lg-h1">N</button></div></div>
+        <div class="dr"><div class="dl"><b>Hole 2 — Fairway hit?</b></div>
+          <div class="yn" id="lg-h2"><button data-y="lg-h2">Y</button><button data-n="lg-h2">N</button></div></div>
+        <div class="dr"><div class="dl"><b>Hole 3 — Fairway hit?</b></div>
+          <div class="yn" id="lg-h3"><button data-y="lg-h3">Y</button><button data-n="lg-h3">N</button></div></div>
+        <div class="field" style="margin-top:10px"><label>Approach notes</label>
+          <input type="text" id="lg-an" placeholder="e.g. 90m 7i, landed left…"></div>
+        <div class="dr" style="margin-top:6px"><div class="dl"><b>5 smooth swings with 7i ✓</b></div>
+          <div class="yn" id="lg-cd"><button data-y="lg-cd">Y</button><button data-n="lg-cd">N</button></div></div>
+        <div class="field" style="margin-top:10px"><label>Session Notes</label>
+          <textarea id="lg-notes" rows="2" placeholder="What clicked? What to improve?"></textarea></div>
+      </div></div>
+
+      <div class="card"><div class="ch">📊 Session Score</div><div class="cb">
+        <div class="sg">
+          <div class="sv"><div class="val" id="lg-wp">—</div><div class="lbl">Wedge %</div></div>
+          <div class="sv"><div class="val" id="lg-ip">—</div><div class="lbl">Iron %</div></div>
+          <div class="sv"><div class="val" id="lg-dp">—</div><div class="lbl">Drive %</div></div>
+        </div>
+        <div style="margin-top:12px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+            <span>Overall session</span><span id="lg-bv">—</span></div>
+          <div class="pb"><div class="pf" id="lg-bar" style="width:0"></div></div>
+        </div>
+      </div></div>
+
+      <div class="brow">
+        <button class="btn bp" id="save-lg">💾 Save Session</button>
+        <button class="btn bo" id="reset-lg">↺ Reset</button>
+      </div>
+    </div>
+
+    <!-- ── HISTORY ────────────────────────────────────────── -->
+    <div class="scr" id="s-history">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="bsm bo" id="export-csv">📤 Export CSV</button>
+        <button class="bsm br" id="clear-all">🗑 Clear All</button>
+      </div>
+      <div id="hist-list"></div>
+    </div>
+
+    <!-- ── MY BAG ─────────────────────────────────────────── -->
+    <div class="scr" id="s-bag">
+      <div class="card"><div class="ch">🎒 Club Distances (Jan 2026)</div>
+        <div class="cb" style="padding:6px 0">
+          <div style="overflow-x:auto">
+          <table class="bgtbl">
+            <tr><th>Club</th><th>Carry</th><th>Total</th><th>Direction</th></tr>
+            <tr><td class="star">⭐ 5 Wood</td><td>107m</td><td>118m</td><td>L23% C62% R16%</td></tr>
+            <tr><td class="star">⭐ 4 Hybrid</td><td>97m</td><td>140m</td><td>C66% R33%</td></tr>
+            <tr><td>7H V2</td><td>96m</td><td>101m</td><td>L17% C50% R33%</td></tr>
+            <tr><td>3 Wood</td><td>82m</td><td>129m</td><td>L17% C83%</td></tr>
+            <tr><td>Driver</td><td>89m</td><td>70m</td><td>C30% R60%</td></tr>
+            <tr><td>5 Iron</td><td>100m</td><td>138m</td><td>C67% R33%</td></tr>
+            <tr><td>6 Iron</td><td>105m</td><td>132m</td><td>L17% C17% R67%</td></tr>
+            <tr><td>7 Iron</td><td>84m</td><td>136m</td><td>L17% C17% R67%</td></tr>
+            <tr><td>8 Iron</td><td>104m</td><td>127m</td><td>L17% C17% R67%</td></tr>
+            <tr><td>9 Iron</td><td>109m</td><td>146m</td><td>C34% R67%</td></tr>
+            <tr><td>PW</td><td>74m</td><td>85m</td><td>C17% R83%</td></tr>
+            <tr><td>SW 56°</td><td>97m</td><td>128m</td><td>C54% R45%</td></tr>
+          </table></div>
+        </div>
+      </div>
+
+      <div class="card"><div class="ch">📏 Yardage Guide</div>
+        <div class="cb" style="padding:6px 0"><div style="overflow-x:auto">
+          <table class="bgtbl">
+            <tr><th>Distance</th><th>Club</th><th>Swing</th></tr>
+            <tr><td>45–52m</td><td>SW 56° full</td><td>100%</td></tr>
+            <tr><td>53–60m</td><td>SW 56° ¾</td><td>85%</td></tr>
+            <tr><td>61–68m</td><td>PW full</td><td>100%</td></tr>
+            <tr><td>69–75m</td><td>PW ¾</td><td>85%</td></tr>
+            <tr><td>76–83m</td><td>9i full</td><td>100%</td></tr>
+            <tr><td>84–90m</td><td>9i ¾</td><td>85%</td></tr>
+            <tr><td>91–98m</td><td>7i full</td><td>100%</td></tr>
+            <tr><td>99–107m</td><td>7i ¾</td><td>85%</td></tr>
+            <tr><td>108–115m</td><td>6i / 5i</td><td>90%</td></tr>
+            <tr><td>116–130m</td><td>7H / Hybrid</td><td>90%</td></tr>
+            <tr><td>131–145m</td><td>5 Wood 90%</td><td>90%</td></tr>
+          </table>
+        </div></div>
+      </div>
+
+      <div class="card"><div class="ch">🧠 Mental Rules</div><div class="cb">
+        <div class="dr"><div class="dl"><b>Default tee club</b><small>5-Wood → 4 Hybrid → 3-Wood only wide holes</small></div></div>
+        <div class="dr"><div class="dl"><b>Back-9 rule</b><small>80–85% swing, reliable club not longest</small></div></div>
+        <div class="dr"><div class="dl"><b>Par-4 strategy</b><small>Tee: 5W/Hybrid → Lay-up 7i/8i → Approach PW/9i</small></div></div>
+        <div class="dr"><div class="dl"><b>Into headwind</b><small>Club DOWN + 80% swing — saves 6–10 strokes</small></div></div>
+        <div class="dr"><div class="dl"><b>Tired or windy</b><small>Hybrid 4. Always. No exceptions.</small></div></div>
+        <div class="dr"><div class="dl"><b>Lag putting (&gt;8m)</b><small>2-putt only target. Forget the hole.</small></div></div>
+        <div class="dr"><div class="dl"><b>Bunker (hard sand)</b><small>Chip clean with SW. Consider unplayable.</small></div></div>
+        <div class="dr"><div class="dl"><b>Ball in trees</b><small>Low punch under branches OR chip out sideways.</small></div></div>
+      </div></div>
+    </div>
+
+  </div><!-- /content -->
+
+  <!-- TAB BAR -->
+  <div id="tabbar">
+    <button class="tab on" data-tab="home"><span class="ti">🏠</span>Home</button>
+    <button class="tab" data-tab="scorecard"><span class="ti">📋</span>Score</button>
+    <button class="tab" data-tab="short"><span class="ti">⛳</span>Short</button>
+    <button class="tab" data-tab="long"><span class="ti">🏌️</span>Long</button>
+    <button class="tab" data-tab="history"><span class="ti">📈</span>History</button>
+    <button class="tab" data-tab="bag"><span class="ti">🎒</span>My Bag</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ── SAFE STORAGE ──────────────────────────────────────── */
+var mem = {};
+var Store = {
+  get: function(k){
+    try{ var v=localStorage.getItem(k); return v?JSON.parse(v):null; }
+    catch(e){ return mem[k]||null; }
+  },
+  set: function(k,v){
+    try{ localStorage.setItem(k,JSON.stringify(v)); }
+    catch(e){ mem[k]=v; }
+  },
+  del: function(k){
+    try{ localStorage.removeItem(k); } catch(e){ delete mem[k]; }
+  }
+};
+
+/* ── TOAST ─────────────────────────────────────────────── */
+function toast(msg){
+  var t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 2400);
+}
+
+/* ── TAB NAVIGATION ────────────────────────────────────── */
+function showTab(name){
+  document.querySelectorAll('.scr').forEach(function(s){ s.classList.remove('on'); });
+  document.querySelectorAll('.tab').forEach(function(b){ b.classList.remove('on'); });
+  var scr = document.getElementById('s-'+name);
+  if(scr) scr.classList.add('on');
+  var btn = document.querySelector('[data-tab="'+name+'"]');
+  if(btn) btn.classList.add('on');
+  document.getElementById('content').scrollTop=0;
+  if(name==='history') renderHistory();
+  if(name==='home') updateHome();
+}
+
+document.querySelectorAll('.tab').forEach(function(b){
+  b.addEventListener('click', function(){ showTab(this.getAttribute('data-tab')); });
+});
+
+/* ── Y/N TOGGLES ───────────────────────────────────────── */
+var ynVals = {};
+function initToggles(){
+  document.querySelectorAll('.yn button').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var yid = this.getAttribute('data-y') || this.getAttribute('data-n');
+      var isY = !!this.getAttribute('data-y');
+      ynVals[yid] = isY ? 'Y' : 'N';
+      var container = document.getElementById(yid);
+      if(!container) return;
+      container.querySelectorAll('button').forEach(function(b){ b.className=''; });
+      this.className = isY ? 'yon' : 'ynn';
+    });
+  });
+}
+
+/* ── SCORE INPUTS — live calc ───────────────────────────── */
+function n(id){ var e=document.getElementById(id); return e&&e.value!==''?parseFloat(e.value)||0:null; }
+function pct(v,max){ return v===null?null:Math.round(v/max*100); }
+function setPct(id,val){
+  var e=document.getElementById(id); if(!e) return;
+  if(val===null){ e.textContent=''; e.className='dp'; return; }
+  e.textContent=val+'%';
+  e.className='dp '+(val>=70?'hi':val>=50?'md':'lo');
+}
+function setBar(barid,valid,val){
+  var b=document.getElementById(barid), v=document.getElementById(valid);
+  if(!b||!v) return;
+  if(val===null){ v.textContent='—'; b.style.width='0'; return; }
+  v.textContent=val+'%'; b.style.width=val+'%';
+  b.className='pf '+(val>=70?'ph':val>=50?'pm':'pl');
+}
+
+function calcSG(){
+  var sp1=n('sg-sp1'),sp2=n('sg-sp2'),l8=n('sg-l8'),l9=n('sg-l9'),l12=n('sg-l12');
+  var chip=n('sg-chip'),pl=n('sg-pl'),ph=n('sg-ph'),ud=n('sg-ud');
+  setPct('sg-sp1p', pct(sp1,25)); setPct('sg-sp2p', pct(sp2,15));
+  setPct('sg-l8p',  pct(l8,10));  setPct('sg-l9p',  pct(l9,10));  setPct('sg-l12p', pct(l12,10));
+  setPct('sg-chipp',pct(chip,10)); setPct('sg-plp',  pct(pl,10));
+  setPct('sg-php',  pct(ph,10));   setPct('sg-udp',  pct(ud,10));
+  var pp=null, cp=null, op=null;
+  if(sp1!==null||l8!==null){
+    var psum=(sp1||0)+(sp2||0)+(l8||0)+(l9||0)+(l12||0);
+    pp=Math.round(psum/70*100);
+  }
+  if(chip!==null){ var csum=(chip||0)+(pl||0)+(ph||0)+(ud||0); cp=Math.round(csum/40*100); }
+  if(pp!==null&&cp!==null) op=Math.round((pp+cp)/2);
+  var pp2=pp!==null?pp+'%':'—', cp2=cp!==null?cp+'%':'—', op2=op!==null?op+'%':'—';
+  document.getElementById('sg-pp').textContent=pp2;
+  document.getElementById('sg-cp').textContent=cp2;
+  document.getElementById('sg-op').textContent=op2;
+  setBar('sg-bar','sg-bv', op);
+}
+
+function calcLG(){
+  var w45=n('lg-45'),w65=n('lg-65'),w90=n('lg-90');
+  var ms=n('lg-ms'),mt=n('lg-mt'),ls=n('lg-ls'),lt=n('lg-lt');
+  var fw=n('lg-fw');
+  setPct('lg-45p',pct(w45,10)); setPct('lg-65p',pct(w65,10)); setPct('lg-90p',pct(w90,10));
+  setPct('lg-msp',pct(ms,10));  setPct('lg-mtp',pct(mt,10));
+  setPct('lg-lsp',pct(ls,10));  setPct('lg-ltp',pct(lt,10));
+  setPct('lg-fwp',pct(fw,10));
+  var wp=null,ip=null,dp=null;
+  if(w45!==null){ wp=Math.round(((w45||0)+(w65||0)+(w90||0))/30*100); }
+  if(ms!==null){ ip=Math.round(((ms||0)+(mt||0)+(ls||0)+(lt||0))/40*100); }
+  if(fw!==null){ dp=Math.round((fw||0)/10*100); }
+  document.getElementById('lg-wp').textContent=wp!==null?wp+'%':'—';
+  document.getElementById('lg-ip').textContent=ip!==null?ip+'%':'—';
+  document.getElementById('lg-dp').textContent=dp!==null?dp+'%':'—';
+  var vals=[wp,ip,dp].filter(function(v){return v!==null;});
+  var avg=vals.length?Math.round(vals.reduce(function(a,b){return a+b;},0)/vals.length):null;
+  setBar('lg-bar','lg-bv', avg);
+}
+
+function attachLiveCalc(){
+  ['sg-sp1','sg-sp2','sg-l8','sg-l9','sg-l12','sg-chip','sg-pl','sg-ph','sg-ud'].forEach(function(id){
+    var e=document.getElementById(id);
+    if(e){ e.addEventListener('input',calcSG); e.addEventListener('change',calcSG); }
+  });
+  ['lg-45','lg-65','lg-90','lg-ms','lg-mt','lg-ls','lg-lt','lg-fw'].forEach(function(id){
+    var e=document.getElementById(id);
+    if(e){ e.addEventListener('input',calcLG); e.addEventListener('change',calcLG); }
+  });
+}
+
+/* ── SCORECARD ─────────────────────────────────────────── */
+var holes=[];
+function buildSC(){
+  var nholes=parseInt(document.getElementById('sc-holes').value)||18;
+  holes=[];
+  for(var i=0;i<nholes;i++) holes.push({h:i+1,par:4,str:0,putts:0,fw:false,gir:false});
+  renderSC();
+  document.getElementById('sc-table-card').style.display='';
+  document.getElementById('sc-sum-card').style.display='';
+}
+
+function calcStb(par,str,hcp,hNum,total){
+  if(!str) return null;
+  var base=Math.floor(hcp/total);
+  var extra=(hNum<=(hcp%total))?1:0;
+  var netPar=par+base+extra;
+  var d=str-netPar;
+  if(d<=-2) return 4; if(d===-1) return 3; if(d===0) return 2; if(d===1) return 1; return 0;
+}
+
+function sbClass(pts){
+  if(pts===null) return 'sb-';
+  if(pts>=4) return 'sb4'; if(pts===3) return 'sb3'; if(pts===2) return 'sb2';
+  if(pts===1) return 'sb1'; return 'sb0';
+}
+
+function renderSC(){
+  var hcp=parseFloat(document.getElementById('sc-hcp').value)||0;
+  var total=holes.length;
+  var html='<thead><tr><th>#</th><th>Par</th><th>Str</th><th>Putts</th><th>FW</th><th>GIR</th><th>Pts</th></tr></thead><tbody>';
+  var tStr=0,tPutts=0,tFW=0,tGIR=0,tStb=0,tPar=0;
+  holes.forEach(function(h,i){
+    var pts=calcStb(h.par,h.str,hcp,h.h,total);
+    var ptsTxt=pts!==null?pts:'—';
+    tStr+=h.str; tPutts+=h.putts; tFW+=h.fw?1:0; tGIR+=h.gir?1:0; tPar+=h.par;
+    if(pts!==null&&pts>0) tStb+=pts;
+    html+='<tr>';
+    html+='<td><b>'+h.h+'</b></td>';
+    html+='<td><select class="hi2" style="width:42px;font-size:12px" onchange="holes['+i+'].par=parseInt(this.value);renderSC()">';
+    [3,4,5].forEach(function(p){ html+='<option'+(h.par===p?' selected':'')+'>'+p+'</option>'; });
+    html+='</select></td>';
+    html+='<td><input class="hi2" type="number" min="1" max="15" placeholder="—" inputmode="numeric" value="'+(h.str||'')+'" onchange="holes['+i+'].str=parseInt(this.value)||0;renderSCTotals()"></td>';
+    html+='<td><input class="hi2" type="number" min="0" max="6" placeholder="—" inputmode="numeric" value="'+(h.putts||'')+'" onchange="holes['+i+'].putts=parseInt(this.value)||0;renderSCTotals()"></td>';
+    html+='<td><input type="checkbox" '+(h.fw?'checked':'')+' onchange="holes['+i+'].fw=this.checked;renderSCTotals()" style="width:18px;height:18px;accent-color:var(--g2)"></td>';
+    html+='<td><input type="checkbox" '+(h.gir?'checked':'')+' onchange="holes['+i+'].gir=this.checked;renderSCTotals()" style="width:18px;height:18px;accent-color:var(--g2)"></td>';
+    html+='<td><span class="sb '+sbClass(pts)+'">'+ptsTxt+'</span></td>';
+    html+='</tr>';
+  });
+  html+='<tr class="tot"><td>TOT</td><td>'+tPar+'</td><td>'+(tStr||'—')+'</td><td>'+(tPutts||'—')+'</td><td>'+tFW+'</td><td>'+tGIR+'</td><td>'+tStb+'</td></tr>';
+  html+='</tbody>';
+  document.getElementById('sc-table').innerHTML=html;
+  updateSCSummary(tStr,tPutts,tFW,tGIR,tStb,hcp,total);
+}
+
+function renderSCTotals(){
+  var hcp=parseFloat(document.getElementById('sc-hcp').value)||0;
+  var total=holes.length;
+  var tStr=0,tPutts=0,tFW=0,tGIR=0,tStb=0;
+  holes.forEach(function(h){
+    tStr+=h.str; tPutts+=h.putts; tFW+=h.fw?1:0; tGIR+=h.gir?1:0;
+    var pts=calcStb(h.par,h.str,hcp,h.h,total);
+    if(pts!==null&&pts>0) tStb+=pts;
+  });
+  // update total row
+  var rows=document.querySelectorAll('#sc-table tbody tr');
+  var tot=rows[rows.length-1];
+  if(tot&&tot.classList.contains('tot')){
+    var tds=tot.querySelectorAll('td');
+    if(tds[2]) tds[2].textContent=tStr||'—';
+    if(tds[3]) tds[3].textContent=tPutts||'—';
+    if(tds[4]) tds[4].textContent=tFW;
+    if(tds[5]) tds[5].textContent=tGIR;
+    if(tds[6]) tds[6].textContent=tStb;
+  }
+  updateSCSummary(tStr,tPutts,tFW,tGIR,tStb,hcp,total);
+}
+
+function updateSCSummary(tStr,tPutts,tFW,tGIR,tStb,hcp,total){
+  var played=holes.filter(function(h){return h.str>0;}).length;
+  document.getElementById('sc-gross').textContent=tStr||'—';
+  document.getElementById('sc-net').textContent=tStr?(tStr-hcp).toFixed(0):'—';
+  document.getElementById('sc-stb').textContent=tStb||'—';
+  document.getElementById('sc-putts').textContent=tPutts||'—';
+  document.getElementById('sc-fw').textContent=played?Math.round(tFW/played*100)+'%':'—';
+  document.getElementById('sc-gir').textContent=tGIR||'—';
+}
+
+/* ── HOME ──────────────────────────────────────────────── */
+function updateHome(){
+  var hcp=Store.get('hcp');
+  document.getElementById('h-hcp').textContent=hcp||'—';
+  var sess=Store.get('sessions')||[];
+  var rounds=sess.filter(function(s){return s.type==='scorecard';});
+  document.getElementById('h-sess').textContent=sess.length;
+  document.getElementById('h-rounds').textContent=rounds.length;
+  var stbs=rounds.map(function(r){return (r.sum&&r.sum.stb)||0;}).filter(function(v){return v>0;});
+  document.getElementById('h-stb').textContent=stbs.length?Math.max.apply(null,stbs):'—';
+}
+
+/* ── SAVE SESSIONS ─────────────────────────────────────── */
+function saveScorecard(){
+  var hcp=parseFloat(document.getElementById('sc-hcp').value)||0;
+  var total=holes.length;
+  var tStr=0,tPutts=0,tFW=0,tGIR=0,tStb=0,tPar=0;
+  holes.forEach(function(h){
+    tStr+=h.str; tPutts+=h.putts; tFW+=h.fw?1:0; tGIR+=h.gir?1:0; tPar+=h.par;
+    var pts=calcStb(h.par,h.str,hcp,h.h,total);
+    if(pts!==null&&pts>0) tStb+=pts;
+  });
+  var sess={
+    type:'scorecard', id:Date.now(),
+    date:document.getElementById('sc-date').value,
+    course:document.getElementById('sc-course').value||'Unknown Course',
+    hcp:document.getElementById('sc-hcp').value,
+    par:document.getElementById('sc-par').value,
+    notes:document.getElementById('sc-notes').value,
+    holes:holes.slice(),
+    sum:{gross:tStr,net:tStr-hcp,stb:tStb,putts:tPutts,fw:tFW,gir:tGIR,par:tPar}
+  };
+  pushSession(sess); toast('✅ Round saved!');
+}
+
+function saveShortGame(){
+  var g=function(id){ var e=document.getElementById(id); return e?e.value:''; };
+  var sess={
+    type:'short', id:Date.now(),
+    date:g('sg-date'), location:g('sg-loc')||'Practice',
+    duration:g('sg-dur'), hcp:g('sg-hcp'), notes:g('sg-notes'),
+    data:{sp1:g('sg-sp1'),sp2:g('sg-sp2'),l8:g('sg-l8'),l9:g('sg-l9'),l12:g('sg-l12'),
+          chip:g('sg-chip'),pl:g('sg-pl'),ph:g('sg-ph'),ud:g('sg-ud'),
+          ladder:ynVals['sg-lad']||'—'},
+    sum:{
+      putting:document.getElementById('sg-pp').textContent,
+      chipping:document.getElementById('sg-cp').textContent,
+      overall:document.getElementById('sg-op').textContent
+    }
+  };
+  pushSession(sess); toast('✅ Session saved!');
+}
+
+function saveLongGame(){
+  var g=function(id){ var e=document.getElementById(id); return e?e.value:''; };
+  var sess={
+    type:'long', id:Date.now(),
+    date:g('lg-date'), location:g('lg-loc')||'Range',
+    duration:g('lg-dur'), hcp:g('lg-hcp'), notes:g('lg-notes'),
+    data:{w45:g('lg-45'),w65:g('lg-65'),w90:g('lg-90'),fw:g('lg-fw'),
+          ms:g('lg-ms'),mt:g('lg-mt'),ls:g('lg-ls'),lt:g('lg-lt')},
+    sum:{
+      wedge:document.getElementById('lg-wp').textContent,
+      iron:document.getElementById('lg-ip').textContent,
+      drive:document.getElementById('lg-dp').textContent
+    }
+  };
+  pushSession(sess); toast('✅ Session saved!');
+}
+
+function pushSession(s){
+  var arr=Store.get('sessions')||[];
+  arr.unshift(s);
+  Store.set('sessions',arr);
+  updateHome();
+}
+
+/* ── HISTORY ───────────────────────────────────────────── */
+function renderHistory(){
+  var arr=Store.get('sessions')||[];
+  var el=document.getElementById('hist-list');
+  if(!arr.length){
+    el.innerHTML='<p style="color:var(--tx2);text-align:center;padding:40px 0;font-size:14px">No sessions yet.<br>Start training! 🏌️</p>';
+    return;
+  }
+  el.innerHTML=arr.map(function(s,i){
+    var typeLabel={scorecard:'🏌️ Round',short:'⛳ Short Game',long:'🏹 Long Game'}[s.type]||s.type;
+    var badgeCls={scorecard:'bsc',short:'bsh',long:'blg'}[s.type]||'bsh';
+    var dateStr='—';
+    if(s.date){ try{ dateStr=new Date(s.date+'T12:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}); }catch(e){dateStr=s.date;} }
+    var title=s.course||s.location||'Session';
+    var sub=(s.duration?s.duration+' · ':'')+'HCP '+(s.hcp||'—');
+    var stats='';
+    if(s.type==='scorecard'&&s.sum)
+      stats='<div class="pill">Gross <span>'+(s.sum.gross||'—')+'</span></div><div class="pill">Stableford <span>'+(s.sum.stb||'—')+'</span></div><div class="pill">Putts <span>'+(s.sum.putts||'—')+'</span></div>';
+    else if(s.type==='short'&&s.sum)
+      stats='<div class="pill">Putting <span>'+(s.sum.putting||'—')+'</span></div><div class="pill">Chipping <span>'+(s.sum.chipping||'—')+'</span></div><div class="pill">Overall <span>'+(s.sum.overall||'—')+'</span></div>';
+    else if(s.type==='long'&&s.sum)
+      stats='<div class="pill">Wedge <span>'+(s.sum.wedge||'—')+'</span></div><div class="pill">Iron <span>'+(s.sum.iron||'—')+'</span></div><div class="pill">Drive <span>'+(s.sum.drive||'—')+'</span></div>';
+    return '<div class="hi"><div class="hih"><div><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span class="badge '+badgeCls+'">'+typeLabel+'</span><span style="font-size:12px;color:var(--tx2)">'+dateStr+'</span></div><div style="font-size:15px;font-weight:700">'+title+'</div><div style="font-size:12px;color:var(--tx2)">'+sub+'</div></div><button class="delbtn" data-i="'+i+'">🗑</button></div>'+(stats?'<div class="hib">'+stats+'</div>':'')+'</div>';
+  }).join('');
+  // attach delete buttons
+  el.querySelectorAll('.delbtn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var idx=parseInt(this.getAttribute('data-i'));
+      if(!confirm('Delete this session?')) return;
+      var arr=Store.get('sessions')||[];
+      arr.splice(idx,1);
+      Store.set('sessions',arr);
+      renderHistory(); updateHome();
+    });
+  });
+}
+
+/* ── EXPORT CSV ────────────────────────────────────────── */
+function exportCSV(){
+  var arr=Store.get('sessions')||[];
+  if(!arr.length){ toast('No sessions to export'); return; }
+  var csv='Type,Date,Location,HCP,Duration,Summary,Notes\n';
+  arr.forEach(function(s){
+    var sum='';
+    if(s.type==='scorecard'&&s.sum) sum='Gross:'+s.sum.gross+' Stb:'+s.sum.stb+' Putts:'+s.sum.putts;
+    if(s.type==='short'&&s.sum) sum='Putting:'+s.sum.putting+' Chipping:'+s.sum.chipping+' Overall:'+s.sum.overall;
+    if(s.type==='long'&&s.sum) sum='Wedge:'+s.sum.wedge+' Iron:'+s.sum.iron+' Drive:'+s.sum.drive;
+    csv+='"'+s.type+'","'+(s.date||'')+'","'+(s.course||s.location||'')+'","'+(s.hcp||'')+'","'+(s.duration||'')+'","'+sum+'","'+((s.notes||'').replace(/"/g,"'"))+'"\n';
+  });
+  try{
+    var blob=new Blob([csv],{type:'text/csv'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url; a.download='golf_sessions_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+    toast('📤 CSV exported!');
+  } catch(e){ toast('Export failed — try copying manually'); }
+}
+
+/* ── RESET FORMS ───────────────────────────────────────── */
+function resetSG(){
+  ['sg-date','sg-loc','sg-dur','sg-hcp','sg-sp1','sg-sp2','sg-l8','sg-l9','sg-l12',
+   'sg-miss','sg-cc','sg-cl','sg-chip','sg-pl','sg-ph','sg-ud','sg-notes'].forEach(function(id){
+    var e=document.getElementById(id); if(e) e.value='';
+  });
+  ['sg-wu1','sg-wu2','sg-lad','sg-cd'].forEach(function(id){
+    var c=document.getElementById(id);
+    if(c) c.querySelectorAll('button').forEach(function(b){b.className='';});
+    delete ynVals[id];
+  });
+  calcSG();
+}
+function resetLG(){
+  ['lg-date','lg-loc','lg-dur','lg-hcp','lg-45','lg-65','lg-90','lg-tl','lg-ts','lg-th',
+   'lg-ms','lg-mt','lg-ls','lg-lt','lg-fw','lg-fa','lg-dr','lg-an','lg-notes'].forEach(function(id){
+    var e=document.getElementById(id); if(e) e.value='';
+  });
+  ['lg-wu1','lg-wu2','lg-h1','lg-h2','lg-h3','lg-cd'].forEach(function(id){
+    var c=document.getElementById(id);
+    if(c) c.querySelectorAll('button').forEach(function(b){b.className='';});
+    delete ynVals[id];
+  });
+  calcLG();
+}
+function resetSC(){
+  ['sc-date','sc-course','sc-notes'].forEach(function(id){
+    var e=document.getElementById(id); if(e) e.value='';
+  });
+  holes=[]; document.getElementById('sc-table').innerHTML='';
+  document.getElementById('sc-table-card').style.display='none';
+  document.getElementById('sc-sum-card').style.display='none';
+}
+
+/* ── SETTINGS ──────────────────────────────────────────── */
+function loadSettings(){
+  var hcp=Store.get('hcp'), course=Store.get('course');
+  if(hcp){ document.getElementById('set-hcp').value=hcp; document.getElementById('h-hcp').textContent=hcp; }
+  if(course) document.getElementById('set-course').value=course;
+  // pre-fill HCP in session forms
+  ['sc-hcp','sg-hcp','lg-hcp'].forEach(function(id){
+    var e=document.getElementById(id); if(e&&hcp&&!e.value) e.value=hcp;
+  });
+}
+
+/* ── BUTTON EVENTS ─────────────────────────────────────── */
+function attachButtons(){
+  // Home quick buttons
+  var gSC=document.getElementById('go-scorecard');
+  var gSG=document.getElementById('go-short');
+  var gLG=document.getElementById('go-long');
+  if(gSC) gSC.addEventListener('click',function(){ showTab('scorecard'); });
+  if(gSG) gSG.addEventListener('click',function(){ showTab('short'); });
+  if(gLG) gLG.addEventListener('click',function(){ showTab('long'); });
+
+  // Save settings
+  var ss=document.getElementById('save-settings');
+  if(ss) ss.addEventListener('click',function(){
+    var hcp=document.getElementById('set-hcp').value;
+    var course=document.getElementById('set-course').value;
+    Store.set('hcp',hcp); Store.set('course',course);
+    ['sc-hcp','sg-hcp','lg-hcp'].forEach(function(id){
+      var e=document.getElementById(id); if(e) e.value=hcp;
+    });
+    updateHome(); toast('✅ Settings saved!');
+  });
+
+  // Build scorecard
+  var bsc=document.getElementById('build-sc');
+  if(bsc) bsc.addEventListener('click', buildSC);
+
+  // Save/reset scorecard
+  var saveSC=document.getElementById('save-sc');
+  if(saveSC) saveSC.addEventListener('click', saveScorecard);
+  var rstSC=document.getElementById('reset-sc');
+  if(rstSC) rstSC.addEventListener('click', resetSC);
+
+  // Save/reset short game
+  var saveSG=document.getElementById('save-sg');
+  if(saveSG) saveSG.addEventListener('click', saveShortGame);
+  var rstSG=document.getElementById('reset-sg');
+  if(rstSG) rstSG.addEventListener('click',function(){ resetSG(); toast('Form reset'); });
+
+  // Save/reset long game
+  var saveLG=document.getElementById('save-lg');
+  if(saveLG) saveLG.addEventListener('click', saveLongGame);
+  var rstLG=document.getElementById('reset-lg');
+  if(rstLG) rstLG.addEventListener('click',function(){ resetLG(); toast('Form reset'); });
+
+  // History export/clear
+  var exp=document.getElementById('export-csv');
+  if(exp) exp.addEventListener('click', exportCSV);
+  var clr=document.getElementById('clear-all');
+  if(clr) clr.addEventListener('click',function(){
+    if(!confirm('Delete ALL sessions? Cannot be undone.')) return;
+    Store.del('sessions'); renderHistory(); updateHome(); toast('🗑 Cleared');
+  });
+}
+
+/* ── SET TODAY'S DATE ──────────────────────────────────── */
+function setDates(){
+  var today=new Date().toISOString().split('T')[0];
+  ['sc-date','sg-date','lg-date'].forEach(function(id){
+    var e=document.getElementById(id); if(e&&!e.value) e.value=today;
+  });
+}
+
+/* ── INIT ──────────────────────────────────────────────── */
+try {
+  setDates();
+  initToggles();
+  attachLiveCalc();
+  attachButtons();
+  loadSettings();
+  updateHome();
+  renderHistory();
+} catch(err){
+  // show error visibly if init fails
+  document.getElementById('content').innerHTML='<div style="padding:20px;color:red;font-size:14px"><b>App error:</b><br>'+err.message+'<br><br>Please reload the page.</div>';
+}
+</script>
+</body>
+</html>

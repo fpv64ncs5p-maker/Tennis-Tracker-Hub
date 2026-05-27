@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>MatchMind — Architecture Landscape</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1f2630;
+    --ink: #e6edf3;
+    --muted: #8b949e;
+    --line: #30363d;
+    --accent: #4ade80;      /* tennis-ball green */
+    --accent-2: #facc15;     /* trophy yellow */
+    --blue: #60a5fa;
+    --pink: #f472b6;
+    --orange: #fb923c;
+    --purple: #c084fc;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, system-ui, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 48px 28px 80px; }
+  header.hero {
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 28px 32px;
+    background: radial-gradient(1200px 400px at 0% 0%, rgba(74,222,128,0.10), transparent 60%),
+                radial-gradient(900px 400px at 100% 0%, rgba(250,204,21,0.08), transparent 60%),
+                var(--panel);
+    margin-bottom: 32px;
+  }
+  .eyebrow { color: var(--accent); letter-spacing: 0.2em; font-size: 12px; text-transform: uppercase; font-weight: 600; }
+  h1 { font-size: 38px; margin: 8px 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 22px; margin: 40px 0 14px; letter-spacing: -0.005em; }
+  h3 { font-size: 16px; margin: 0 0 8px; color: var(--ink); }
+  p, li { color: var(--ink); }
+  .lede { color: var(--muted); max-width: 70ch; margin: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    padding: 6px 12px; border-radius: 999px; font-size: 12px; color: var(--muted);
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+
+  /* Sections */
+  section.card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .section-lead { color: var(--muted); margin: 0 0 18px; max-width: 75ch; }
+
+  /* Stack diagram */
+  .stack { display: grid; gap: 10px; }
+  .layer {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 18px;
+    background: var(--panel-2);
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 18px;
+    align-items: center;
+  }
+  .layer .label { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .layer .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .layer .desc { color: var(--muted); font-size: 14px; }
+  .layer .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .tag {
+    font-size: 11px; padding: 3px 8px; border-radius: 999px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--line); color: var(--ink);
+  }
+
+  /* Flow diagram grid */
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-top: 8px;
+  }
+  .node {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+    background: var(--panel-2);
+  }
+  .node .title { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 4px; }
+  .node .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .node .body { color: var(--muted); font-size: 13px; }
+  .node code { background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  .span-2 { grid-column: span 2; }
+  .span-3 { grid-column: span 3; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; color: var(--muted); font-size: 12px; }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .legend .sq { width: 10px; height: 10px; border-radius: 3px; }
+
+  /* SVG container */
+  .svg-wrap {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    overflow-x: auto;
+  }
+  svg { display: block; width: 100%; height: auto; }
+
+  /* Lifecycle */
+  .lifecycle {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .step {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    position: relative;
+  }
+  .step .num {
+    position: absolute; top: -10px; left: 12px;
+    background: var(--accent); color: #0e1116; font-weight: 700;
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 12px;
+  }
+  .step .t { font-weight: 600; margin-bottom: 4px; }
+  .step .d { color: var(--muted); font-size: 12px; }
+
+  /* Glossary */
+  dl.gloss { display: grid; grid-template-columns: 200px 1fr; gap: 10px 22px; margin: 0; }
+  dl.gloss dt { font-weight: 600; }
+  dl.gloss dd { margin: 0; color: var(--muted); }
+
+  footer { color: var(--muted); font-size: 12px; margin-top: 24px; text-align: center; }
+
+  @media (max-width: 800px) {
+    .layer { grid-template-columns: 1fr; }
+    .flow { grid-template-columns: 1fr; }
+    .span-2, .span-3 { grid-column: auto; }
+    .lifecycle { grid-template-columns: repeat(2, 1fr); }
+    dl.gloss { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">Architecture Landscape</div>
+    <h1>MatchMind — Tennis Match Tracker</h1>
+    <p class="lede">A single-page map of the watch app's tech stack and runtime components — what runs on the device, what each source file is responsible for, and how data moves between them during a match.</p>
+    <div class="meta">
+      <span class="chip"><b>Device</b> Garmin Vívoactive 6</span>
+      <span class="chip"><b>Language</b> Monkey C</span>
+      <span class="chip"><b>SDK</b> Connect IQ 9.1.0</span>
+      <span class="chip"><b>API Level</b> 6.0</span>
+      <span class="chip"><b>App Type</b> Watch App</span>
+      <span class="chip"><b>Storage</b> Toybox.Storage</span>
+      <span class="chip"><b>Recording</b> FitContributor + ActivityRecording</span>
+    </div>
+  </header>
+
+  <!-- =================== STACK =================== -->
+  <h2>1 · The Stack — from silicon to screen</h2>
+  <section class="card">
+    <p class="section-lead">Read top-down. Each layer depends on the one below it. MatchMind only writes code in the top three layers; everything underneath is Garmin's platform.</p>
+    <div class="stack">
+
+      <div class="layer">
+        <div class="label"><span class="swatch" style="background:var(--accent)"></span>App — MatchMind source</div>
+        <div>
+          <div class="desc">Your Monkey C code. Views, scoring engine, input handling, persistence, and activity recording.</div>
+          <div class="tags">
+            <span class="tag">App.mc</span><span class="tag">MainView.mc</span><span class="tag">SetupView.mc</span>
+            <span class="tag">PostMatchView.mc</span><span class="tag">MatchMenu.mc</span>
+            <span class="tag">TennisMatchEngine.mc</span><span class="tag">TennisActivityManager.mc</span>
+            <span class="tag">MatchPersistence.mc</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer">
+        <div class="label"><span class="swatch" style="background:var(--accent-2)"></span>Resources — declarative assets</div>
+        <div>
+          <div class="desc">XML and image assets compiled into the .prg by the Monkey C toolchain.</div>
+          <div class="tags">
+            <span class="tag">manifest.xml</span><span class="tag">layouts/layout.xml</span>
+            <span class="tag">menus/menu.xml</span><span class="tag">strings/strings.xml</span>
+            <span class="tag">drawables/launcher_icon.svg</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer">
+        <div class="label"><span class="swatch" style="background:var(--blue)"></span>Connect IQ SDK — Toybox APIs</div>
+        <div>
+          <div class="desc">Garmin's framework. MatchMind uses these modules to draw, react to input, persist data, and record FIT activities.</div>
+          <div class="tags">
+            <span class="tag">WatchUi</span><span class="tag">Graphics</span><span class="tag">System</span>
+            <span class="tag">Application</span><span class="tag">Storage</span>
+            <span class="tag">ActivityRecording</span><span class="tag">FitContributor</span>
+            <span class="tag">Timer</span><span class="tag">Lang</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer">
+        <div class="label"><span class="swatch" style="background:var(--purple)"></span>Monkey C Runtime (VM)</div>
+        <div>
+          <div class="desc">A small bytecode virtual machine on the watch. Your .mc files compile to .mir → .prg bytecode and run here.</div>
+          <div class="tags">
+            <span class="tag">Bytecode (.prg)</span><span class="tag">Memory budget</span><span class="tag">Garbage collected</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer">
+        <div class="label"><span class="swatch" style="background:var(--orange)"></span>Connect IQ OS — Garmin firmware</div>
+        <div>
+          <div class="desc">The watch's operating system. Schedules app frames, exposes sensors, owns the display buffer and the activity (FIT) recorder.</div>
+          <div class="tags">
+            <span class="tag">Display compositor</span><span class="tag">Input subsystem</span>
+            <span class="tag">HR &amp; sensor stack</span><span class="tag">FIT writer</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer">
+        <div class="label"><span class="swatch" style="background:var(--pink)"></span>Hardware — Vívoactive 6</div>
+        <div>
+          <div class="desc">390×390 AMOLED touch display, two physical buttons, optical HR sensor, GPS, accelerometer, BLE.</div>
+          <div class="tags">
+            <span class="tag">Touch + 2 buttons</span><span class="tag">Optical HR</span><span class="tag">BLE → Garmin Connect</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- =================== COMPONENT FLOW =================== -->
+  <h2>2 · Component Flow — what talks to what</h2>
+  <section class="card">
+    <p class="section-lead">The arrows below show data and control flow during a live match. Touches and button presses flow down through the input delegate; score updates flow back up to the view and out to storage + the FIT recorder.</p>
+
+    <div class="svg-wrap">
+      <svg viewBox="0 0 1000 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Component flow diagram">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/>
+          </marker>
+          <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#4ade80"/>
+          </marker>
+          <marker id="arrow-yellow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#facc15"/>
+          </marker>
+          <style>
+            .box { fill:#1f2630; stroke:#30363d; }
+            .box-accent { fill:#1f2630; stroke:#4ade80; }
+            .box-yellow { fill:#1f2630; stroke:#facc15; }
+            .title { fill:#e6edf3; font: 600 14px -apple-system, "SF Pro Text", sans-serif; }
+            .sub   { fill:#8b949e; font: 12px -apple-system, "SF Pro Text", sans-serif; }
+            .edge  { stroke:#8b949e; stroke-width:1.6; fill:none; }
+            .edge-green { stroke:#4ade80; stroke-width:1.8; fill:none; }
+            .edge-yellow{ stroke:#facc15; stroke-width:1.8; fill:none; }
+            .label { fill:#8b949e; font: 11px -apple-system, "SF Pro Text", sans-serif; }
+          </style>
+        </defs>
+
+        <!-- User / Hardware -->
+        <rect class="box" x="20" y="30" width="200" height="60" rx="10"/>
+        <text class="title" x="35" y="55">User &amp; Hardware</text>
+        <text class="sub"   x="35" y="75">touches · 2 buttons · HR sensor</text>
+
+        <!-- App.mc -->
+        <rect class="box-accent" x="400" y="20" width="200" height="60" rx="10"/>
+        <text class="title" x="415" y="45">App.mc</text>
+        <text class="sub"   x="415" y="65">AppBase · launch / onStart / onStop</text>
+
+        <!-- InputDelegate (inside each View) -->
+        <rect class="box" x="20" y="160" width="200" height="60" rx="10"/>
+        <text class="title" x="35" y="185">InputDelegate</text>
+        <text class="sub"   x="35" y="205">onTap · onSwipe · onKey</text>
+
+        <!-- Views -->
+        <rect class="box-accent" x="290" y="160" width="200" height="60" rx="10"/>
+        <text class="title" x="305" y="185">Views (WatchUi.View)</text>
+        <text class="sub"   x="305" y="205">Setup · Main · PostMatch · Menu</text>
+
+        <!-- Match Engine -->
+        <rect class="box-yellow" x="560" y="160" width="200" height="60" rx="10"/>
+        <text class="title" x="575" y="185">TennisMatchEngine</text>
+        <text class="sub"   x="575" y="205">points · games · sets · undo</text>
+
+        <!-- Activity Manager -->
+        <rect class="box-yellow" x="290" y="290" width="200" height="60" rx="10"/>
+        <text class="title" x="305" y="315">TennisActivityManager</text>
+        <text class="sub"   x="305" y="335">ActivityRecording session + HR</text>
+
+        <!-- Persistence -->
+        <rect class="box" x="560" y="290" width="200" height="60" rx="10"/>
+        <text class="title" x="575" y="315">MatchPersistence</text>
+        <text class="sub"   x="575" y="335">save / load via Toybox.Storage</text>
+
+        <!-- FitContributor -->
+        <rect class="box" x="290" y="420" width="200" height="60" rx="10"/>
+        <text class="title" x="305" y="445">FitContributor fields</text>
+        <text class="sub"   x="305" y="465">score · winners · errors · DFs</text>
+
+        <!-- Garmin Connect / FIT -->
+        <rect class="box" x="780" y="420" width="200" height="60" rx="10"/>
+        <text class="title" x="795" y="445">Garmin Connect</text>
+        <text class="sub"   x="795" y="465">FIT file synced via BLE</text>
+
+        <!-- Edges -->
+        <!-- User -> Input -->
+        <path class="edge" d="M120,90 L120,160" marker-end="url(#arrow)"/>
+        <text class="label" x="130" y="130">input</text>
+
+        <!-- App launches View -->
+        <path class="edge-green" d="M500,80 L390,160" marker-end="url(#arrow-green)"/>
+        <text class="label" x="430" y="120">push View</text>
+
+        <!-- Input -> View -->
+        <path class="edge" d="M220,190 L290,190" marker-end="url(#arrow)"/>
+
+        <!-- View -> Engine (events) -->
+        <path class="edge-yellow" d="M490,190 L560,190" marker-end="url(#arrow-yellow)"/>
+        <text class="label" x="495" y="180">awardPoint()</text>
+
+        <!-- Engine -> View (new state) -->
+        <path class="edge-yellow" d="M560,210 L490,210" marker-end="url(#arrow-yellow)"/>
+        <text class="label" x="495" y="225">match state</text>
+
+        <!-- View -> ActivityManager -->
+        <path class="edge" d="M390,220 L390,290" marker-end="url(#arrow)"/>
+        <text class="label" x="400" y="260">start / stop / lap</text>
+
+        <!-- Engine -> Persistence -->
+        <path class="edge" d="M660,220 L660,290" marker-end="url(#arrow)"/>
+        <text class="label" x="670" y="260">snapshot</text>
+
+        <!-- ActivityManager -> FitContributor -->
+        <path class="edge" d="M390,350 L390,420" marker-end="url(#arrow)"/>
+        <text class="label" x="400" y="390">write fields</text>
+
+        <!-- FitContributor -> Garmin Connect -->
+        <path class="edge" d="M490,450 L780,450" marker-end="url(#arrow)"/>
+        <text class="label" x="600" y="442">FIT file (BLE)</text>
+
+        <!-- Persistence loop back to View on resume -->
+        <path class="edge" d="M660,290 C 660,250 540,250 490,220" marker-end="url(#arrow)"/>
+        <text class="label" x="540" y="270">resume</text>
+
+      </svg>
+    </div>
+
+    <div class="legend">
+      <span class="item"><span class="sq" style="background:#4ade80"></span> UI / lifecycle</span>
+      <span class="item"><span class="sq" style="background:#facc15"></span> Match state</span>
+      <span class="item"><span class="sq" style="background:#8b949e"></span> Side effects (I/O, recording)</span>
+    </div>
+  </section>
+
+  <!-- =================== COMPONENT TABLE =================== -->
+  <h2>3 · Source files at a glance</h2>
+  <section class="card">
+    <div class="flow">
+      <div class="node">
+        <div class="title"><span class="dot" style="background:var(--accent)"></span> App.mc</div>
+        <div class="body">App entry point. Extends <code>Application.AppBase</code>. Decides which view to show on launch (resume prompt vs. setup).</div>
+      </div>
+      <div class="node">
+        <div class="title"><span class="dot" style="background:var(--accent)"></span> SetupView.mc</div>
+        <div class="body">Pre-match configuration: sets, tiebreak format, server, names. Hands off to MainView when started.</div>
+      </div>
+      <div class="node">
+        <div class="title"><span class="dot" style="background:var(--accent)"></span> MainView.mc</div>
+        <div class="body">The live match screen + its <code>InputDelegate</code>. Renders score; routes taps/swipes to the engine.</div>
+      </div>
+      <div class="node">
+        <div class="title"><span class="dot" style="background:var(--accent)"></span> PostMatchView.mc</div>
+        <div class="body">End-of-match summary list: duration, sets, winners, errors, double faults, HR.</div>
+      </div>
+      <div class="node">
+        <div class="title"><span class="dot" style="background:var(--accent)"></span> MatchMenu.mc</div>
+        <div class="body">In-match menu (end match, undo, settings) built from <code>menu.xml</code>.</div>
+      </div>
+      <div class="node">
+        <div class="title"><span class="dot" style="background:var(--accent-2)"></span> TennisMatchEngine.mc</div>
+        <div class="body">Pure scoring logic. Points → games → sets, tiebreak / super TB, undo stack. No UI, no I/O.</div>
+      </div>
+      <div class="node">
+        <div class="title"><span class="dot" style="background:var(--accent-2)"></span> TennisActivityManager.mc</div>
+        <div class="body">Wraps <code>ActivityRecording</code> + <code>FitContributor</code>. Starts/stops the session, writes custom FIT fields per point.</div>
+      </div>
+      <div class="node">
+        <div class="title"><span class="dot" style="background:var(--blue)"></span> MatchPersistence.mc</div>
+        <div class="body">Save / load match snapshots through <code>Toybox.Storage</code>. Powers the "Resume match?" prompt.</div>
+      </div>
+      <div class="node">
+        <div class="title"><span class="dot" style="background:var(--pink)"></span> resources/*.xml</div>
+        <div class="body">Strings, menu items, drawables, layout, manifest (appID, permissions, device targets).</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== LIFECYCLE =================== -->
+  <h2>4 · App lifecycle in 5 steps</h2>
+  <section class="card">
+    <div class="lifecycle">
+      <div class="step"><div class="num">1</div><div class="t">Launch</div><div class="d">OS loads .prg → runs App.mc onStart.</div></div>
+      <div class="step"><div class="num">2</div><div class="t">Resume check</div><div class="d">MatchPersistence checks Storage for a saved match.</div></div>
+      <div class="step"><div class="num">3</div><div class="t">Match</div><div class="d">MainView + InputDelegate drive the engine; ActivityManager records.</div></div>
+      <div class="step"><div class="num">4</div><div class="t">End</div><div class="d">Engine fires match-complete → PostMatchView shows stats.</div></div>
+      <div class="step"><div class="num">5</div><div class="t">Sync</div><div class="d">FIT file syncs to Garmin Connect over BLE.</div></div>
+    </div>
+  </section>
+
+  <!-- =================== BUILD PIPELINE =================== -->
+  <h2>5 · Build &amp; deploy pipeline</h2>
+  <section class="card">
+    <div class="svg-wrap">
+      <svg viewBox="0 0 1000 160" xmlns="http://www.w3.org/2000/svg" aria-label="Build pipeline">
+        <defs>
+          <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/>
+          </marker>
+          <style>
+            .b { fill:#1f2630; stroke:#30363d; }
+            .t { fill:#e6edf3; font: 600 13px -apple-system, "SF Pro Text", sans-serif; }
+            .s { fill:#8b949e; font: 11px -apple-system, "SF Pro Text", sans-serif; }
+            .e { stroke:#8b949e; stroke-width:1.6; fill:none; }
+          </style>
+        </defs>
+        <rect class="b" x="20"  y="50" width="150" height="60" rx="10"/>
+        <text class="t" x="32" y="78">.mc + .xml</text>
+        <text class="s" x="32" y="96">source &amp; resources</text>
+
+        <rect class="b" x="220" y="50" width="150" height="60" rx="10"/>
+        <text class="t" x="232" y="78">monkeyc</text>
+        <text class="s" x="232" y="96">SDK 9.1.0 compiler</text>
+
+        <rect class="b" x="420" y="50" width="150" height="60" rx="10"/>
+        <text class="t" x="432" y="78">.prg</text>
+        <text class="s" x="432" y="96">device bytecode</text>
+
+        <rect class="b" x="620" y="50" width="150" height="60" rx="10"/>
+        <text class="t" x="632" y="78">CIQ Simulator</text>
+        <text class="s" x="632" y="96">local test</text>
+
+        <rect class="b" x="820" y="50" width="150" height="60" rx="10"/>
+        <text class="t" x="832" y="78">Connect IQ Store</text>
+        <text class="s" x="832" y="96">.iq submission</text>
+
+        <path class="e" d="M170,80 L220,80" marker-end="url(#arr2)"/>
+        <path class="e" d="M370,80 L420,80" marker-end="url(#arr2)"/>
+        <path class="e" d="M570,80 L620,80" marker-end="url(#arr2)"/>
+        <path class="e" d="M770,80 L820,80" marker-end="url(#arr2)"/>
+      </svg>
+    </div>
+  </section>
+
+  <!-- =================== GLOSSARY =================== -->
+  <h2>6 · Quick glossary</h2>
+  <section class="card">
+    <dl class="gloss">
+      <dt>Monkey C</dt><dd>Garmin's app language — strongly typed, garbage collected, runs on a small VM on the watch.</dd>
+      <dt>Connect IQ</dt><dd>Garmin's app SDK and platform. Version 9.1.0 here.</dd>
+      <dt>API Level 6.0</dt><dd>Feature/version contract the app declares against. Determines which Toybox APIs are available.</dd>
+      <dt>Toybox</dt><dd>Namespace for Garmin's standard modules (WatchUi, Graphics, Storage, ActivityRecording, etc.).</dd>
+      <dt>View</dt><dd>A drawable screen. Implements <code>onUpdate(dc)</code> using the Graphics API.</dd>
+      <dt>InputDelegate</dt><dd>The companion object to a View. Receives taps, swipes, and key presses.</dd>
+      <dt>FitContributor</dt><dd>API for writing custom fields into the activity's FIT file (e.g. score, winners).</dd>
+      <dt>ActivityRecording</dt><dd>Starts an "Other" activity session so HR, time, and FIT fields are saved.</dd>
+      <dt>.prg / .iq</dt><dd>Compiled bytecode for the device; the .iq is the bundle uploaded to the store.</dd>
+    </dl>
+  </section>
+
+  <footer>MatchMind · architecture landscape · generated for PROJ007_Garmin App</footer>
+
+</div>
+</body>
+</html>

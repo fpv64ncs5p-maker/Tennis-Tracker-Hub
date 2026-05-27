@@ -413,15 +413,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <div id="home-storage-info" style="font-size:11px;color:var(--muted);margin-top:6px;text-align:center"></div>
       </div>
 
-      <!-- SYNC SETUP -->
+      <!-- SYNC STATUS (Supabase-backed, no token needed) -->
       <div class="home-section" id="sync-setup" style="display:none">
-        <div class="home-section-title">☁️ Sync Setup</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:8px">Paste your GitHub token to enable cross-device sync. It's stored only on this device.</p>
-        <div class="flex-gap8">
-          <input id="gh-token-input" type="password" placeholder="ghp_…" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--card);color:var(--text)">
-          <button class="btn btn-primary btn-sm" onclick="saveGHToken()">Save</button>
-        </div>
-        <p style="font-size:11px;color:var(--muted);margin-top:6px">Need a token? Go to github.com → Settings → Developer settings → Personal access tokens → Fine-grained → New token → select <em>Gists</em> read/write scope.</p>
+        <div class="home-section-title">☁️ Sync</div>
+        <p style="font-size:13px;color:var(--muted)">Sync is active — data is stored in Supabase automatically.</p>
       </div>
     </div>
 
@@ -6862,13 +6857,9 @@ function renderHome(){
   renderHomeWeekCalendar();
   renderHomeMotivation();
   updateStorageInfo();
-  // Show sync setup card if no token saved; show clear link if token exists
+  // Sync is always active (Supabase, no token needed)
   const ss=document.getElementById('sync-setup');
-  if(ss)ss.style.display=_ghToken()?'none':'block';
-  const si=document.getElementById('home-storage-info');
-  if(si&&_ghToken()){
-    si.innerHTML+='<br>☁️ Sync connected · <a href="#" onclick="clearGHToken();return false;" style="color:var(--muted)">clear token</a>';
-  }
+  if(ss)ss.style.display='none';
 }
 
 function renderHomeTodayFocus(){
@@ -7231,11 +7222,16 @@ window.addEventListener('beforeunload',e=>{
   if(isDirty()){e.preventDefault();e.returnValue='';}
 });
 
+// Supabase project constants (used by sync + Tennis tab)
+const _SB_URL  = 'https://pmzzmvzbgeonjnbfreze.supabase.co';
+const _SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtenptdnpiZ2VvbmpuYmZyZXplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2Nzk1ODUsImV4cCI6MjA5MjI1NTU4NX0.4yydLRsigkbKjCb0VCPt9-ppxtPUPWbs5c6y-4C8szk';
 // ══════════════════════════════════════════════════
-//  GITHUB GIST SYNC
+//  SUPABASE TRAINING DATA SYNC
+//  Replaces GitHub Gist — no token needed.
+//  Uses the same anon key as the Tennis tab.
+//  Single row in user_data table, JSONB blob, timestamp-based merge.
 // ══════════════════════════════════════════════════
-function _ghHeaders(){return{'Authorization':'Bearer '+_ghToken(),'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'};}
-const _GIST_FILE='training-hub-data.json';
+const _SB_ROW_ID='jo';  // fixed row ID — single user
 let _isOnline=navigator.onLine;
 let _syncTimer=null;
 let _pushInProgress=false;  // mutex: prevents concurrent push collisions
@@ -7248,78 +7244,59 @@ function _setSyncStatus(s){
   el.textContent=c.icon?(c.icon+' '+c.label):'';
 }
 
-function _ghToken(){return localStorage.getItem('_gh_token')||'';}
-function saveGHToken(){
-  const t=document.getElementById('gh-token-input').value.trim();
-  if(!t){toast('⚠️ Paste your GitHub token first');return;}
-  localStorage.setItem('_gh_token',t);
-  localStorage.removeItem('_gist_id');
-  document.getElementById('sync-setup').style.display='none';
-  toast('✅ Token saved! Syncing…');
-  syncFromCloud();
+function _sbSyncHeaders(){
+  return{
+    'apikey':_SB_KEY,
+    'Authorization':'Bearer '+_SB_KEY,
+    'Content-Type':'application/json',
+    'Prefer':'resolution=merge-duplicates'
+  };
 }
 
-async function _getGistId(){
-  if(!_ghToken()){throw new Error('No token — enter it in the Sync Setup section');}
-  const cached=localStorage.getItem('_gist_id');
-  if(cached)return cached;
-  const res=await fetch('https://api.github.com/gists?per_page=100',{headers:_ghHeaders()});
-  if(!res.ok)throw new Error('Cannot list gists (HTTP '+res.status+')');
-  const gists=await res.json();
-  const found=gists.find(g=>g.files&&g.files[_GIST_FILE]);
-  if(found){localStorage.setItem('_gist_id',found.id);return found.id;}
-  const cr=await fetch('https://api.github.com/gists',{
-    method:'POST',headers:_ghHeaders(),
-    body:JSON.stringify({description:'Training Hub Sync',public:false,files:{[_GIST_FILE]:{content:'{}'}}})
-  });
-  if(!cr.ok)throw new Error('Cannot create gist');
-  const ng=await cr.json();
-  localStorage.setItem('_gist_id',ng.id);
-  return ng.id;
-}
-
-async function _pushToGist(){
-  if(_pushInProgress)return;  // skip if a push is already in flight
+async function _pushToSupabase(){
+  if(_pushInProgress)return;
   _pushInProgress=true;
   try{
-    const gistId=await _getGistId();
     const data={};
     DATA_KEYS.forEach(k=>{const v=localStorage.getItem(k);if(v!==null)data[k]=JSON.parse(v);});
-    // Stamp with current local timestamp so other devices can compare
     const ts=parseInt(localStorage.getItem('_local_modified')||'0')||Date.now();
-    data._last_modified=ts;
-    const res=await fetch(`https://api.github.com/gists/${gistId}`,{
-      method:'PATCH',headers:_ghHeaders(),
-      body:JSON.stringify({files:{[_GIST_FILE]:{content:JSON.stringify(data)}}})
+    const res=await fetch(`${_SB_URL}/rest/v1/user_data`,{
+      method:'POST',
+      headers:_sbSyncHeaders(),
+      body:JSON.stringify({id:_SB_ROW_ID,data,last_modified:ts})
     });
-    if(!res.ok)throw new Error('Cannot update gist');
+    if(!res.ok){const t=await res.text();throw new Error(`HTTP ${res.status}: ${t}`);}
   }finally{
     _pushInProgress=false;
   }
+}
+
+async function _pullFromSupabase(){
+  const res=await fetch(
+    `${_SB_URL}/rest/v1/user_data?id=eq.${_SB_ROW_ID}&select=data,last_modified`,
+    {headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}}
+  );
+  if(!res.ok)throw new Error(`HTTP ${res.status}`);
+  const rows=await res.json();
+  return rows.length?rows[0]:null;
 }
 
 async function syncFromCloud(){
   if(!_isOnline){_setSyncStatus('offline');toast('🔴 Offline — sync when back online');return;}
   _setSyncStatus('syncing');
   try{
-    const gistId=await _getGistId();
-    const res=await fetch(`https://api.github.com/gists/${gistId}`,{headers:_ghHeaders()});
-    if(!res.ok)throw new Error('Cannot fetch gist');
-    const gist=await res.json();
-    const raw=gist.files[_GIST_FILE]?.content;
-    if(!raw||raw==='{}'){
-      await _pushToGist();
+    const row=await _pullFromSupabase();
+    if(!row||!row.data||Object.keys(row.data).length===0){
+      await _pushToSupabase();
       _setSyncStatus('ok');
       toast('🟢 Data uploaded to cloud!');
       return;
     }
-    const data=JSON.parse(raw);
     let changed=false;
     DATA_KEYS.forEach(k=>{
-      if(data[k]!==undefined){localStorage.setItem(k,JSON.stringify(data[k]));changed=true;}
+      if(row.data[k]!==undefined){localStorage.setItem(k,JSON.stringify(row.data[k]));changed=true;}
     });
-    // Adopt the Gist's timestamp so this device doesn't push stale data back on next load
-    if(data._last_modified){localStorage.setItem('_local_modified',data._last_modified.toString());}
+    if(row.last_modified){localStorage.setItem('_local_modified',row.last_modified.toString());}
     _setSyncStatus('ok');
     if(changed){
       const activeNav=document.querySelector('.nav-btn.active');
@@ -7338,72 +7315,51 @@ function _syncKeyToCloud(){
   if(!_isOnline||_pushInProgress)return;
   clearTimeout(_syncTimer);
   _syncTimer=setTimeout(async()=>{
-    try{await _pushToGist();_setSyncStatus('ok');}
+    try{await _pushToSupabase();_setSyncStatus('ok');}
     catch(e){_setSyncStatus('error');console.warn('Push error:',e);}
   },3000);
 }
 
 async function pushToCloud(){
-  if(!_ghToken()){toast('⚠️ No token — set up sync first');return;}
-  // Bump timestamp so this push is recognised as newer by other devices
   localStorage.setItem('_local_modified',Date.now().toString());
   _setSyncStatus('syncing');
-  try{await _pushToGist();_setSyncStatus('ok');toast('☁️ Pushed to cloud!');}
+  try{await _pushToSupabase();_setSyncStatus('ok');toast('☁️ Pushed to cloud!');}
   catch(e){_setSyncStatus('error');toast('⚠️ Push failed: '+e.message);}
 }
 async function pullFromCloud(){
-  if(!_ghToken()){toast('⚠️ No token — set up sync first');return;}
   await syncFromCloud();
 }
-function clearGHToken(){
-  if(!confirm('Remove sync token? You can re-enter it anytime.'))return;
-  localStorage.removeItem('_gh_token');
-  localStorage.removeItem('_gist_id');
-  _setSyncStatus('idle');
-  renderHome();
-  toast('🔑 Token cleared');
-}
-function signOut(){}
-function sendOTP(){}
-function verifyOTP(){}
 
+// Startup sync: timestamp-based merge, cloud wins if newer
 async function _sbInit(){
-  if(!_ghToken())return;
-  // Timestamp-based sync: compare local vs Gist, newest wins
-  // No more blind "local always wins" — prevents data divergence across devices
   _setSyncStatus('syncing');
   try{
     const localTs=parseInt(localStorage.getItem('_local_modified')||'0');
-    const gistId=await _getGistId();
-    const res=await fetch(`https://api.github.com/gists/${gistId}`,{headers:_ghHeaders()});
-    if(!res.ok)throw new Error('Cannot fetch gist');
-    const gist=await res.json();
-    const raw=gist.files[_GIST_FILE]?.content;
+    const row=await _pullFromSupabase();
 
-    // Gist is empty → upload local data (first time setup or reset)
-    if(!raw||raw==='{}'){
-      await _pushToGist();
+    if(!row||!row.data||Object.keys(row.data).length===0){
+      // Nothing in Supabase yet → seed from local data
+      await _pushToSupabase();
       _setSyncStatus('ok');
       return;
     }
 
-    const gistData=JSON.parse(raw);
-    const gistTs=gistData._last_modified||0;
+    const cloudTs=row.last_modified||0;
 
-    if(gistTs>localTs){
+    if(cloudTs>localTs){
       // Cloud is newer → pull
       DATA_KEYS.forEach(k=>{
-        if(gistData[k]!==undefined)localStorage.setItem(k,JSON.stringify(gistData[k]));
+        if(row.data[k]!==undefined)localStorage.setItem(k,JSON.stringify(row.data[k]));
       });
-      localStorage.setItem('_local_modified',gistTs.toString());
+      localStorage.setItem('_local_modified',cloudTs.toString());
       _setSyncStatus('ok');
       toast('🟢 Updated from cloud!');
       const activeNav=document.querySelector('.nav-btn.active');
       const tab=activeNav?activeNav.classList[1]:'home';
       switchTab(tab);
-    }else if(localTs>gistTs){
+    }else if(localTs>cloudTs){
       // Local is newer → push
-      await _pushToGist();
+      await _pushToSupabase();
       _setSyncStatus('ok');
     }else{
       // Already in sync
@@ -7418,7 +7374,7 @@ async function _sbInit(){
 window.addEventListener('online',async()=>{
   _isOnline=true;
   _setSyncStatus('syncing');
-  try{await _pushToGist();_setSyncStatus('ok');}
+  try{await _pushToSupabase();_setSyncStatus('ok');}
   catch(e){_setSyncStatus('error');};
 });
 window.addEventListener('offline',()=>{
@@ -7441,8 +7397,6 @@ function updateStorageInfo(){
 // ══════════════════════════════════════════════════
 //  TENNIS TAB — reads match history from Supabase
 // ══════════════════════════════════════════════════
-const _SB_URL  = 'https://pmzzmvzbgeonjnbfreze.supabase.co';
-const _SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBtenptdnpiZ2VvbmpuYmZyZXplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2Nzk1ODUsImV4cCI6MjA5MjI1NTU4NX0.4yydLRsigkbKjCb0VCPt9-ppxtPUPWbs5c6y-4C8szk';
 
 async function renderTennis(){
   const list=document.getElementById('tennis-list');

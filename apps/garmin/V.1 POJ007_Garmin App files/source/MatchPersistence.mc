@@ -25,15 +25,6 @@ module MatchPersistence {
     // Storage key — the string used to look up saved data.
     const STORAGE_KEY = "tennis_match_state";
 
-    // v1.3.8: dedicated Supabase payload key — saved at the moment an
-    // upload is attempted, cleared only when onResponse() confirms
-    // success (200/201/204). Completely independent of STORAGE_KEY so
-    // clearState() (called at match end) never wipes it. On next app
-    // open, if this key exists, App.mc reconstructs the engine and
-    // retries — no match data is ever lost even if the app exits before
-    // the HTTP response arrives.
-    const SUPABASE_PAYLOAD_KEY = "supabase_payload";
-
     // ─────────────────────────────────────────────────────────
     // saveState(engine)
     // Serializes the engine's full state and writes it to storage.
@@ -71,26 +62,6 @@ module MatchPersistence {
     function clearState() {
         Storage.deleteValue(STORAGE_KEY);
     }
-
-    // ─────────────────────────────────────────────────────────
-    // Supabase payload — saved when an upload is attempted,
-    // cleared only on confirmed success. Survives clearState().
-    // ─────────────────────────────────────────────────────────
-    function saveSupabasePayload(state) {
-        Storage.setValue(SUPABASE_PAYLOAD_KEY, state);
-    }
-
-    function hasSupabasePayload() {
-        return (Storage.getValue(SUPABASE_PAYLOAD_KEY) != null);
-    }
-
-    function loadSupabasePayload() {
-        return Storage.getValue(SUPABASE_PAYLOAD_KEY);
-    }
-
-    function clearSupabasePayload() {
-        Storage.deleteValue(SUPABASE_PAYLOAD_KEY);
-    }
 }
 
 
@@ -103,27 +74,11 @@ module MatchPersistence {
 
 using Toybox.WatchUi as Ui;
 using Toybox.Graphics as Gfx;
-using Toybox.System as Sys;
 
-// v1.1.2: responsive layout. Button bounds stored on the view so the
-// delegate doesn't have to hardcode tap zones (this was already the
-// May 5 fix, but the layout itself was still squished — buttons were
-// 70×36 and packed against the hint text).
 class ResumePromptView extends Ui.View {
-
-    var btnY;
-    var btnH;
-    var yesX;
-    var noX;
-    var btnW;
 
     function initialize() {
         View.initialize();
-        btnY = 0;
-        btnH = 0;
-        yesX = 0;
-        noX  = 0;
-        btnW = 0;
     }
 
     function onLayout(dc) {}
@@ -135,39 +90,23 @@ class ResumePromptView extends Ui.View {
         dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_BLACK);
         dc.fillRectangle(0, 0, w, h);
 
-        // Title and hint — well above the buttons
-        var titleY = h * 28 / 100;
-        var hintY  = titleY + dc.getFontHeight(Gfx.FONT_SMALL) + 4;
-
-        // Buttons — bigger, with breathing room
-        btnW       = w * 28 / 100;
-        btnH       = h * 14 / 100;
-        btnY       = h * 56 / 100;
-        var gap    = w * 4 / 100;
-        yesX       = w / 2 - btnW - gap / 2;
-        noX        = w / 2 + gap / 2;
-
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, titleY, Gfx.FONT_SMALL, "Resume match?",
-            Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
+        dc.drawText(w / 2, h / 2 - 50, Gfx.FONT_SMALL, "Resume match?", Gfx.TEXT_JUSTIFY_CENTER);
 
         dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, hintY, Gfx.FONT_XTINY, "A match was in progress",
-            Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
+        dc.drawText(w / 2, h / 2 - 20, Gfx.FONT_XTINY, "A match was in progress", Gfx.TEXT_JUSTIFY_CENTER);
 
-        // YES button (green filled)
+        // YES button
         dc.setColor(Gfx.COLOR_DK_GREEN, Gfx.COLOR_DK_GREEN);
-        dc.fillRoundedRectangle(yesX, btnY, btnW, btnH, 10);
+        dc.fillRoundedRectangle(w / 2 - 80, h / 2 + 10, 70, 36, 8);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(yesX + btnW / 2, btnY + btnH / 2, Gfx.FONT_SMALL, "YES",
-            Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
+        dc.drawText(w / 2 - 45, h / 2 + 18, Gfx.FONT_SMALL, "YES", Gfx.TEXT_JUSTIFY_CENTER);
 
-        // NO button (red filled)
+        // NO button
         dc.setColor(Gfx.COLOR_DK_RED, Gfx.COLOR_DK_RED);
-        dc.fillRoundedRectangle(noX, btnY, btnW, btnH, 10);
+        dc.fillRoundedRectangle(w / 2 + 10, h / 2 + 10, 70, 36, 8);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(noX + btnW / 2, btnY + btnH / 2, Gfx.FONT_SMALL, "NO",
-            Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
+        dc.drawText(w / 2 + 45, h / 2 + 18, Gfx.FONT_SMALL, "NO", Gfx.TEXT_JUSTIFY_CENTER);
     }
 
     function onShow() {}
@@ -176,68 +115,56 @@ class ResumePromptView extends Ui.View {
 
 class ResumePromptDelegate extends Ui.InputDelegate {
 
-    var view;
-
-    function initialize(promptView) {
+    function initialize() {
         InputDelegate.initialize();
-        view = promptView;
     }
 
     function onTap(clickEvent) {
-        if (view == null || view.btnH == 0) {
-            return true;  // layout not yet computed
-        }
-
         var coords = clickEvent.getCoordinates();
         var x      = coords[0];
         var y      = coords[1];
-        var pad    = 8;
 
-        // Tap must be within the button row vertically
-        if (y < view.btnY - pad || y > view.btnY + view.btnH + pad) {
-            return true;
-        }
+        // Determine screen width (approximation for Vivoactive 6)
+        var w = 390;
+        var h = 450;
 
-        // YES on the left, NO on the right — use the view's stored x bounds
-        if (x >= view.yesX - pad && x <= view.yesX + view.btnW + pad) {
-            resumeMatch();
-        } else if (x >= view.noX - pad && x <= view.noX + view.btnW + pad) {
-            MatchPersistence.clearState();
-            newMatch();
+        var btnY    = h / 2 + 10;
+        var btnH    = 36;
+
+        if (y >= btnY && y <= btnY + btnH) {
+            if (x < w / 2) {
+                // YES — resume
+                resumeMatch();
+            } else {
+                // NO — start fresh
+                MatchPersistence.clearState();
+                newMatch();
+            }
         }
         return true;
     }
 
     function resumeMatch() {
         var state  = MatchPersistence.loadState();
-        // State is a flat String-keyed dictionary (see TennisMatchEngine.getState())
         var config = {
-            :matchFormat           => state.hasKey("matchFormat") ? state["matchFormat"] : 0,
-            :setsToWin             => state["setsToWin"],
-            :tiebreakEnabled       => state["tbEnabled"],
-            :superTiebreakFinalSet => state["superTBFinal"]
+            :setsToWin             => state[:setsToWin],
+            :tiebreakEnabled       => state[:tiebreakEnabled],
+            :superTiebreakFinalSet => state[:superTiebreakFinalSet]
         };
-        var engine  = new TennisMatchEngine(config);
+        var engine = new TennisMatchEngine(config);
         engine.restore(state);
 
-        var manager = new TennisActivityManager();
-        manager.startSession();
-
-        // v1.1.2: MainDelegate now takes the MainView by reference.
-        var mainView = new MainView(engine, manager);
         Ui.switchToView(
-            mainView,
-            new MainDelegate(mainView, engine, manager),
+            new MainView(engine),
+            new MainDelegate(engine),
             Ui.SLIDE_IMMEDIATE
         );
     }
 
     function newMatch() {
-        // v1.1.2: SetupDelegate now takes the SetupView by reference.
-        var setupView = new SetupView();
         Ui.switchToView(
-            setupView,
-            new SetupDelegate(setupView),
+            new SetupView(),
+            new SetupDelegate(),
             Ui.SLIDE_IMMEDIATE
         );
     }
