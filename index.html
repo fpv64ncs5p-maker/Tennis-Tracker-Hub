@@ -2926,7 +2926,7 @@ function showSessionDetail(type,id){
     const detDownclimbs=detRoutes.filter(r=>r.climbedDown).length;
     const detRouteTotal=detRoutes.length+detDownclimbs;
     const detSends=detRoutes.filter(r=>r.result!=='Project').length;
-    const detMeters=detRoutes.reduce((a,r)=>a+wallH*(r.climbedDown?2:1),0);
+    const detMeters=getSessionMeters(s);
     const detMvRoutes=detRoutes.filter(r=>r.movements>0);
     const detTotalMvs=detMvRoutes.reduce((a,r)=>a+r.movements*(r.climbedDown?2:1),0);
     const detAvgMvs=detMvRoutes.length?Math.round(detTotalMvs/detMvRoutes.reduce((a,r)=>a+(r.climbedDown?2:1),0)):0;
@@ -3927,6 +3927,32 @@ function getSessionRoutes(s){
   return routes;
 }
 
+// Returns total meters climbed for a session, respecting per-block wall heights.
+// Fixes a bug where the history/week-totals/pyramid used a single session-level
+// wallH for all routes, ignoring blocks with different heights (e.g. 13m + 20m).
+function getSessionMeters(s){
+  const defaultH=parseFloat(GYMS[s.gym])||parseFloat(s.wallHeight)||0;
+  let m=0;
+  if(s.warmup!==undefined||s.cooldown!==undefined){
+    // Current format — warmup/cooldown use session/gym wall height
+    for(const e of [...(s.warmup||[]),...(s.cooldown||[])]){
+      if(defaultH>0) m+=defaultH*(e.climbedDown?2:1)*(e.count||1);
+    }
+    // Each block uses its own stored wall height
+    for(const b of (s.blocks||[])){
+      if(b.type!=='routes') continue;
+      const bH=b.wallHeight==='custom'?parseFloat(b.customWallHeight)||defaultH:(b.wallHeight?parseFloat(b.wallHeight):defaultH);
+      for(const e of (b.routes||b.entries||[])){
+        if(bH>0) m+=bH*(e.climbedDown?2:1)*(e.count||1);
+      }
+    }
+  } else {
+    // Legacy formats — fall back to session-level wall height
+    getSessionRoutes(s).forEach(r=>{ if(defaultH>0) m+=defaultH*(r.climbedDown?2:1); });
+  }
+  return m;
+}
+
 // Upgrade legacy session format to current warmup/blocks/cooldown structure.
 // Returns true if the session was migrated (caller should persist the change).
 function migrateClimbSessionFormat(s){
@@ -4161,8 +4187,7 @@ function renderClimbHistory(){
     const sends=routes.filter(r=>r.result!=='Project').length;
     const downclimbs=routes.filter(r=>r.climbedDown).length;
     const totalRouteCount=routes.length+downclimbs;
-    const wallH=GYMS[s.gym]||s.wallHeight||0;
-    const meters=routes.reduce((acc,r)=>acc+wallH*(r.climbedDown?2:1),0);
+    const meters=getSessionMeters(s);
     const mvsRoutes=routes.filter(r=>r.movements>0);
     const totalMvs=mvsRoutes.reduce((a,r)=>a+r.movements*(r.climbedDown?2:1),0);
     const totalMvsCount=mvsRoutes.reduce((a,r)=>a+(r.climbedDown?2:1),0);
@@ -4198,15 +4223,31 @@ function renderPyramid(){
   const counts={};
   PYRAMID.forEach(p=>{counts[p.grade]={os:0,rp:0,project:0,meters:0,moves:0,movesCount:0}});
   for(const s of DB.climbSessions()){
-    const wallH=GYMS[s.gym]||s.wallHeight||0;
-    for(const r of getSessionRoutes(s)){
+    const defaultH=parseFloat(GYMS[s.gym])||parseFloat(s.wallHeight)||0;
+    // Build a list of {route, wallH} pairs respecting per-block wall heights
+    const routesWithH=[];
+    if(s.warmup!==undefined||s.cooldown!==undefined){
+      for(const e of [...(s.warmup||[]),...(s.cooldown||[])]){
+        for(let i=0;i<(e.count||1);i++) routesWithH.push({r:{...e,result:normResult(e.result),climbedDown:e.climbedDown||false,movements:e.movements||0},h:defaultH});
+      }
+      for(const b of (s.blocks||[])){
+        if(b.type!=='routes') continue;
+        const bH=b.wallHeight==='custom'?parseFloat(b.customWallHeight)||defaultH:(b.wallHeight?parseFloat(b.wallHeight):defaultH);
+        for(const e of (b.routes||b.entries||[])){
+          for(let i=0;i<(e.count||1);i++) routesWithH.push({r:{...e,result:normResult(e.result),climbedDown:e.climbedDown||false,movements:e.movements||0},h:bH});
+        }
+      }
+    } else {
+      getSessionRoutes(s).forEach(r=>routesWithH.push({r,h:defaultH}));
+    }
+    for(const {r,h} of routesWithH){
       const band=gradeToBand(r.grade);
       if(!band||!counts[band])continue;
       if(r.result==='OS'||r.result==='Flash')counts[band].os++;
       if(r.result==='RP')counts[band].rp++;
       if(r.result==='Project')counts[band].project++;
       if(['OS','Flash','RP'].includes(r.result)){
-        counts[band].meters+=wallH*(r.climbedDown?2:1);
+        counts[band].meters+=h*(r.climbedDown?2:1);
       }
       // Movements count for ALL results — reflects training effort regardless of send quality
       if(r.movements>0){counts[band].moves+=r.movements;counts[band].movesCount++;}
@@ -4885,10 +4926,9 @@ function renderWeekTotals(weekStart){
   let climbMins=0,climbRoutes=0,climbMeters=0;
   climbS.forEach(s=>{
     climbMins+=parseInt(s.duration)||0;
-    const wallH=GYMS[s.gym]||s.wallHeight||0;
     const routes=getSessionRoutes(s);
     climbRoutes+=routes.length;
-    routes.forEach(r=>{ climbMeters+=wallH*(r.climbedDown?2:1); });
+    climbMeters+=getSessionMeters(s);
   });
 
   // ── Fingerboard ───────────────────────────────────
