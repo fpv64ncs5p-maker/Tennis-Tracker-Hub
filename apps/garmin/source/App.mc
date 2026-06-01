@@ -8,6 +8,7 @@
 
 using Toybox.Application as App;
 using Toybox.WatchUi as Ui;
+using Toybox.Lang;
 
 // TennisApp is the main application class.
 // Garmin calls onStart() automatically when the app opens.
@@ -42,18 +43,24 @@ class TennisApp extends App.AppBase {
         // so retries work even when the match ended normally via
         // finishAndExit (which wipes the resume state but not this key).
         if (MatchPersistence.hasSupabasePayload()) {
-            var state = MatchPersistence.loadSupabasePayload();
-            if (state != null) {
-                var config = {
-                    :matchFormat           => state.hasKey("matchFormat") ? state["matchFormat"] : 0,
-                    :setsToWin             => state["setsToWin"],
-                    :tiebreakEnabled       => state["tbEnabled"],
-                    :superTiebreakFinalSet => state["superTBFinal"]
-                };
-                var engine = new TennisMatchEngine(config);
-                engine.restore(state);
-                _startupSync = new SupabaseSync();
-                _startupSync.uploadMatch(engine, null);
+            try {
+                var state = MatchPersistence.loadSupabasePayload();
+                if (state != null) {
+                    var config = {
+                        :matchFormat           => state.hasKey("matchFormat") ? state["matchFormat"] : 0,
+                        :setsToWin             => state["setsToWin"],
+                        :tiebreakEnabled       => state["tbEnabled"],
+                        :superTiebreakFinalSet => state["superTBFinal"]
+                    };
+                    var engine = new TennisMatchEngine(config);
+                    engine.restore(state);
+                    _startupSync = new SupabaseSync();
+                    _startupSync.uploadMatch(engine, null);
+                }
+            } catch (ex instanceof Lang.Exception) {
+                // Corrupted or stale payload — clear it and continue.
+                // This prevents a bad payload from crashing the app on startup.
+                MatchPersistence.clearSupabasePayload();
             }
         }
 

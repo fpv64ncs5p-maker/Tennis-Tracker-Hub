@@ -41,7 +41,7 @@ Monorepo combining the Garmin tennis tracker app (MatchMind) and the Training Hu
 - Supabase RLS: anon INSERT (watch app) + anon SELECT (web app)
 
 ## Current Version
-- Garmin app: **v1.3.8** (ready to build & submit — Supabase retry now uses dedicated payload key, survives clearState())
+- Garmin app: **v1.4.0** (submitted to Garmin store 2026-05-28 — awaiting approval)
 
 ## Deployment
 
@@ -55,7 +55,12 @@ Monorepo combining the Garmin tennis tracker app (MatchMind) and the Training Hu
 - Source code in `apps/garmin/source/`
 - `Secrets.mc` is NOT in git (excluded via .gitignore) — kept locally only
 - Build for simulator: `./run.sh` (from iCloud project folder)
-- Build for store: `./package.sh` → generates `bin/Tennistracker.iq`
+- Build for store:
+  ```bash
+  cd ~/Library/Mobile\ Documents/com~apple~CloudDocs/01\ Claude\ in\ Docs/02\ Projects/PROJ007_Garmin\ App/Tennistracker
+  ./package.sh
+  ```
+  → generates `bin/Tennistracker.iq`
 - Submit `.iq` file to: https://developer.garmin.com/connect-iq/sdk/
 - Garmin approval takes ~2 hours
 - Users install update from ConnectIQ Store

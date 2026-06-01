@@ -19,6 +19,7 @@ using Toybox.System as Sys;
 using Toybox.Time;
 using Toybox.Time.Gregorian;
 using Toybox.Lang;
+using Toybox.Application;
 
 class SupabaseSync {
 
@@ -69,6 +70,9 @@ class SupabaseSync {
             // v1.3.8: upload confirmed — clear the saved payload so
             // App.mc doesn't retry on next startup.
             MatchPersistence.clearSupabasePayload();
+            // v1.3.10: release GC anchors now that the request is done.
+            Application.getApp()._matchSync    = null;
+            Application.getApp()._startupSync  = null;
         } else {
             Sys.println("SupabaseSync: FAILED code=" + responseCode + " data=" + data);
             // Payload stays in Storage — App.mc will retry on next open.

@@ -44,6 +44,7 @@ using Toybox.Activity as Activity;
 using Toybox.ActivityRecording as Recording;
 using Toybox.FitContributor as FitContributor;
 using Toybox.Sensor as Sensor;
+using Toybox.Application;
 
 class TennisActivityManager {
 
@@ -226,6 +227,10 @@ class TennisActivityManager {
             // Cleared only when Supabase confirms success (200/201/204).
             MatchPersistence.saveSupabasePayload(engine.getState());
             _supabaseSync.uploadMatch(engine, self);
+            // v1.3.10: anchor self on TennisApp so GC cannot collect this
+            // object (and the SupabaseSync callback within it) while the
+            // async HTTP request is still in-flight.
+            Application.getApp()._matchSync = self;
         }
     }
 
@@ -257,6 +262,8 @@ class TennisActivityManager {
             _uploadFired = true;
             MatchPersistence.saveSupabasePayload(engine.getState());
             _supabaseSync.uploadMatch(engine, self);
+            // v1.3.10: anchor self on TennisApp against GC.
+            Application.getApp()._matchSync = self;
         }
     }
 

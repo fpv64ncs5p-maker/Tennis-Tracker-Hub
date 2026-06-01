@@ -2926,7 +2926,7 @@ function showSessionDetail(type,id){
     const detDownclimbs=detRoutes.filter(r=>r.climbedDown).length;
     const detRouteTotal=detRoutes.length+detDownclimbs;
     const detSends=detRoutes.filter(r=>r.result!=='Project').length;
-    const detMeters=getSessionMeters(s);
+    const detMeters=detRoutes.reduce((a,r)=>a+wallH*(r.climbedDown?2:1),0);
     const detMvRoutes=detRoutes.filter(r=>r.movements>0);
     const detTotalMvs=detMvRoutes.reduce((a,r)=>a+r.movements*(r.climbedDown?2:1),0);
     const detAvgMvs=detMvRoutes.length?Math.round(detTotalMvs/detMvRoutes.reduce((a,r)=>a+(r.climbedDown?2:1),0)):0;
@@ -3927,32 +3927,6 @@ function getSessionRoutes(s){
   return routes;
 }
 
-// Returns total meters climbed for a session, respecting per-block wall heights.
-// Fixes a bug where the history/week-totals/pyramid used a single session-level
-// wallH for all routes, ignoring blocks with different heights (e.g. 13m + 20m).
-function getSessionMeters(s){
-  const defaultH=parseFloat(GYMS[s.gym])||parseFloat(s.wallHeight)||0;
-  let m=0;
-  if(s.warmup!==undefined||s.cooldown!==undefined){
-    // Current format — warmup/cooldown use session/gym wall height
-    for(const e of [...(s.warmup||[]),...(s.cooldown||[])]){
-      if(defaultH>0) m+=defaultH*(e.climbedDown?2:1)*(e.count||1);
-    }
-    // Each block uses its own stored wall height
-    for(const b of (s.blocks||[])){
-      if(b.type!=='routes') continue;
-      const bH=b.wallHeight==='custom'?parseFloat(b.customWallHeight)||defaultH:(b.wallHeight?parseFloat(b.wallHeight):defaultH);
-      for(const e of (b.routes||b.entries||[])){
-        if(bH>0) m+=bH*(e.climbedDown?2:1)*(e.count||1);
-      }
-    }
-  } else {
-    // Legacy formats — fall back to session-level wall height
-    getSessionRoutes(s).forEach(r=>{ if(defaultH>0) m+=defaultH*(r.climbedDown?2:1); });
-  }
-  return m;
-}
-
 // Upgrade legacy session format to current warmup/blocks/cooldown structure.
 // Returns true if the session was migrated (caller should persist the change).
 function migrateClimbSessionFormat(s){
@@ -4187,7 +4161,8 @@ function renderClimbHistory(){
     const sends=routes.filter(r=>r.result!=='Project').length;
     const downclimbs=routes.filter(r=>r.climbedDown).length;
     const totalRouteCount=routes.length+downclimbs;
-    const meters=getSessionMeters(s);
+    const wallH=GYMS[s.gym]||s.wallHeight||0;
+    const meters=routes.reduce((acc,r)=>acc+wallH*(r.climbedDown?2:1),0);
     const mvsRoutes=routes.filter(r=>r.movements>0);
     const totalMvs=mvsRoutes.reduce((a,r)=>a+r.movements*(r.climbedDown?2:1),0);
     const totalMvsCount=mvsRoutes.reduce((a,r)=>a+(r.climbedDown?2:1),0);
@@ -4223,31 +4198,15 @@ function renderPyramid(){
   const counts={};
   PYRAMID.forEach(p=>{counts[p.grade]={os:0,rp:0,project:0,meters:0,moves:0,movesCount:0}});
   for(const s of DB.climbSessions()){
-    const defaultH=parseFloat(GYMS[s.gym])||parseFloat(s.wallHeight)||0;
-    // Build a list of {route, wallH} pairs respecting per-block wall heights
-    const routesWithH=[];
-    if(s.warmup!==undefined||s.cooldown!==undefined){
-      for(const e of [...(s.warmup||[]),...(s.cooldown||[])]){
-        for(let i=0;i<(e.count||1);i++) routesWithH.push({r:{...e,result:normResult(e.result),climbedDown:e.climbedDown||false,movements:e.movements||0},h:defaultH});
-      }
-      for(const b of (s.blocks||[])){
-        if(b.type!=='routes') continue;
-        const bH=b.wallHeight==='custom'?parseFloat(b.customWallHeight)||defaultH:(b.wallHeight?parseFloat(b.wallHeight):defaultH);
-        for(const e of (b.routes||b.entries||[])){
-          for(let i=0;i<(e.count||1);i++) routesWithH.push({r:{...e,result:normResult(e.result),climbedDown:e.climbedDown||false,movements:e.movements||0},h:bH});
-        }
-      }
-    } else {
-      getSessionRoutes(s).forEach(r=>routesWithH.push({r,h:defaultH}));
-    }
-    for(const {r,h} of routesWithH){
+    const wallH=GYMS[s.gym]||s.wallHeight||0;
+    for(const r of getSessionRoutes(s)){
       const band=gradeToBand(r.grade);
       if(!band||!counts[band])continue;
       if(r.result==='OS'||r.result==='Flash')counts[band].os++;
       if(r.result==='RP')counts[band].rp++;
       if(r.result==='Project')counts[band].project++;
       if(['OS','Flash','RP'].includes(r.result)){
-        counts[band].meters+=h*(r.climbedDown?2:1);
+        counts[band].meters+=wallH*(r.climbedDown?2:1);
       }
       // Movements count for ALL results — reflects training effort regardless of send quality
       if(r.movements>0){counts[band].moves+=r.movements;counts[band].movesCount++;}
@@ -4926,9 +4885,10 @@ function renderWeekTotals(weekStart){
   let climbMins=0,climbRoutes=0,climbMeters=0;
   climbS.forEach(s=>{
     climbMins+=parseInt(s.duration)||0;
+    const wallH=GYMS[s.gym]||s.wallHeight||0;
     const routes=getSessionRoutes(s);
     climbRoutes+=routes.length;
-    climbMeters+=getSessionMeters(s);
+    routes.forEach(r=>{ climbMeters+=wallH*(r.climbedDown?2:1); });
   });
 
   // ── Fingerboard ───────────────────────────────────
@@ -7297,14 +7257,13 @@ async function _pushToSupabase(){
   if(_pushInProgress)return;
   _pushInProgress=true;
   try{
-    const payload={};
-    DATA_KEYS.forEach(k=>{const v=localStorage.getItem(k);if(v!==null)payload[k]=JSON.parse(v);});
+    const data={};
+    DATA_KEYS.forEach(k=>{const v=localStorage.getItem(k);if(v!==null)data[k]=JSON.parse(v);});
     const ts=parseInt(localStorage.getItem('_local_modified')||'0')||Date.now();
-    // Store as key-value row: key='jo', value={payload:{...all data...}, last_modified:ts}
     const res=await fetch(`${_SB_URL}/rest/v1/user_data`,{
       method:'POST',
       headers:_sbSyncHeaders(),
-      body:JSON.stringify({key:_SB_ROW_ID, value:{payload, last_modified:ts}})
+      body:JSON.stringify({id:_SB_ROW_ID,data,last_modified:ts})
     });
     if(!res.ok){const t=await res.text();throw new Error(`HTTP ${res.status}: ${t}`);}
   }finally{
@@ -7314,14 +7273,12 @@ async function _pushToSupabase(){
 
 async function _pullFromSupabase(){
   const res=await fetch(
-    `${_SB_URL}/rest/v1/user_data?key=eq.${_SB_ROW_ID}&select=value`,
+    `${_SB_URL}/rest/v1/user_data?id=eq.${_SB_ROW_ID}&select=data,last_modified`,
     {headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}}
   );
   if(!res.ok)throw new Error(`HTTP ${res.status}`);
   const rows=await res.json();
-  if(!rows.length) return null;
-  // rows[0].value = {payload:{...all training data...}, last_modified:ts}
-  return rows[0].value||null;
+  return rows.length?rows[0]:null;
 }
 
 async function syncFromCloud(){
@@ -7329,7 +7286,7 @@ async function syncFromCloud(){
   _setSyncStatus('syncing');
   try{
     const row=await _pullFromSupabase();
-    if(!row||!row.payload||Object.keys(row.payload).length===0){
+    if(!row||!row.data||Object.keys(row.data).length===0){
       await _pushToSupabase();
       _setSyncStatus('ok');
       toast('🟢 Data uploaded to cloud!');
@@ -7337,7 +7294,7 @@ async function syncFromCloud(){
     }
     let changed=false;
     DATA_KEYS.forEach(k=>{
-      if(row.payload[k]!==undefined){localStorage.setItem(k,JSON.stringify(row.payload[k]));changed=true;}
+      if(row.data[k]!==undefined){localStorage.setItem(k,JSON.stringify(row.data[k]));changed=true;}
     });
     if(row.last_modified){localStorage.setItem('_local_modified',row.last_modified.toString());}
     _setSyncStatus('ok');
@@ -7380,7 +7337,7 @@ async function _sbInit(){
     const localTs=parseInt(localStorage.getItem('_local_modified')||'0');
     const row=await _pullFromSupabase();
 
-    if(!row||!row.payload||Object.keys(row.payload).length===0){
+    if(!row||!row.data||Object.keys(row.data).length===0){
       // Nothing in Supabase yet → seed from local data
       await _pushToSupabase();
       _setSyncStatus('ok');
@@ -7392,7 +7349,7 @@ async function _sbInit(){
     if(cloudTs>localTs){
       // Cloud is newer → pull
       DATA_KEYS.forEach(k=>{
-        if(row.payload[k]!==undefined)localStorage.setItem(k,JSON.stringify(row.payload[k]));
+        if(row.data[k]!==undefined)localStorage.setItem(k,JSON.stringify(row.data[k]));
       });
       localStorage.setItem('_local_modified',cloudTs.toString());
       _setSyncStatus('ok');

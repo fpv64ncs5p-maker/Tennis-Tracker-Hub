@@ -10,11 +10,11 @@ GitHub Gist sync was fragile — required a Personal Access Token, had race cond
 **Solution:**
 Replaced the entire Gist sync section with Supabase-backed sync. No token needed — uses the same anon key already in the file (same project as the Tennis tab). Architecture is identical: localStorage-first, single JSON blob, timestamp-based merge (cloud wins if newer, local pushes if newer, deferred 3s on every write).
 
-**Supabase table:** `user_data`
-- `id TEXT PRIMARY KEY` — fixed value `'jo'`
-- `data JSONB` — all 14 training data keys as one blob
-- `last_modified BIGINT` — Unix timestamp for merge decisions
-- RLS: anon SELECT + INSERT + UPDATE (same pattern as matches table)
+**Supabase table:** `user_data` (pre-existing key-value store schema)
+- `key TEXT` — row identifier, fixed value `'jo'`
+- `value JSONB` — stores `{payload: {...all 14 training data keys...}, last_modified: ts}`
+- `updated_at TIMESTAMPTZ` — auto-managed
+- RLS + GRANT already configured on this table
 
 **SQL to run:** `supabase-migration.sql` in repo root.
 
@@ -28,6 +28,49 @@ Replaced the entire Gist sync section with Supabase-backed sync. No token needed
   - Moved `_SB_URL`/`_SB_KEY` to before sync section (shared by sync + Tennis tab)
   - Removed GitHub token setup UI from Home screen
   - `renderHome()` simplified — no token check, sync always active
+
+---
+
+## v1.3.10 — 2026-05-28
+
+### Fix: makeWebRequest fails during getInitialView() + GC kills callback
+
+**Problem 1 — Too-early web request:**
+The startup retry in v1.3.9 called `makeWebRequest` inside `getInitialView()`. This fires before the Communications layer is ready — in the simulator it returns -200; on a real watch it silently drops the request. The `supabase_payload` key was never cleared, so every app open attempted and failed the retry forever.
+
+**Problem 2 — Garbage collection kills the callback:**
+Even when `makeWebRequest` fires at the right time, if the `SupabaseSync` instance (or the `TennisActivityManager` holding it) is not anchored to a long-lived object, the Monkey C GC can collect it before `onResponse()` fires. The HTTP request completes but the callback is gone — Supabase gets the POST but the app never clears the `supabase_payload` key.
+
+**Fix 1 — Deferred retry via Timer:**
+Moved the pending-upload retry from `getInitialView()` to `onStart()`. A 2-second `Timer.Timer` (`_retryTimer`) defers `retryPendingUpload()` until the app is fully initialised and the Communications layer is live.
+
+**Fix 2 — GC anchor on TennisApp:**
+Added `_matchSync` field to `TennisApp`. After `_supabaseSync.uploadMatch(engine, self)` fires in both `earlyUpload()` and `stopSession()`, the `TennisActivityManager` instance is anchored: `Application.getApp()._matchSync = self`. Released to `null` in `SupabaseSync.onResponse()` on success (along with `_startupSync`).
+
+**Files changed:**
+- `apps/garmin/source/App.mc` — moved retry to `onStart()` + timer; added `_matchSync` and `_retryTimer` fields
+- `apps/garmin/source/TennisActivityManager.mc` — added `using Toybox.Application;`; added `Application.getApp()._matchSync = self` in `earlyUpload()` and `stopSession()`
+- `apps/garmin/source/SupabaseSync.mc` — added `using Toybox.Application;`; added GC anchor release in `onResponse()` on success
+
+---
+
+## v1.3.9 — 2026-05-27
+
+### Fix: Wrong Supabase anon key + startup retry crash
+
+**Problem 1 — Wrong key format:**
+`Secrets.mc` had `sb_publishable_...` format key (new Supabase SDK format) instead of the JWT token required by the REST API. The Garmin app calls Supabase directly via `makeWebRequest` (raw REST, no SDK), so it needs the `eyJ...` JWT anon key. All upload attempts silently went nowhere — Supabase API logs showed zero requests to `/rest/v1/matches`.
+
+**Fix:** Updated `SUPABASE_ANON_KEY` in `Secrets.mc` to the JWT token (same key confirmed working in Training Hub).
+
+**Problem 2 — Startup retry crash:**
+When a stale `supabase_payload` was in Storage (from a previous session with the wrong key), the startup retry in `App.mc` crashed with `Symbol Not Found Error`. The crash prevented the app from launching.
+
+**Fix:** Wrapped the entire startup retry block in `try/catch (Lang.Exception)`. If restore or upload fails for any reason, the bad payload is cleared and the app continues normally.
+
+**Files changed:**
+- `Secrets.mc` — `SUPABASE_ANON_KEY` updated to JWT format (gitignored, not committed)
+- `apps/garmin/source/App.mc` — added `using Toybox.Lang;`, wrapped startup retry in try/catch
 
 ---
 
