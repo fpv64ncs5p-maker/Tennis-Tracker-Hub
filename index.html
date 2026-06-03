@@ -3974,6 +3974,21 @@ function getSessionRoutes(s){
 
 // Upgrade legacy session format to current warmup/blocks/cooldown structure.
 // Returns true if the session was migrated (caller should persist the change).
+function _migrateGymExerciseTypes(){
+  const sessions=DB.gymSessions();
+  let changed=false;
+  const CARDIO_NAMES=new Set(EXERCISES.filter(e=>e.cardio).map(e=>e.name));
+  sessions.forEach(s=>{
+    (s.exercises||[]).forEach(e=>{
+      if(!e.type){
+        e.type=CARDIO_NAMES.has(e.name)?'cardio':'strength';
+        changed=true;
+      }
+    });
+  });
+  if(changed)DB.set('gym_sessions',sessions);
+}
+
 function migrateClimbSessionFormat(s){
   // Already current format
   if(s.warmup!==undefined||s.cooldown!==undefined) return false;
@@ -7251,6 +7266,8 @@ document.addEventListener('DOMContentLoaded',async ()=>{
   renderHome();
   _restoreDraftClimb();
   _restoreGymDraft();
+  // Migrate gym session exercises missing type field (from old template loads)
+  _migrateGymExerciseTypes();
   // Supabase auth + sync
   await _sbInit();
 });
