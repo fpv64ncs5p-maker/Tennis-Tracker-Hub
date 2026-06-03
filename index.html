@@ -2720,11 +2720,24 @@ function calcVolByCat(exercises){
   });
   return vol;
 }
+function calcBWByCat(exercises){
+  // group bodyweight (no weight) strength exercises by category → {cat: [{name, sets}]}
+  const bw={};
+  exercises.forEach(e=>{
+    if(e.type==='strength'&&(!e.weight||parseFloat(e.weight)===0)&&e.sets){
+      if(!bw[e.cat])bw[e.cat]=[];
+      bw[e.cat].push({name:e.name,sets:e.sets,reps:e.reps||''});
+    }
+  });
+  return bw;
+}
 
 function showVolumeSummary(session){
   const vol=calcVolByCat(session.exercises);
   const cats=Object.keys(vol).sort((a,b)=>vol[b]-vol[a]);
   const totalVol=cats.reduce((s,c)=>s+vol[c],0);
+  const bw=calcBWByCat(session.exercises);
+  const bwCats=Object.keys(bw);
   const workedCats=new Set(session.exercises.map(e=>e.cat));
   const durStr=session.durationMins?(()=>{const h=Math.floor(session.durationMins/60),m=session.durationMins%60;return `${h>0?h+'h ':''}${m}min`;})():'';
   let html=`<div class="modal-header"><div class="modal-title">✅ Session saved!</div><button class="modal-close" aria-label="Close" onclick="closeModal('modal-session-detail')">✕</button></div>`;
@@ -2734,11 +2747,11 @@ function showVolumeSummary(session){
     if(session.bodyWeight)parts.push(`⚖️ ${session.bodyWeight} kg`);
     html+=`<p style="color:var(--muted);font-size:13px;margin-bottom:12px">${parts.join(' · ')}</p>`;
   }
-  // body diagram + volume bars side by side
+  // body diagram + volume bars
   let volHtml='';
   if(cats.length){
     const maxVol=vol[cats[0]];
-    volHtml+=`<div style="margin-bottom:8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Volume</div>`;
+    volHtml+=`<div style="margin-bottom:8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Volume (weighted)</div>`;
     volHtml+=cats.map(c=>{
       const pct=Math.round(vol[c]/maxVol*100);
       const kg=vol[c]>=1000?(vol[c]/1000).toFixed(1)+'t':Math.round(vol[c])+'kg';
@@ -2755,8 +2768,22 @@ function showVolumeSummary(session){
       <span style="font-weight:600">Total</span>
       <span style="color:var(--gym);font-weight:700">${totalVol>=1000?(totalVol/1000).toFixed(1)+'t':Math.round(totalVol)+'kg'}</span>
     </div>`;
-  } else {
+  } else if(!bwCats.length){
     volHtml=`<p class="text-sm-muted">No weighted exercises.</p>`;
+  }
+  // bodyweight section
+  if(bwCats.length){
+    volHtml+=`<div style="margin-top:${cats.length?14:0}px;margin-bottom:8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Bodyweight</div>`;
+    volHtml+=bwCats.map(cat=>{
+      const items=bw[cat];
+      const totalSets=items.reduce((a,e)=>a+(parseFloat(e.sets)||0),0);
+      return `<div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+          <span style="font-weight:600">${cat}</span><span style="color:var(--muted)">${totalSets} sets</span>
+        </div>
+        <div style="font-size:11px;color:var(--muted)">${items.map(e=>`${e.name}${e.reps?' ×'+e.reps:''}`).join(' · ')}</div>
+      </div>`;
+    }).join('');
   }
   html+=`<div style="display:flex;flex-direction:column;align-items:center;gap:12px">
     ${drawBodyDiagram(workedCats)}

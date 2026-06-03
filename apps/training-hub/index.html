@@ -21,7 +21,7 @@
   --climb:#1d4ed8;--climb-dim:#dbeafe;--climb-glow:rgba(29,78,216,.12);
   --rehab:#ea580c;--rehab-dim:#ffedd5;--rehab-glow:rgba(234,88,12,.12);
   --plan:#6d28d9;--plan-dim:#ede9fe;--plan-glow:rgba(109,40,217,.12);
-  --tennis:#4d7c0f;--tennis-dim:#ecfccb;--tennis-glow:rgba(77,124,15,.12);
+  --tennis:#7c3aed;--tennis-dim:rgba(167,139,250,.15);--tennis-glow:rgba(167,139,250,.12);
   --red:#dc2626;--yellow:#b45309;--green:#15803d;
   --radius:14px;--radius-sm:9px;--nav-h:68px;
 }
@@ -128,6 +128,8 @@ select option{background:var(--surface2)}
 .segment{display:flex;background:var(--surface2);border-radius:var(--radius-sm);padding:3px;gap:3px;margin-bottom:12px;border:1.5px solid var(--border)}
 .seg-btn{flex:1;padding:6px 4px;border:none;background:none;color:var(--muted);border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;text-align:center;-webkit-tap-highlight-color:transparent}
 .seg-btn.active{background:var(--surface);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.12);font-weight:800}
+.pill-toggle{padding:6px 14px;border:1.5px solid var(--border);border-radius:20px;background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.pill-toggle.active{font-weight:700}
 
 /* ── Empty state ── */
 .empty{text-align:center;padding:40px 20px;color:var(--muted)}
@@ -874,9 +876,16 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     </div>
     <!-- TENNIS TAB -->
     <div id="tab-tennis" class="tab-panel">
-      <div class="page-header">
-        <h1>🎾 Tennis</h1>
-        <p id="tennis-subheader">Match history from MatchMind</p>
+      <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div>
+          <h1>🎾 Tennis</h1>
+          <p id="tennis-subheader">Match history</p>
+        </div>
+        <button class="btn" style="background:var(--tennis);color:#fff;border:none;padding:8px 14px;border-radius:var(--radius-sm);font-weight:700;font-size:13px;white-space:nowrap;margin-top:4px" onclick="openTennisLogModal()">+ Log Match</button>
+      </div>
+      <div class="segment" style="margin-bottom:16px;display:flex;background:var(--surface2);border-radius:var(--radius-sm);padding:3px;gap:2px">
+        <button class="seg-btn active" data-tennis-mode="history" onclick="tennisMode('history')">History</button>
+        <button class="seg-btn" data-tennis-mode="stats" onclick="tennisMode('stats')">Stats</button>
       </div>
       <div id="tennis-summary" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px"></div>
       <div id="tennis-form" style="margin-bottom:16px;display:none">
@@ -1478,7 +1487,7 @@ function checkDirtyBeforeNav(targetTab){
 const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'climb_sessions','climb_assessments','plan_data','rehab_data','macro_data',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
-  'gym_height'];
+  'gym_height','tennis_matches'];
 
 function exportAllData(){
   const data={};
@@ -2711,11 +2720,24 @@ function calcVolByCat(exercises){
   });
   return vol;
 }
+function calcBWByCat(exercises){
+  // group bodyweight (no weight) strength exercises by category → {cat: [{name, sets}]}
+  const bw={};
+  exercises.forEach(e=>{
+    if(e.type==='strength'&&(!e.weight||parseFloat(e.weight)===0)&&e.sets){
+      if(!bw[e.cat])bw[e.cat]=[];
+      bw[e.cat].push({name:e.name,sets:e.sets,reps:e.reps||''});
+    }
+  });
+  return bw;
+}
 
 function showVolumeSummary(session){
   const vol=calcVolByCat(session.exercises);
   const cats=Object.keys(vol).sort((a,b)=>vol[b]-vol[a]);
   const totalVol=cats.reduce((s,c)=>s+vol[c],0);
+  const bw=calcBWByCat(session.exercises);
+  const bwCats=Object.keys(bw);
   const workedCats=new Set(session.exercises.map(e=>e.cat));
   const durStr=session.durationMins?(()=>{const h=Math.floor(session.durationMins/60),m=session.durationMins%60;return `${h>0?h+'h ':''}${m}min`;})():'';
   let html=`<div class="modal-header"><div class="modal-title">✅ Session saved!</div><button class="modal-close" aria-label="Close" onclick="closeModal('modal-session-detail')">✕</button></div>`;
@@ -2725,11 +2747,11 @@ function showVolumeSummary(session){
     if(session.bodyWeight)parts.push(`⚖️ ${session.bodyWeight} kg`);
     html+=`<p style="color:var(--muted);font-size:13px;margin-bottom:12px">${parts.join(' · ')}</p>`;
   }
-  // body diagram + volume bars side by side
+  // body diagram + volume bars
   let volHtml='';
   if(cats.length){
     const maxVol=vol[cats[0]];
-    volHtml+=`<div style="margin-bottom:8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Volume</div>`;
+    volHtml+=`<div style="margin-bottom:8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Volume (weighted)</div>`;
     volHtml+=cats.map(c=>{
       const pct=Math.round(vol[c]/maxVol*100);
       const kg=vol[c]>=1000?(vol[c]/1000).toFixed(1)+'t':Math.round(vol[c])+'kg';
@@ -2746,8 +2768,22 @@ function showVolumeSummary(session){
       <span style="font-weight:600">Total</span>
       <span style="color:var(--gym);font-weight:700">${totalVol>=1000?(totalVol/1000).toFixed(1)+'t':Math.round(totalVol)+'kg'}</span>
     </div>`;
-  } else {
+  } else if(!bwCats.length){
     volHtml=`<p class="text-sm-muted">No weighted exercises.</p>`;
+  }
+  // bodyweight section
+  if(bwCats.length){
+    volHtml+=`<div style="margin-top:${cats.length?14:0}px;margin-bottom:8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Bodyweight</div>`;
+    volHtml+=bwCats.map(cat=>{
+      const items=bw[cat];
+      const totalSets=items.reduce((a,e)=>a+(parseFloat(e.sets)||0),0);
+      return `<div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+          <span style="font-weight:600">${cat}</span><span style="color:var(--muted)">${totalSets} sets</span>
+        </div>
+        <div style="font-size:11px;color:var(--muted)">${items.map(e=>`${e.name}${e.reps?' ×'+e.reps:''}`).join(' · ')}</div>
+      </div>`;
+    }).join('');
   }
   html+=`<div style="display:flex;flex-direction:column;align-items:center;gap:12px">
     ${drawBodyDiagram(workedCats)}
@@ -7398,102 +7434,306 @@ function updateStorageInfo(){
 //  TENNIS TAB — reads match history from Supabase
 // ══════════════════════════════════════════════════
 
-async function renderTennis(){
-  const list=document.getElementById('tennis-list');
-  const summary=document.getElementById('tennis-summary');
-  const formDiv=document.getElementById('tennis-form');
+// ── Tennis localStorage helpers ──────────────────────────────────────────────
+function _getTennisMatches(){
+  try{return JSON.parse(localStorage.getItem('tennis_matches')||'[]');}catch{return[];}
+}
+function _saveTennisMatches(arr){
+  localStorage.setItem('tennis_matches',JSON.stringify(arr));
+  pushToCloud();
+}
+
+// ── Tennis tab mode ──────────────────────────────────────────────────────────
+let _tennisMode='history';
+function tennisMode(mode){
+  _tennisMode=mode;
+  document.querySelectorAll('#tab-tennis .seg-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.tennisMode===mode);
+  });
+  renderTennis();
+}
+
+// ── Render Tennis tab ────────────────────────────────────────────────────────
+function renderTennis(){
+  const matches=_getTennisMatches().sort((a,b)=>b.match_date.localeCompare(a.match_date));
+  const list    =document.getElementById('tennis-list');
+  const summary =document.getElementById('tennis-summary');
+  const formDiv =document.getElementById('tennis-form');
   const formDots=document.getElementById('tennis-form-dots');
-  const sub=document.getElementById('tennis-subheader');
+  const sub     =document.getElementById('tennis-subheader');
 
-  list.innerHTML='<p style="color:var(--muted);font-size:14px;padding:16px 0">Loading matches…</p>';
-  summary.innerHTML='';
+  const total  =matches.length;
+  const won    =matches.filter(m=>m.result==='won').length;
+  const singles=matches.filter(m=>m.match_type==='singles').length;
+  const doubles=matches.filter(m=>m.match_type==='doubles').length;
+  const winPct =total>0?Math.round(won/total*100):0;
 
-  let matches;
-  try{
-    const res=await fetch(
-      `${_SB_URL}/rest/v1/matches?select=*&order=match_date.desc&limit=50`,
-      {headers:{'apikey':_SB_KEY,'Authorization':`Bearer ${_SB_KEY}`}}
-    );
-    if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    matches=await res.json();
-  }catch(e){
-    list.innerHTML=`<div class="card" style="color:var(--red)">⚠️ Could not load matches: ${e.message}</div>`;
-    sub.textContent='Could not connect to Supabase';
-    return;
-  }
+  sub.textContent=total>0?`${total} match${total===1?'':'es'} · ${won} won`:'No matches yet';
 
-  if(!matches||matches.length===0){
-    list.innerHTML='<div class="card" style="color:var(--muted);text-align:center;padding:24px">No matches synced yet.<br><span style="font-size:13px">Play and save a match on your watch.</span></div>';
-    sub.textContent='No matches yet';
-    return;
-  }
-
-  // ── Summary stats ─────────────────────────────────────────
-  const total  = matches.length;
-  const won    = matches.filter(m=>m.result==='won').length;
-  const singles= matches.filter(m=>m.match_type==='singles').length;
-  const doubles= matches.filter(m=>m.match_type==='doubles').length;
-  const winPct = total>0 ? Math.round(won/total*100) : 0;
-
-  function statCard(value, label, color){
+  // summary cards
+  function statCard(value,label,color){
     return `<div style="background:var(--surface);border-radius:var(--radius-sm);padding:10px 8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.07)">
       <div style="font-size:22px;font-weight:800;color:${color}">${value}</div>
       <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-top:2px">${label}</div>
     </div>`;
   }
-  summary.innerHTML =
-    statCard(total,  'MATCHES',  'var(--tennis)') +
-    statCard(winPct+'%','WIN RATE','var(--green)') +
-    statCard(singles+'/'+(doubles),'S / D','var(--muted)');
+  summary.innerHTML= total>0
+    ? statCard(total,'MATCHES','var(--tennis)')+
+      statCard(winPct+'%','WIN RATE','var(--green)')+
+      statCard(singles+'/'+doubles,'S / D','var(--muted)')
+    : '';
 
-  sub.textContent=`${total} match${total===1?'':'es'} · ${won} won`;
-
-  // ── Recent form dots (last 8) ─────────────────────────────
-  const recent=matches.slice(0,8);
-  if(recent.length>0){
+  // recent form dots
+  if(total>0){
     formDiv.style.display='block';
-    formDots.innerHTML=recent.map(m=>{
+    formDots.innerHTML=matches.slice(0,10).map(m=>{
       const w=m.result==='won';
-      return `<span title="${m.result}" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;font-size:11px;font-weight:800;background:${w?'var(--tennis-dim)':'#fce7e7'};color:${w?'var(--tennis)':'var(--red)'};border:2px solid ${w?'var(--tennis)':'var(--red)'}">${w?'W':'L'}</span>`;
+      return `<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;font-size:11px;font-weight:800;background:${w?'var(--tennis-dim)':'#fce7e7'};color:${w?'var(--tennis)':'var(--red)'};border:2px solid ${w?'var(--tennis)':'var(--red)'}">${w?'W':'L'}</span>`;
     }).join('');
+  } else {
+    formDiv.style.display='none';
   }
 
-  // ── Match list ────────────────────────────────────────────
-  const formatLabel={'best_of_3':'Best of 3','doubles_compact':'Best of 3+ST','single_set':'1 Set','super_tb':'Super TB','tiebreak':'Tiebreak'};
+  if(_tennisMode==='stats'){
+    _renderTennisStats(list,matches);
+    return;
+  }
+
+  // ── History view ──────────────────────────────────────────
+  if(total===0){
+    list.innerHTML=`<div class="card" style="text-align:center;padding:28px 16px;color:var(--muted)">
+      <div style="font-size:32px;margin-bottom:8px">🎾</div>
+      <div style="font-weight:700;margin-bottom:4px">No matches yet</div>
+      <div style="font-size:13px">Tap <strong>+ Log Match</strong> to add your first match.</div>
+    </div>`;
+    return;
+  }
+
+  const fmtLabel={'best_of_3':'Best of 3','best_of_3_st':'Best of 3+ST','single_set':'1 Set','super_tb':'Super TB'};
   const typeLabel={'singles':'Singles','doubles':'Doubles'};
 
   list.innerHTML=matches.map(m=>{
-    const date=m.match_date ? new Date(m.match_date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}) : '--';
-    const won=m.result==='won';
-    const score=m.final_score||'--';
-    const fmt=formatLabel[m.format]||m.format||'--';
-    const type=typeLabel[m.match_type]||m.match_type||'--';
-    const mins=m.duration_sec ? Math.floor(m.duration_sec/60)+'m' : '';
-    const ptsW=m.points_won??'--';
-    const ptsL=(m.unforced_errors!=null&&m.double_faults!=null) ? (m.unforced_errors+m.double_faults) : '--';
-    const err=m.unforced_errors??'--';
-    const df=m.double_faults??'--';
-    const srvPct=m.service_points_won!=null&&m.total_games_won!=null
-      ? '–' : '--'; // placeholder until serve totals are tracked
+    const dateStr=m.match_date||'';
+    const dateDisp=dateStr?new Date(dateStr+'T12:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}):'--';
+    const isWon=m.result==='won';
+    const score=esc(m.final_score||'--');
+    const fmt=fmtLabel[m.format]||m.format||'';
+    const type=typeLabel[m.match_type]||m.match_type||'';
+    const mins=m.duration_min?m.duration_min+'m':'';
+    const opp=m.opponent_name?`<span style="font-size:12px;color:var(--muted)">vs ${esc(m.opponent_name)}</span>`:'';
+    const loc=m.location?`<span style="font-size:12px;color:var(--muted)"> · 📍${esc(m.location)}</span>`:'';
 
-    return `<div class="card" style="margin-bottom:10px;padding:12px 14px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+    const hasStats=m.points_won!=null||m.unforced_errors!=null||m.double_faults!=null||m.service_points_won!=null;
+    const statsRow=hasStats?`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:8px">
+      ${miniStat('Pts Won', m.points_won??'--')}
+      ${miniStat('Errors', m.unforced_errors??'--')}
+      ${miniStat('D.Faults', m.double_faults??'--')}
+      ${miniStat('Srv Won', m.service_points_won!=null&&m.service_points_played!=null
+        ? m.service_points_won+'/'+m.service_points_played : (m.service_points_won??'--'))}
+    </div>`:'';
+
+    const notesRow=m.notes?`<div style="margin-top:6px;font-size:12px;color:var(--muted);font-style:italic">${esc(m.notes)}</div>`:'';
+
+    return `<div class="card" style="margin-bottom:10px;padding:12px 14px;border-left:4px solid ${isWon?'var(--tennis)':'var(--red)'}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <div>
-          <span style="font-weight:700;font-size:15px">${date}</span>
-          <span style="margin-left:8px;font-size:12px;background:var(--tennis-dim);color:var(--tennis);padding:2px 7px;border-radius:20px;font-weight:600">${type}</span>
-          <span style="margin-left:4px;font-size:12px;color:var(--muted)">${fmt}</span>
+          <span style="font-weight:700;font-size:15px">${dateDisp}</span>
+          ${type?`<span style="margin-left:8px;font-size:11px;background:var(--tennis-dim);color:var(--tennis);padding:2px 7px;border-radius:20px;font-weight:700">${type}</span>`:''}
+          ${fmt?`<span style="margin-left:4px;font-size:11px;color:var(--muted)">${fmt}</span>`:''}
         </div>
-        <span style="font-size:13px;font-weight:800;color:${won?'var(--green)':'var(--red)'};background:${won?'var(--tennis-dim)':'#fce7e7'};padding:3px 10px;border-radius:20px">${won?'WIN':'LOSS'}</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:13px;font-weight:800;color:${isWon?'var(--tennis)':'var(--red)'};background:${isWon?'var(--tennis-dim)':'#fce7e7'};padding:3px 10px;border-radius:20px">${isWon?'WIN':'LOSS'}</span>
+          <button onclick="editTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Edit">✏️</button>
+          <button onclick="deleteTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Delete">🗑</button>
+        </div>
       </div>
-      <div style="font-size:17px;font-weight:700;margin-bottom:8px;letter-spacing:.02em">${score} ${mins?'<span style="font-size:12px;color:var(--muted);font-weight:400">· '+mins+'</span>':''}</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px">
-        ${miniStat('Pts W/L', ptsW+' / '+ptsL)}
-        ${miniStat('Errors', err)}
-        ${miniStat('D.Faults', df)}
-        ${miniStat('Srv Pts W', m.service_points_won??'--')}
-      </div>
+      <div style="font-size:17px;font-weight:700;letter-spacing:.02em">${score} ${mins?`<span style="font-size:12px;color:var(--muted);font-weight:400">· ${mins}</span>`:''}</div>
+      ${opp||loc?`<div style="margin-top:2px">${opp}${loc}</div>`:''}
+      ${statsRow}
+      ${notesRow}
     </div>`;
   }).join('');
+}
+
+function _renderTennisStats(container,matches){
+  if(matches.length===0){
+    container.innerHTML='<div class="card" style="text-align:center;padding:24px;color:var(--muted)">No data yet.</div>';
+    return;
+  }
+  const won=matches.filter(m=>m.result==='won').length;
+  const lost=matches.length-won;
+  const singles=matches.filter(m=>m.match_type==='singles');
+  const doubles=matches.filter(m=>m.match_type==='doubles');
+  const sWin=singles.filter(m=>m.result==='won').length;
+  const dWin=doubles.filter(m=>m.result==='won').length;
+  const withStats=matches.filter(m=>m.unforced_errors!=null);
+  const avgErr=withStats.length?Math.round(withStats.reduce((s,m)=>s+(m.unforced_errors||0),0)/withStats.length):null;
+  const avgDf=withStats.length?Math.round(withStats.reduce((s,m)=>s+(m.double_faults||0),0)/withStats.length):null;
+  const withSrv=matches.filter(m=>m.service_points_won!=null&&m.service_points_played>0);
+  const avgSrvPct=withSrv.length?Math.round(withSrv.reduce((s,m)=>s+(m.service_points_won/m.service_points_played*100),0)/withSrv.length):null;
+  const withRet=matches.filter(m=>m.return_points_won!=null&&m.return_points_played>0);
+  const avgRetPct=withRet.length?Math.round(withRet.reduce((s,m)=>s+(m.return_points_won/m.return_points_played*100),0)/withRet.length):null;
+
+  function row(label,val,sub=''){
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:13px;color:var(--muted)">${label}</span>
+      <span style="font-weight:700">${val}${sub?`<span style="font-size:11px;color:var(--muted);font-weight:400"> ${sub}</span>`:''}</span>
+    </div>`;
+  }
+
+  container.innerHTML=`
+    <div class="card" style="margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin-bottom:8px">WIN/LOSS</div>
+      ${row('Total matches', matches.length)}
+      ${row('Wins / Losses', `${won} / ${lost}`)}
+      ${row('Win rate', Math.round(won/matches.length*100)+'%')}
+      ${singles.length?row('Singles W/L', `${sWin} / ${singles.length-sWin}`):''}
+      ${doubles.length?row('Doubles W/L', `${dWin} / ${doubles.length-dWin}`):''}
+    </div>
+    ${withStats.length?`<div class="card" style="margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin-bottom:8px">AVERAGE PER MATCH</div>
+      ${avgErr!=null?row('Unforced errors', avgErr, `(${withStats.length} matches)`):''}
+      ${avgDf!=null?row('Double faults', avgDf):''}
+      ${avgSrvPct!=null?row('Serve points won', avgSrvPct+'%'):''}
+      ${avgRetPct!=null?row('Return points won', avgRetPct+'%'):''}
+    </div>`:''}`;
+}
+
+// ── Log Match modal ──────────────────────────────────────────────────────────
+let _tmType='singles', _tmFmt='best_of_3', _tmResult='won';
+
+function openTennisLogModal(editId){
+  _tmType='singles'; _tmFmt='best_of_3'; _tmResult='won';
+  document.getElementById('tm-edit-id').value='';
+  document.getElementById('tennis-modal-title').textContent='Log Match';
+  // defaults
+  document.getElementById('tm-date').value=new Date().toISOString().slice(0,10);
+  document.getElementById('tm-score').value='';
+  document.getElementById('tm-opponent').value='';
+  document.getElementById('tm-location').value='';
+  document.getElementById('tm-duration').value='';
+  document.getElementById('tm-pts-won').value='';
+  document.getElementById('tm-pts-lost').value='';
+  document.getElementById('tm-errors').value='';
+  document.getElementById('tm-df').value='';
+  document.getElementById('tm-srv-won').value='';
+  document.getElementById('tm-srv-played').value='';
+  document.getElementById('tm-ret-won').value='';
+  document.getElementById('tm-ret-played').value='';
+  document.getElementById('tm-notes').value='';
+  // reset pill toggles
+  _syncTmPills();
+  if(editId){
+    const m=_getTennisMatches().find(x=>x.id===editId);
+    if(m){
+      document.getElementById('tennis-modal-title').textContent='Edit Match';
+      document.getElementById('tm-edit-id').value=editId;
+      document.getElementById('tm-date').value=m.match_date||'';
+      _tmType=m.match_type||'singles';
+      _tmFmt=m.format||'best_of_3';
+      _tmResult=m.result||'won';
+      document.getElementById('tm-score').value=m.final_score||'';
+      document.getElementById('tm-opponent').value=m.opponent_name||'';
+      document.getElementById('tm-location').value=m.location||'';
+      document.getElementById('tm-duration').value=m.duration_min||'';
+      document.getElementById('tm-pts-won').value=m.points_won!=null?m.points_won:'';
+      document.getElementById('tm-pts-lost').value=m.points_lost!=null?m.points_lost:'';
+      document.getElementById('tm-errors').value=m.unforced_errors!=null?m.unforced_errors:'';
+      document.getElementById('tm-df').value=m.double_faults!=null?m.double_faults:'';
+      document.getElementById('tm-srv-won').value=m.service_points_won!=null?m.service_points_won:'';
+      document.getElementById('tm-srv-played').value=m.service_points_played!=null?m.service_points_played:'';
+      document.getElementById('tm-ret-won').value=m.return_points_won!=null?m.return_points_won:'';
+      document.getElementById('tm-ret-played').value=m.return_points_played!=null?m.return_points_played:'';
+      document.getElementById('tm-notes').value=m.notes||'';
+      _syncTmPills();
+    }
+  }
+  openModal('modal-tennis-log');
+}
+
+function _syncTmPills(){
+  document.querySelectorAll('[data-tm-type]').forEach(b=>{
+    const on=b.dataset.tmType===_tmType;
+    b.classList.toggle('active',on);
+    b.style.background=on?'var(--tennis)':'';
+    b.style.color=on?'#fff':'';
+    b.style.borderColor=on?'var(--tennis)':'';
+  });
+  document.querySelectorAll('[data-tm-fmt]').forEach(b=>{
+    const on=b.dataset.tmFmt===_tmFmt;
+    b.classList.toggle('active',on);
+    b.style.background=on?'var(--tennis)':'';
+    b.style.color=on?'#fff':'';
+    b.style.borderColor=on?'var(--tennis)':'';
+  });
+  document.querySelectorAll('[data-tm-result]').forEach(b=>{
+    const on=b.dataset.tmResult===_tmResult;
+    b.classList.toggle('active',on);
+    b.style.background=on?(_tmResult==='won'?'var(--tennis)':'var(--red)'):'';
+    b.style.color=on?'#fff':'';
+    b.style.borderColor=on?(_tmResult==='won'?'var(--tennis)':'var(--red)'):'';
+  });
+}
+
+function setTmType(v){_tmType=v;_syncTmPills();}
+function setTmFmt(v){_tmFmt=v;_syncTmPills();}
+function setTmResult(v){_tmResult=v;_syncTmPills();}
+
+function toggleTennisStats(){
+  const p=document.getElementById('tm-stats-panel');
+  const a=document.getElementById('tm-stats-arrow');
+  const open=p.style.display==='block';
+  p.style.display=open?'none':'block';
+  a.textContent=open?'▶':'▼';
+}
+
+function saveTennisMatch(){
+  const dateVal=document.getElementById('tm-date').value;
+  if(!dateVal){showToast('Please enter a date','error');return;}
+  const editId=document.getElementById('tm-edit-id').value;
+  const num=v=>v===''||v==null?null:Number(v);
+  const match={
+    id: editId||Date.now().toString(),
+    match_date: dateVal,
+    match_type: _tmType,
+    format: _tmFmt,
+    result: _tmResult,
+    final_score: document.getElementById('tm-score').value.trim(),
+    opponent_name: document.getElementById('tm-opponent').value.trim(),
+    location: document.getElementById('tm-location').value.trim(),
+    duration_min: num(document.getElementById('tm-duration').value),
+    points_won: num(document.getElementById('tm-pts-won').value),
+    points_lost: num(document.getElementById('tm-pts-lost').value),
+    unforced_errors: num(document.getElementById('tm-errors').value),
+    double_faults: num(document.getElementById('tm-df').value),
+    service_points_won: num(document.getElementById('tm-srv-won').value),
+    service_points_played: num(document.getElementById('tm-srv-played').value),
+    return_points_won: num(document.getElementById('tm-ret-won').value),
+    return_points_played: num(document.getElementById('tm-ret-played').value),
+    notes: document.getElementById('tm-notes').value.trim(),
+    source: 'manual',
+  };
+  const all=_getTennisMatches();
+  if(editId){
+    const idx=all.findIndex(x=>x.id===editId);
+    if(idx>=0) all[idx]=match; else all.push(match);
+  } else {
+    all.push(match);
+  }
+  _saveTennisMatches(all);
+  closeModal('modal-tennis-log');
+  renderTennis();
+  showToast(editId?'Match updated':'Match saved');
+}
+
+function editTennisMatch(id){openTennisLogModal(id);}
+
+function deleteTennisMatch(id){
+  if(!confirm('Delete this match?')) return;
+  const all=_getTennisMatches().filter(m=>m.id!==id);
+  _saveTennisMatches(all);
+  renderTennis();
+  showToast('Match deleted');
 }
 
 function miniStat(label,value){
@@ -7505,5 +7745,129 @@ function miniStat(label,value){
 </script>
 
 <!-- login overlay removed — sync uses anon key, no login needed -->
+
+<!-- LOG TENNIS MATCH MODAL -->
+<div class="modal-overlay" role="dialog" aria-modal="true" id="modal-tennis-log">
+  <div class="modal" style="max-height:90vh;overflow-y:auto">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title" id="tennis-modal-title">Log Match</div>
+      <button class="modal-close" aria-label="Close" onclick="closeModal('modal-tennis-log')">✕</button>
+    </div>
+
+    <!-- Date -->
+    <div class="form-group">
+      <label>Date</label>
+      <input type="date" id="tm-date" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+    </div>
+
+    <!-- Match type -->
+    <div class="form-group">
+      <label>Match Type</label>
+      <div style="display:flex;gap:6px">
+        <button class="pill-toggle active" data-tm-type="singles" onclick="setTmType('singles',this)">Singles</button>
+        <button class="pill-toggle" data-tm-type="doubles" onclick="setTmType('doubles',this)">Doubles</button>
+      </div>
+    </div>
+
+    <!-- Format -->
+    <div class="form-group">
+      <label>Format</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="pill-toggle active" data-tm-fmt="best_of_3" onclick="setTmFmt('best_of_3',this)">Best of 3</button>
+        <button class="pill-toggle" data-tm-fmt="best_of_3_st" onclick="setTmFmt('best_of_3_st',this)">Best of 3+ST</button>
+        <button class="pill-toggle" data-tm-fmt="single_set" onclick="setTmFmt('single_set',this)">1 Set</button>
+        <button class="pill-toggle" data-tm-fmt="super_tb" onclick="setTmFmt('super_tb',this)">Super TB</button>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div class="form-group">
+      <label>Result</label>
+      <div style="display:flex;gap:6px">
+        <button class="pill-toggle active" id="tm-result-win" data-tm-result="won" onclick="setTmResult('won',this)" style="background:var(--tennis);color:#fff;border-color:var(--tennis)">Win</button>
+        <button class="pill-toggle" id="tm-result-loss" data-tm-result="lost" onclick="setTmResult('lost',this)">Loss</button>
+      </div>
+    </div>
+
+    <!-- Score -->
+    <div class="form-group">
+      <label>Score <span style="color:var(--muted);font-weight:400">(e.g. 6-3 7-5)</span></label>
+      <input type="text" id="tm-score" placeholder="6-3 7-5" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+    </div>
+
+    <!-- Opponent + Location -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="form-group">
+        <label>Opponent</label>
+        <input type="text" id="tm-opponent" placeholder="Name (optional)" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+      </div>
+      <div class="form-group">
+        <label>Location</label>
+        <input type="text" id="tm-location" placeholder="Club / court" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+      </div>
+    </div>
+
+    <!-- Duration -->
+    <div class="form-group">
+      <label>Duration <span style="color:var(--muted);font-weight:400">(minutes)</span></label>
+      <input type="text" inputmode="numeric" id="tm-duration" placeholder="e.g. 75" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+    </div>
+
+    <!-- Stats (collapsible) -->
+    <div style="margin-bottom:12px">
+      <button onclick="toggleTennisStats()" style="background:none;border:none;color:var(--tennis);font-weight:700;font-size:13px;padding:0;cursor:pointer;display:flex;align-items:center;gap:4px">
+        <span id="tm-stats-arrow">▶</span> Match Stats <span style="color:var(--muted);font-weight:400">(optional)</span>
+      </button>
+      <div id="tm-stats-panel" style="display:none;margin-top:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="form-group" style="margin-bottom:0">
+            <label style="font-size:11px">Points Won</label>
+            <input type="text" inputmode="numeric" id="tm-pts-won" placeholder="–" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:14px">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label style="font-size:11px">Points Lost</label>
+            <input type="text" inputmode="numeric" id="tm-pts-lost" placeholder="–" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:14px">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label style="font-size:11px">Unforced Errors</label>
+            <input type="text" inputmode="numeric" id="tm-errors" placeholder="–" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:14px">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label style="font-size:11px">Double Faults</label>
+            <input type="text" inputmode="numeric" id="tm-df" placeholder="–" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:14px">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label style="font-size:11px">Srv Pts Won</label>
+            <input type="text" inputmode="numeric" id="tm-srv-won" placeholder="–" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:14px">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label style="font-size:11px">Srv Pts Played</label>
+            <input type="text" inputmode="numeric" id="tm-srv-played" placeholder="–" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:14px">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label style="font-size:11px">Ret Pts Won</label>
+            <input type="text" inputmode="numeric" id="tm-ret-won" placeholder="–" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:14px">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label style="font-size:11px">Ret Pts Played</label>
+            <input type="text" inputmode="numeric" id="tm-ret-played" placeholder="–" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:14px">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes -->
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="tm-notes" placeholder="Surface, how it felt, tactics…" rows="2" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px;resize:none;font-family:inherit"></textarea>
+    </div>
+
+    <input type="hidden" id="tm-edit-id">
+
+    <button class="btn" onclick="saveTennisMatch()" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:12px;border-radius:var(--radius-sm);font-weight:800;font-size:15px;margin-top:4px">Save Match</button>
+  </div>
+</div>
+
 </body>
 </html>
