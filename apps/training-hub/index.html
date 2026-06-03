@@ -2094,7 +2094,8 @@ function saveGeneratedPlanAsTemplate(plan){
   });
 }
 
-function loadPlanIntoLog(plan,intensity){
+function loadPlanIntoLog(plan,intensity,phaseId){
+  const phDef=phaseId?phaseExDefaults(phaseId):null;
   gymSession.exercises=plan.map(ex=>{
     if(ex.type==='cardio'||ex.cardio){
       return {
@@ -2108,7 +2109,9 @@ function loadPlanIntoLog(plan,intensity){
     }
     return {
       name:ex.name,cat:ex.cat,type:'strength',
-      sets:ex.sets,reps:ex.reps,rest:ex.rest,
+      sets:phDef?phDef.sets:ex.sets,
+      reps:phDef?phDef.reps:ex.reps,
+      rest:phDef?phDef.rest:ex.rest,
       intensity:intensity,weight:ex.weight||'',notes:ex.notes||''
     };
   });
@@ -2158,8 +2161,9 @@ function loadTemplate(id){
   const _PHASE_INT={hypertrophy:70,strength:85,power:90,deload:60};
   const _gmRanges=gymMacroDateRanges(DB.gymMacroData());
   const _gmIdx=currentGymMacroPhaseIndex(_gmRanges);
-  const phaseIntensity=(_gmIdx>=0&&_gmIdx<GYM_MACRO_PHASES.length)?(_PHASE_INT[GYM_MACRO_PHASES[_gmIdx].id]||85):85;
-  loadPlanIntoLog(t.exercises, phaseIntensity);
+  const _phaseId=(_gmIdx>=0&&_gmIdx<GYM_MACRO_PHASES.length)?GYM_MACRO_PHASES[_gmIdx].id:null;
+  const phaseIntensity=_phaseId?(_PHASE_INT[_phaseId]||85):85;
+  loadPlanIntoLog(t.exercises, phaseIntensity, _phaseId);
   toast(`⭐ "${t.name}" loaded — add more exercises below`);
 }
 
