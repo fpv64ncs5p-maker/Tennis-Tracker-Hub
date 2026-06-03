@@ -2106,12 +2106,10 @@ function loadPlanIntoLog(plan,intensity){
         notes:ex.notes||''
       };
     }
-    const sw=suggestWeightFull(ex.name,intensity);
-    const suggestedW=sw&&sw.weight?sw.weight:'';
     return {
       name:ex.name,cat:ex.cat,type:'strength',
       sets:ex.sets,reps:ex.reps,rest:ex.rest,
-      intensity:intensity,weight:suggestedW||ex.weight||'',notes:ex.notes||''
+      intensity:intensity,weight:ex.weight||'',notes:ex.notes||''
     };
   });
   gymMode('log');
