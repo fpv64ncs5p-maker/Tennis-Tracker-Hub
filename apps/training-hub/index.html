@@ -2816,17 +2816,25 @@ function renderWeeklyVolume(){
     const mon=new Date(d);mon.setDate(d.getDate()-((d.getDay()+6)%7));
     const key=mon.toISOString().split('T')[0];
     const vol=calcVolByCat(s.exercises);
-    if(!weekMap[key])weekMap[key]={};
-    Object.entries(vol).forEach(([c,v])=>{weekMap[key][c]=(weekMap[key][c]||0)+v;});
+    if(!weekMap[key])weekMap[key]={vol:{},bw:new Set()};
+    Object.entries(vol).forEach(([c,v])=>{weekMap[key].vol[c]=(weekMap[key].vol[c]||0)+v;});
+    // track bodyweight-only categories (0kg exercises)
+    const bw=calcBWByCat(s.exercises);
+    Object.keys(bw).forEach(c=>{if(!vol[c])weekMap[key].bw.add(c);});
   });
   const weeks=Object.keys(weekMap).sort().slice(-8).reverse();
-  const allCats=[...new Set(weeks.flatMap(w=>Object.keys(weekMap[w])))];
-  const CAT_COLORS={'Warm-up':'#8b949e','Inferior Members':'#2ea043','Superior Members':'#388bfd','Core':'#f0883e','Wrist':'#a78bfa'};
+  const allCats=[...new Set(weeks.flatMap(w=>Object.keys(weekMap[w].vol)))];
+  const CAT_COLORS={'Warm-up':'#8b949e','Inferior Members':'#2ea043','Superior Members':'#388bfd','Core':'#f0883e','Superior – Machine':'#388bfd','Inferior Members':'#2ea043','Wrist':'#a78bfa'};
   el.innerHTML=weeks.map(w=>{
-    const wVol=weekMap[w];
+    const wVol=weekMap[w].vol;
+    const wBW=weekMap[w].bw;
     const total=Object.values(wVol).reduce((a,b)=>a+b,0);
     const totalStr=total>=1000?(total/1000).toFixed(1)+'t':Math.round(total)+'kg';
     const weekLabel=fmtDate(w);
+    const bwTags=[...wBW].map(c=>{
+      const col=CAT_COLORS[c]||'#f0883e';
+      return `<span class="text-xxs-muted"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:3px;opacity:.6"></span>${c} <span style="opacity:.7">BW</span></span>`;
+    }).join('');
     return `<div style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
         <span style="font-weight:600">${weekLabel}</span>
@@ -2843,7 +2851,7 @@ function renderWeeklyVolume(){
         ${allCats.filter(c=>wVol[c]).map(c=>{
           const col=CAT_COLORS[c]||'#555';
           return `<span class="text-xxs-muted"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${col};margin-right:3px"></span>${c} ${Math.round(wVol[c])}kg</span>`;
-        }).join('')}
+        }).join('')}${bwTags}
       </div>
     </div>`;
   }).join('');
@@ -2888,6 +2896,7 @@ function renderGymHistory(){
     el.innerHTML='<div class="empty"><div class="empty-icon">📋</div><p>No sessions yet.<br>Start logging to see your history.</p></div>';
     return;
   }
+  sessions.sort((a,b)=>b.date.localeCompare(a.date));
   const visible=sessions.slice(0,_gymHistoryShown);
   const remaining=sessions.length-_gymHistoryShown;
   el.innerHTML=visible.map(s=>{
