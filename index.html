@@ -2106,10 +2106,12 @@ function loadPlanIntoLog(plan,intensity){
         notes:ex.notes||''
       };
     }
+    const sw=suggestWeightFull(ex.name,intensity);
+    const suggestedW=sw&&sw.weight?sw.weight:'';
     return {
       name:ex.name,cat:ex.cat,type:'strength',
       sets:ex.sets,reps:ex.reps,rest:ex.rest,
-      intensity:ex.intensity||intensity,weight:ex.weight||'',notes:ex.notes||''
+      intensity:intensity,weight:suggestedW||ex.weight||'',notes:ex.notes||''
     };
   });
   gymMode('log');
@@ -2154,7 +2156,12 @@ function renderTemplates(){
 function loadTemplate(id){
   const t=DB.gymTemplates().find(x=>x.id===id);
   if(!t)return;
-  loadPlanIntoLog(t.exercises, t.exercises[0]?.intensity||85);
+  // Use current macro phase intensity, fallback to template's stored intensity
+  const _PHASE_INT={hypertrophy:70,strength:85,power:90,deload:60};
+  const _gmRanges=gymMacroDateRanges(DB.gymMacroData());
+  const _gmIdx=currentGymMacroPhaseIndex(_gmRanges);
+  const phaseIntensity=(_gmIdx>=0&&_gmIdx<GYM_MACRO_PHASES.length)?(_PHASE_INT[GYM_MACRO_PHASES[_gmIdx].id]||85):85;
+  loadPlanIntoLog(t.exercises, phaseIntensity);
   toast(`⭐ "${t.name}" loaded — add more exercises below`);
 }
 
