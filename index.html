@@ -1456,6 +1456,8 @@ const DB = {
   gymAssessments(){return this.get('gym_assessments')||[]},
   saveGymAssessment(a){const arr=this.gymAssessments();arr.unshift(a);this.set('gym_assessments',arr)},
   deleteGymAssessment(id){const arr=this.gymAssessments().filter(a=>String(a.id)!==String(id));this.set('gym_assessments',arr)},
+  ormCache(){return this.get('gym_orm_cache')||{}},
+  saveORMCache(d){this.set('gym_orm_cache',d)},
   stretchSessions(){return this.get('stretch_sessions')||[]},
   saveStretch(s){const arr=this.stretchSessions();arr.unshift(s);this.set('stretch_sessions',arr)},
   deleteStretch(id){const arr=this.stretchSessions().filter(s=>String(s.id)!==String(id));this.set('stretch_sessions',arr)},
@@ -1716,6 +1718,20 @@ function suggestWeightFull(exName, intensity){
   // Helper: round to nearest 0.25 kg
   const r4 = v => Math.round(v * 4) / 4;
 
+  // 0. ORM cache — best ever Epley 1RM from logged sessions (auto-updated on save)
+  const ormCache = DB.ormCache();
+  if(ormCache[exName]){
+    const c = ormCache[exName];
+    const working = r4(c.orm * (intensity / 100));
+    return {
+      weight: working,
+      orm: c.orm,
+      source: 'cache',
+      label: `💪 Best logged ${c.date} · est. 1RM ${c.orm} kg`,
+      stale: false
+    };
+  }
+
   // 1. Latest assessment (Epley)
   const assessments = DB.gymAssessments();
   if(assessments.length){
@@ -1746,14 +1762,9 @@ function suggestWeightFull(exName, intensity){
       const w = parseFloat(e.weight);
       if(!w || isNaN(w) || w <= 0) continue;
       const reps = parseFloat(e.reps);
-      const eff  = parseFloat(e.intensity);   // effort % as stored (e.g. "85")
       let orm = null, method = '';
-      if(!isNaN(eff) && eff > 0){
-        // Reverse: 1RM = weight ÷ (effort% / 100)
-        orm    = w / (eff / 100);
-        method = `${eff}% effort`;
-      } else if(!isNaN(reps) && reps > 0){
-        // Epley fallback from reps
+      if(!isNaN(reps) && reps > 0){
+        // Always use Epley from actual weight+reps (ignore stored intensity %)
         orm    = w * (1 + reps / 30);
         method = `${reps} reps (Epley)`;
       }
@@ -2529,6 +2540,23 @@ function cancelGymEdit(){
   toast('Edit cancelled');
 }
 
+function _updateORMCache(exercises, date){
+  const cache=DB.ormCache();
+  let changed=false;
+  (exercises||[]).forEach(e=>{
+    if(e.type!=='strength'||!e.weight||!e.reps)return;
+    const w=parseFloat(e.weight), r=parseFloat(e.reps);
+    if(isNaN(w)||isNaN(r)||w<=0||r<=0)return;
+    const orm=Math.round(w*(1+r/30)*10)/10; // Epley
+    const prev=cache[e.name];
+    if(!prev||orm>prev.orm){
+      cache[e.name]={orm,weight:w,reps:r,date};
+      changed=true;
+    }
+  });
+  if(changed)DB.saveORMCache(cache);
+}
+
 function saveGymSession(){
   const date=document.getElementById('gym-date').value;
   const bw=document.getElementById('gym-bw').value;
@@ -2552,6 +2580,7 @@ function saveGymSession(){
     if(!confirm('Overwrite the original session with your changes?'))return;
     const session={id:gymEditId,date,bodyWeight:bw,height,bodyFat,muscleMass,startTime,endTime,durationMins,goal,exercises:[...gymSession.exercises]};
     DB.updateGym(session);
+    _updateORMCache(session.exercises, session.date);
     gymEditId=null;
     clearDirty();
     document.getElementById('gym-edit-banner').style.display='none';
@@ -2561,6 +2590,7 @@ function saveGymSession(){
   } else {
     const session={id:Date.now(),date,bodyWeight:bw,height,bodyFat,muscleMass,startTime,endTime,durationMins,goal,exercises:[...gymSession.exercises]};
     DB.saveGym(session);
+    _updateORMCache(session.exercises, session.date);
     clearDirty();
     showVolumeSummary(session);
   }
@@ -5467,11 +5497,11 @@ function renderPlanner(){
     // Build slots HTML
     // Work days: session[0] = before work (above work block), sessions[1+] = after work (below)
     // Off days: Morning / Afternoon / Evening
-    const offLabels=['Morning','Afternoon','Evening'];
-    const workLabels=['Morning','After work','Evening'];
+    const offLabels=['Morning','Midday','Afternoon','Evening','Night'];
+    const workLabels=['Morning','After work','Evening','Late evening','Night'];
     const slotLabels=d.work?workLabels:offLabels;
 
-    const canAdd=sessions.length<3;
+    const canAdd=sessions.length<5;
     const addBtn=canAdd?`<button class="add-session-btn" onclick="addPlanSession('${weekKey}',${i})">+ Add session</button>`:'';
 
     const workBlock=d.work?`<div style="background:#388bfd11;border:1px solid #388bfd33;border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
@@ -5618,7 +5648,7 @@ function addPlanSession(weekKey,i){
   const data=DB.planData();
   if(!data[weekKey])return;
   const d=data[weekKey][i];
-  const maxSlots=d.work?2:3;
+  const maxSlots=5;
   if(!d.sessions)d.sessions=[];
   if(d.sessions.length>=maxSlots)return;
   d.sessions.push({trainingType:'',trainingSubtype:'',duration:'',rpe:'',actual:''});
@@ -7277,6 +7307,10 @@ document.addEventListener('DOMContentLoaded',async ()=>{
   _restoreGymDraft();
   // Migrate gym session exercises missing type field (from old template loads)
   _migrateGymExerciseTypes();
+  // Seed ORM cache from all historical sessions (one-time, idempotent)
+  if(!Object.keys(DB.ormCache()).length){
+    DB.gymSessions().forEach(s=>_updateORMCache(s.exercises,s.date));
+  }
   // Supabase auth + sync
   await _sbInit();
 });
