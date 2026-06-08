@@ -115,10 +115,10 @@ class MatchHistoryView extends Ui.View {
         dc.drawLine(cx - 55, h * 39 / 100, cx + 55, h * 39 / 100);
 
         // ── Stats rows ────────────────────────────────────────
-        var rowGap = dc.getFontHeight(Gfx.FONT_XTINY) + 3;
+        var rowGap = dc.getFontHeight(Gfx.FONT_TINY) + 4;
         var lx     = cx - (w * 6 / 100);   // label right edge
         var vx     = cx + (w * 8 / 100);   // value left edge
-        var y      = h * 43 / 100;
+        var y      = h * 41 / 100;
 
         // Set scores — show full detail string if available
         var setScores = match["sets"];
@@ -213,7 +213,7 @@ class MatchHistoryView extends Ui.View {
         dc.drawText(lx, y, Gfx.FONT_XTINY, label,
             Gfx.TEXT_JUSTIFY_RIGHT | Gfx.TEXT_JUSTIFY_VCENTER);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(vx, y, Gfx.FONT_XTINY, value,
+        dc.drawText(vx, y, Gfx.FONT_TINY, value,
             Gfx.TEXT_JUSTIFY_LEFT | Gfx.TEXT_JUSTIFY_VCENTER);
     }
 

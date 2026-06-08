@@ -44,11 +44,11 @@ class MatchMenuView extends Ui.View {
         // Title
         var titleY = h * 8 / 100;
         dc.setColor(Gfx.COLOR_YELLOW, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, titleY, Gfx.FONT_XTINY, "MATCH MENU",
+        dc.drawText(w / 2, titleY, Gfx.FONT_TINY, "MATCH MENU",
             Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
 
         // Distribute 4 option boxes evenly between titleY and bottom margin
-        optionH = h * 14 / 100;
+        optionH = h * 16 / 100;
         var listTop    = h * 17 / 100;
         var listBottom = h * 96 / 100;
         var availableH = listBottom - listTop;
@@ -96,13 +96,13 @@ class MatchMenuView extends Ui.View {
 
         var textColor = (optionIndex == 3) ? Gfx.COLOR_RED : Gfx.COLOR_WHITE;
         dc.setColor(textColor, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(rectX + rectW * 3 / 5, centerY, Gfx.FONT_TINY, label,
+        dc.drawText(rectX + rectW * 3 / 5, centerY, Gfx.FONT_SMALL, label,
             Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
     }
 
     // Icons drawn from primitives — no bitmap resources needed.
     function drawIcon(dc, cx, cy, optionIndex) {
-        var s = 7;
+        var s = 10;
         if (optionIndex == 0) {
             // RESUME: right-pointing play triangle
             dc.setColor(Gfx.COLOR_GREEN, Gfx.COLOR_TRANSPARENT);
