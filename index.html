@@ -7512,6 +7512,43 @@ function _saveTennisMatches(arr){
   pushToCloud();
 }
 
+// ── Supabase matches cache ────────────────────────────────────────────────────
+let _sbMatches=[];
+let _sbFetched=false;
+
+async function _fetchSbMatches(){
+  try{
+    const res=await fetch(
+      `${_SB_URL}/rest/v1/matches?select=*&order=match_date.desc`,
+      {headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}}
+    );
+    if(!res.ok)return;
+    const rows=await res.json();
+    _sbMatches=rows.map(row=>({
+      id:'sb_'+row.id,
+      match_date:(row.match_date||'').slice(0,10),
+      match_type:row.match_type||'singles',
+      format:row.format||'best_of_3',
+      result:row.result||'lost',
+      final_score:row.final_score||'',
+      duration_min:row.duration_sec?Math.round(row.duration_sec/60):null,
+      opponent_name:row.opponent_name||null,
+      location:row.location||null,
+      notes:row.notes||null,
+      points_won:row.points_won??null,
+      unforced_errors:row.unforced_errors??null,
+      double_faults:row.double_faults??null,
+      service_points_won:row.service_points_won??null,
+      service_points_played:null,
+      return_points_won:row.return_points_won??null,
+      return_points_played:null,
+      _source:'watch'
+    }));
+    _sbFetched=true;
+    renderTennis();
+  }catch(e){/* silent fail — offline or network error */}
+}
+
 // ── Tennis tab mode ──────────────────────────────────────────────────────────
 let _tennisMode='history';
 function tennisMode(mode){
@@ -7524,7 +7561,12 @@ function tennisMode(mode){
 
 // ── Render Tennis tab ────────────────────────────────────────────────────────
 function renderTennis(){
-  const matches=_getTennisMatches().sort((a,b)=>b.match_date.localeCompare(a.match_date));
+  // Trigger background fetch on first tab open
+  if(!_sbFetched) _fetchSbMatches();
+  // Merge watch (Supabase) + manually logged (localStorage) matches
+  const localMatches=_getTennisMatches().map(m=>({...m,_source:m._source||'manual'}));
+  const matches=[..._sbMatches,...localMatches]
+    .sort((a,b)=>(b.match_date||'').localeCompare(a.match_date||''));
   const list    =document.getElementById('tennis-list');
   const summary =document.getElementById('tennis-summary');
   const formDiv =document.getElementById('tennis-form');
@@ -7578,19 +7620,23 @@ function renderTennis(){
     return;
   }
 
-  const fmtLabel={'best_of_3':'Best of 3','best_of_3_st':'Best of 3+ST','single_set':'1 Set','super_tb':'Super TB'};
+  const fmtLabel={'best_of_3':'Best of 3','best_of_3_st':'Best of 3+ST','doubles_compact':'Best of 3+ST','single_set':'1 Set','super_tb':'Super TB','tiebreak':'Tiebreak'};
   const typeLabel={'singles':'Singles','doubles':'Doubles'};
 
   list.innerHTML=matches.map(m=>{
     const dateStr=m.match_date||'';
     const dateDisp=dateStr?new Date(dateStr+'T12:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}):'--';
     const isWon=m.result==='won';
+    const isWatch=m._source==='watch';
     const score=esc(m.final_score||'--');
     const fmt=fmtLabel[m.format]||m.format||'';
     const type=typeLabel[m.match_type]||m.match_type||'';
     const mins=m.duration_min?m.duration_min+'m':'';
     const opp=m.opponent_name?`<span style="font-size:12px;color:var(--muted)">vs ${esc(m.opponent_name)}</span>`:'';
     const loc=m.location?`<span style="font-size:12px;color:var(--muted)"> · 📍${esc(m.location)}</span>`:'';
+    const actBtns=isWatch?'':
+      `<button onclick="editTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Edit">✏️</button>`+
+      `<button onclick="deleteTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Delete">🗑</button>`;
 
     const hasStats=m.points_won!=null||m.unforced_errors!=null||m.double_faults!=null||m.service_points_won!=null;
     const statsRow=hasStats?`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:8px">
@@ -7611,9 +7657,9 @@ function renderTennis(){
           ${fmt?`<span style="margin-left:4px;font-size:11px;color:var(--muted)">${fmt}</span>`:''}
         </div>
         <div style="display:flex;align-items:center;gap:6px">
+          <span title="${isWatch?'Synced from watch':'Manually logged'}" style="font-size:12px;color:var(--muted)">${isWatch?'⌚':'📝'}</span>
           <span style="font-size:13px;font-weight:800;color:${isWon?'var(--tennis)':'var(--red)'};background:${isWon?'var(--tennis-dim)':'#fce7e7'};padding:3px 10px;border-radius:20px">${isWon?'WIN':'LOSS'}</span>
-          <button onclick="editTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Edit">✏️</button>
-          <button onclick="deleteTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Delete">🗑</button>
+          ${actBtns}
         </div>
       </div>
       <div style="font-size:17px;font-weight:700;letter-spacing:.02em">${score} ${mins?`<span style="font-size:12px;color:var(--muted);font-weight:400">· ${mins}</span>`:''}</div>
