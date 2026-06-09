@@ -76,8 +76,8 @@ class MainView extends Ui.View {
         // doesn't clip them. Buttons taller for easier finger taps.
         centerX           = w / 2;
         var statusDivY    = h * 23 / 100;
-        buttonTopY        = h * 63 / 100;
-        buttonBottomY     = h * 84 / 100;
+        buttonTopY        = h * 66 / 100;
+        buttonBottomY     = h * 86 / 100;
         var brandingY     = h * 93 / 100;
 
         drawStatusBar(dc, w, h, statusDivY);
@@ -150,11 +150,11 @@ class MainView extends Ui.View {
         // Anchor positions inside the score band
         var p1x         = w * 23 / 100;       // P1 column centre
         var p2x         = w * 77 / 100;       // P2 column centre
-        var labelsY     = statusDivY + (h * 3 / 100);   // ~88
+        var labelsY     = statusDivY + (h * 5 / 100);   // ~110
         var gamesY      = labelsY + (h * 7 / 100);      // ~115
         var histTopY    = labelsY + (h * 21 / 100);     // ~170 — set history rows
         var pointsY     = labelsY + (h * 22 / 100);     // big points text top
-        var ovalCY      = labelsY + (h * 30 / 100);     // ~205 — oval centre
+        var ovalCY      = labelsY + (h * 26 / 100);     // ~190 — oval centre (shifted up for breathing room above buttons)
 
         // ── Player labels ─────────────────────────────────────
         // v1.1.2: renamed P1/P2 → YOU/OPP for at-a-glance clarity.

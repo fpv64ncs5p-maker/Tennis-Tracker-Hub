@@ -116,8 +116,8 @@ class MatchHistoryView extends Ui.View {
 
         // ── Stats rows ────────────────────────────────────────
         var rowGap = dc.getFontHeight(Gfx.FONT_TINY) + 4;
-        var lx     = cx - (w * 6 / 100);   // label right edge
-        var vx     = cx + (w * 8 / 100);   // value left edge
+        var lx     = cx - (w * 12 / 100);  // label right edge
+        var vx     = cx + (w * 4 / 100);   // value left edge
         var y      = h * 41 / 100;
 
         // Set scores — show full detail string if available
@@ -209,8 +209,8 @@ class MatchHistoryView extends Ui.View {
     // ── Helpers ───────────────────────────────────────────────
 
     function _drawRow(dc, lx, vx, y, label, value) {
-        dc.setColor(Gfx.COLOR_DK_GRAY, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(lx, y, Gfx.FONT_XTINY, label,
+        dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(lx, y, Gfx.FONT_TINY, label,
             Gfx.TEXT_JUSTIFY_RIGHT | Gfx.TEXT_JUSTIFY_VCENTER);
         dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
         dc.drawText(vx, y, Gfx.FONT_TINY, value,

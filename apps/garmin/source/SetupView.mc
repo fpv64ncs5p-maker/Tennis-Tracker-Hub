@@ -78,7 +78,7 @@ class SetupView extends Ui.View {
         var titleH    = dc.getFontHeight(Gfx.FONT_TINY);
         var subtitleH = dc.getFontHeight(Gfx.FONT_XTINY);
         var labelH    = dc.getFontHeight(Gfx.FONT_XTINY);
-        var valueH    = dc.getFontHeight(Gfx.FONT_XTINY);
+        var valueH    = dc.getFontHeight(Gfx.FONT_TINY);
         var rowH      = labelH + valueH;
         rowSpacing    = rowH + 8;              // tighter gap between rows
         startBtnH     = titleH + 8;
@@ -93,7 +93,7 @@ class SetupView extends Ui.View {
         var rowsTop      = subtitleY + subtitleH + 8;
         var rowsBottom   = startBtnY - 16;
         var availableH   = rowsBottom - rowsTop;
-        var totalRowsH   = rowSpacing * 2;    // 2 gaps between 3 rows
+        var totalRowsH   = rowSpacing * 2 + rowH;  // 2 gaps + full row height
         var extraSpace   = availableH - totalRowsH;
         var topPad       = (extraSpace > 0) ? extraSpace / 2 : 0;
         var firstRowY    = rowsTop + topPad + (rowH / 2);
@@ -154,7 +154,7 @@ class SetupView extends Ui.View {
     // y is the vertical centre of the whole row.
     function drawRow(dc, w, y, label, value, isSelected, isDisabled) {
         var labelH = dc.getFontHeight(Gfx.FONT_XTINY);
-        var valueH = dc.getFontHeight(Gfx.FONT_XTINY);
+        var valueH = dc.getFontHeight(Gfx.FONT_TINY);
 
         if (isSelected && !isDisabled) {
             dc.setColor(Gfx.COLOR_DK_BLUE, Gfx.COLOR_DK_BLUE);
@@ -163,7 +163,7 @@ class SetupView extends Ui.View {
             dc.fillRoundedRectangle((w - hiW) / 2, y - hiH / 2, hiW, hiH, 6);
         }
 
-        var labelColor = isDisabled ? 0x2A2A2A : Gfx.COLOR_LT_GRAY;
+        var labelColor = isDisabled ? 0x2A2A2A : Gfx.COLOR_YELLOW;
         var valueColor = isDisabled ? 0x2A2A2A : Gfx.COLOR_WHITE;
 
         var labelY = y - (valueH / 2) + 2;
@@ -173,7 +173,7 @@ class SetupView extends Ui.View {
         dc.drawText(w / 2, labelY, Gfx.FONT_XTINY, label,
             Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
         dc.setColor(valueColor, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, valueY, Gfx.FONT_XTINY, value,
+        dc.drawText(w / 2, valueY, Gfx.FONT_TINY, value,
             Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
     }
 
