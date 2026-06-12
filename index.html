@@ -7323,10 +7323,9 @@ document.addEventListener('DOMContentLoaded',async ()=>{
   _restoreGymDraft();
   // Migrate gym session exercises missing type field (from old template loads)
   _migrateGymExerciseTypes();
-  // Seed ORM cache from all historical sessions (one-time, idempotent)
-  if(!Object.keys(DB.ormCache()).length){
-    DB.gymSessions().forEach(s=>_updateORMCache(s.exercises,s.date));
-  }
+  // Rebuild ORM cache from all historical sessions on every load (idempotent — only updates if new ORM is higher)
+  DB.saveORMCache({});
+  DB.gymSessions().forEach(s=>_updateORMCache(s.exercises,s.date));
   // Supabase auth + sync
   await _sbInit();
 });
