@@ -7138,7 +7138,7 @@ function renderHomeMotivation(){
   // Climbing motivation
   let climbHtml='<div class="motivation-sport">';
   if(climb){
-    climbHtml+=`<div class="motivation-sport-title">🧗 Climbing</div>
+    climbHtml+=`<div class="motivation-sport-title">🧗 Climbing <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">last 4 weeks vs prior 4</span></div>
     <div class="motivation-metrics">
       <div class="motivation-metric">
         <span class="motivation-metric-label">Routes</span>
@@ -7172,7 +7172,7 @@ function renderHomeMotivation(){
   // Gym motivation
   let gymHtml='<div class="motivation-sport">';
   if(gym){
-    gymHtml+=`<div class="motivation-sport-title">💪 Gym</div>
+    gymHtml+=`<div class="motivation-sport-title">💪 Gym <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">last 4 weeks vs prior 4</span></div>
     <div class="motivation-metrics">
       <div class="motivation-metric">
         <span class="motivation-metric-label">Sessions</span>
@@ -7200,67 +7200,59 @@ function renderHomeMotivation(){
   document.getElementById('home-motivation-gym').innerHTML=gymHtml;
 }
 
+// Rolling window helpers — compare last 28 days vs prior 28 days
+function _rollingWindow(){
+  const now=new Date(today()+'T23:59:59');
+  const d0=new Date(now); d0.setDate(d0.getDate()-27); d0.setHours(0,0,0,0); // this window start
+  const d1=new Date(d0);  d1.setDate(d1.getDate()-28);                        // prior window start
+  const d2=new Date(d0);  d2.setDate(d2.getDate()-1); d2.setHours(23,59,59,999); // prior window end
+  return{thisStart:d0,thisEnd:now,prevStart:d1,prevEnd:d2};
+}
+function _inWindow(dateStr,start,end){
+  const d=new Date(dateStr+'T12:00:00');
+  return d>=start&&d<=end;
+}
+
 function getClimbingTrends(){
   const sessions=DB.climbSessions();
   if(!sessions.length) return null;
+  const{thisStart,thisEnd,prevStart,prevEnd}=_rollingWindow();
 
-  const todayStr=today();
-  const currentDate=new Date(todayStr);
-  const thisMonth=currentDate.getMonth();
-  const thisYear=currentDate.getFullYear();
-  const lastMonthDate=new Date(thisYear,thisMonth-1,1);
-  const lastMonth=lastMonthDate.getMonth();
-  const lastYear=lastMonthDate.getFullYear();
-
-  let thisMonthData={routes:0,sends:0,meters:0,topGrade:null};
-  let lastMonthData={routes:0,sends:0,meters:0,topGrade:null};
-  const topGrades=new Map();
-  const lastTopGrades=new Map();
+  let thisData={routes:0,sends:0,meters:0,topGrade:null};
+  let prevData={routes:0,sends:0,meters:0,topGrade:null};
+  const thisGrades=[],prevGrades=[];
 
   sessions.forEach(s=>{
-    const sDate=new Date(s.date);
-    const sMonth=sDate.getMonth();
-    const sYear=sDate.getFullYear();
+    const inThis=_inWindow(s.date,thisStart,thisEnd);
+    const inPrev=_inWindow(s.date,prevStart,prevEnd);
+    if(!inThis&&!inPrev)return;
     const wallHeight=GYMS[s.gym]||s.wallHeight||0;
     const routes=getSessionRoutes(s);
-
     let routeCount=0,sendCount=0,meterCount=0;
     routes.forEach(r=>{
-      routeCount+=(r.count||1)*(r.climbedDown?2:1);
-      if(['OS','Flash','RP'].includes(r.result)) sendCount+=(r.count||1);
-      meterCount+=wallHeight*(r.count||1)*(r.climbedDown?2:1);
-      if(!topGrades.has(r.grade) || CLIMB_GRADES.indexOf(r.grade)>CLIMB_GRADES.indexOf(topGrades.get(r.grade))){
-        topGrades.set(r.grade,r.result);
-      }
+      const cnt=(r.count||1)*(r.climbedDown?2:1);
+      routeCount+=cnt;
+      if(['OS','Flash','RP'].includes(r.result))sendCount+=(r.count||1);
+      meterCount+=wallHeight*cnt;
+      if(inThis)thisGrades.push(r.grade);
+      if(inPrev)prevGrades.push(r.grade);
     });
-
-    if(sYear===thisYear&&sMonth===thisMonth){
-      thisMonthData.routes+=routeCount;
-      thisMonthData.sends+=sendCount;
-      thisMonthData.meters+=meterCount;
-    }
-    if(sYear===lastYear&&sMonth===lastMonth){
-      lastMonthData.routes+=routeCount;
-      lastMonthData.sends+=sendCount;
-      lastMonthData.meters+=meterCount;
-    }
+    if(inThis){thisData.routes+=routeCount;thisData.sends+=sendCount;thisData.meters+=meterCount;}
+    if(inPrev){prevData.routes+=routeCount;prevData.sends+=sendCount;prevData.meters+=meterCount;}
   });
 
-  // Find top grades
-  if(topGrades.size>0){
-    thisMonthData.topGrade=Array.from(topGrades.keys()).sort((a,b)=>CLIMB_GRADES.indexOf(b)-CLIMB_GRADES.indexOf(a))[0];
-  }
-  if(lastTopGrades.size>0){
-    lastMonthData.topGrade=Array.from(lastTopGrades.keys()).sort((a,b)=>CLIMB_GRADES.indexOf(b)-CLIMB_GRADES.indexOf(a))[0];
-  }
+  // Top grade per window (highest in CLIMB_GRADES array)
+  const bestGrade=arr=>arr.length?arr.sort((a,b)=>CLIMB_GRADES.indexOf(b)-CLIMB_GRADES.indexOf(a))[0]:null;
+  thisData.topGrade=bestGrade(thisGrades);
+  prevData.topGrade=bestGrade(prevGrades);
 
   return{
-    thisMonth:thisMonthData,
-    lastMonth:lastMonthData,
+    thisMonth:thisData,
+    lastMonth:prevData,
     delta:{
-      routes:getDelta(lastMonthData.routes,thisMonthData.routes),
-      sends:getDelta(lastMonthData.sends,thisMonthData.sends),
-      meters:getDelta(lastMonthData.meters,thisMonthData.meters)
+      routes:getDelta(prevData.routes,thisData.routes),
+      sends:getDelta(prevData.sends,thisData.sends),
+      meters:getDelta(prevData.meters,thisData.meters)
     }
   };
 }
@@ -7268,60 +7260,36 @@ function getClimbingTrends(){
 function getGymTrends(){
   const sessions=DB.gymSessions();
   if(!sessions.length) return null;
+  const{thisStart,thisEnd,prevStart,prevEnd}=_rollingWindow();
 
-  const todayStr=today();
-  const currentDate=new Date(todayStr);
-  const thisMonth=currentDate.getMonth();
-  const thisYear=currentDate.getFullYear();
-  const lastMonthDate=new Date(thisYear,thisMonth-1,1);
-  const lastMonth=lastMonthDate.getMonth();
-  const lastYear=lastMonthDate.getFullYear();
-
-  let thisMonthData={sessions:0,volume:0,time:0};
-  let lastMonthData={sessions:0,volume:0,time:0};
+  let thisData={sessions:0,volume:0,time:0};
+  let prevData={sessions:0,volume:0,time:0};
 
   sessions.forEach(s=>{
-    const sDate=new Date(s.date);
-    const sMonth=sDate.getMonth();
-    const sYear=sDate.getFullYear();
-
-    let sessionVolume=0,sessionTime=s.durationMins||s.duration||0;
-    if(s.exercises){
-      s.exercises.forEach(ex=>{
-        const sets=parseInt(ex.sets)||0;
-        const reps=parseInt(ex.reps)||0;
-        const weight=parseFloat(ex.weight)||0;
-        if(!isNaN(weight)&&weight>0){
-          sessionVolume+=(sets*reps*weight);
-        }
-      });
-    }
-
-    if(sYear===thisYear&&sMonth===thisMonth){
-      thisMonthData.sessions++;
-      thisMonthData.volume+=sessionVolume;
-      thisMonthData.time+=sessionTime;
-    }
-    if(sYear===lastYear&&sMonth===lastMonth){
-      lastMonthData.sessions++;
-      lastMonthData.volume+=sessionVolume;
-      lastMonthData.time+=sessionTime;
-    }
+    const inThis=_inWindow(s.date,thisStart,thisEnd);
+    const inPrev=_inWindow(s.date,prevStart,prevEnd);
+    if(!inThis&&!inPrev)return;
+    let vol=0,time=s.durationMins||s.duration||0;
+    (s.exercises||[]).forEach(ex=>{
+      const sets=parseInt(ex.sets)||0,reps=parseInt(ex.reps)||0,weight=parseFloat(ex.weight)||0;
+      if(weight>0)vol+=sets*reps*weight;
+    });
+    if(inThis){thisData.sessions++;thisData.volume+=vol;thisData.time+=time;}
+    if(inPrev){prevData.sessions++;prevData.volume+=vol;prevData.time+=time;}
   });
 
-  // Convert to display units
-  thisMonthData.volume=(thisMonthData.volume/1000).toFixed(1);
-  lastMonthData.volume=(lastMonthData.volume/1000).toFixed(1);
-  thisMonthData.time=Math.round(thisMonthData.time/60);
-  lastMonthData.time=Math.round(lastMonthData.time/60);
+  thisData.volume=(thisData.volume/1000).toFixed(1);
+  prevData.volume=(prevData.volume/1000).toFixed(1);
+  thisData.time=Math.round(thisData.time/60);
+  prevData.time=Math.round(prevData.time/60);
 
   return{
-    thisMonth:thisMonthData,
-    lastMonth:lastMonthData,
+    thisMonth:thisData,
+    lastMonth:prevData,
     delta:{
-      sessions:getDelta(lastMonthData.sessions,thisMonthData.sessions),
-      volume:getDelta(lastMonthData.volume,thisMonthData.volume),
-      time:getDelta(lastMonthData.time,thisMonthData.time)
+      sessions:getDelta(prevData.sessions,thisData.sessions),
+      volume:getDelta(prevData.volume,thisData.volume),
+      time:getDelta(prevData.time,thisData.time)
     }
   };
 }
