@@ -6688,6 +6688,7 @@ function getAssessExType(name){
 
 let assessExercises=[];
 let _assessDate='',_assessBw='',_assessNotes='';
+let _editingAssessId=null;
 
 function captureAssessState(){
   const d=document.getElementById('ga-date');
@@ -6780,6 +6781,7 @@ function removeAssessEx(i){
 }
 
 function openAddGymAssessment(){
+  _editingAssessId=null;
   const ormCache=DB.ormCache();
   assessExercises=ASSESS_DEFAULTS.map(d=>{
     const ex={...d};
@@ -6791,6 +6793,30 @@ function openAddGymAssessment(){
   _assessDate=today();
   _assessBw='';
   _assessNotes='';
+  document.querySelector('#modal-gym-assess .modal-title').textContent='Gym Assessment';
+  renderAssessModal();
+  openModal('modal-gym-assess');
+}
+
+function openEditGymAssessment(id){
+  const a=DB.gymAssessments().find(x=>String(x.id)===String(id));
+  if(!a)return;
+  _editingAssessId=id;
+  // Build exercise list: start from saved entries, fill in any missing defaults
+  const savedByName=Object.fromEntries((a.exercises||[]).map(e=>[e.name,e]));
+  assessExercises=ASSESS_DEFAULTS.map(d=>{
+    const saved=savedByName[d.name];
+    if(saved)return{...d,...saved};
+    return{...d};
+  });
+  // Also include any extra exercises saved that aren't in defaults
+  (a.exercises||[]).forEach(e=>{
+    if(!ASSESS_DEFAULTS.find(d=>d.name===e.name))assessExercises.push({...e});
+  });
+  _assessDate=a.date||today();
+  _assessBw=a.bodyWeight||'';
+  _assessNotes=a.notes||'';
+  document.querySelector('#modal-gym-assess .modal-title').textContent='Edit Assessment';
   renderAssessModal();
   openModal('modal-gym-assess');
 }
@@ -6801,22 +6827,28 @@ function saveGymAssessmentForm(){
   const ranges=gymMacroDateRanges(DB.gymMacroData());
   const idx=ranges?currentGymMacroPhaseIndex(ranges):-1;
   const phase=idx>=0?GYM_MACRO_PHASES[idx].label:null;
-  const a={
-    id:Date.now(),
-    date:_assessDate,
-    bodyWeight:_assessBw||null,
-    phase,
-    exercises:assessExercises.map(ex=>{
-      const e={name:ex.name,area:ex.area,type:ex.type};
-      if(ex.type==='strength'){e.orm=ex.orm?parseFloat(ex.orm)||null:null;}
-      else{e.value=ex.value||null;}
-      return e;
-    }),
-    notes:_assessNotes
-  };
-  DB.saveGymAssessment(a);
-  closeModal('modal-gym-assess');
-  toast('✅ Assessment saved!');
+  const exercises=assessExercises.map(ex=>{
+    const e={name:ex.name,area:ex.area,type:ex.type};
+    if(ex.type==='strength'){e.orm=ex.orm?parseFloat(ex.orm)||null:null;}
+    else{e.value=ex.value||null;}
+    return e;
+  });
+  if(_editingAssessId){
+    const all=DB.gymAssessments();
+    const idx=all.findIndex(x=>String(x.id)===String(_editingAssessId));
+    if(idx>=0){
+      all[idx]={...all[idx],date:_assessDate,bodyWeight:_assessBw||null,phase,exercises,notes:_assessNotes};
+      DB.set('gym_assessments',all);
+    }
+    _editingAssessId=null;
+    closeModal('modal-gym-assess');
+    toast('✅ Assessment updated!');
+  } else {
+    const a={id:Date.now(),date:_assessDate,bodyWeight:_assessBw||null,phase,exercises,notes:_assessNotes};
+    DB.saveGymAssessment(a);
+    closeModal('modal-gym-assess');
+    toast('✅ Assessment saved!');
+  }
   renderGymAssessments();
 }
 
@@ -6878,6 +6910,7 @@ function renderGymAssessments(){
           <div style="font-weight:700;font-size:15px">${fmtDate(a.date)}</div>
           ${meta?`<div class="text-xs-muted">${meta}</div>`:''}
         </div>
+        <button class="btn-icon" onclick="openEditGymAssessment('${a.id}')">✏️</button>
         <button class="btn-icon" style="color:var(--red)" onclick="deleteGymAssessmentEntry('${a.id}')">🗑</button>
       </div>
       ${exRows||'<p class="text-xs-muted">No exercises recorded</p>'}
