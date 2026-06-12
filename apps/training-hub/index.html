@@ -7206,26 +7206,29 @@ function renderHomeMotivation(){
   // Tennis momentum
   const tennis=getTennisTrends();
   let tennisHtml='<div class="motivation-sport">';
-  if(tennis&&tennis.this.matches>0){
-    // win rate delta: higher is better
-    const winDelta=getDelta(tennis.prev.winPct,tennis.this.winPct);
-    // error delta: lower is better — flip direction
+  if(tennis){
+    const sessDelta=getDelta(tennis.prev.sessions,tennis.this.sessions);
+    const matchDelta=getDelta(tennis.prev.matches,tennis.this.matches);
+    const winDelta=tennis.this.winPct!=null&&tennis.prev.winPct!=null?getDelta(tennis.prev.winPct,tennis.this.winPct):null;
     const errDelta=tennis.this.avgErr!=null&&tennis.prev.avgErr!=null
-      ?getDelta(tennis.this.avgErr,tennis.prev.avgErr) // intentionally reversed: fewer errors = up
-      :null;
+      ?getDelta(tennis.this.avgErr,tennis.prev.avgErr):null; // fewer = better, dir already correct (lower = dn = bad, we flip display)
     tennisHtml+=`<div class="motivation-sport-title">🎾 Tennis <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">last 4 weeks vs prior 4</span></div>
     <div class="motivation-metrics">
       <div class="motivation-metric">
-        <span class="motivation-metric-label">Matches</span>
-        <span class="motivation-metric-value">${tennis.this.matches} <span class="motivation-delta ${getDelta(tennis.prev.matches,tennis.this.matches).dir}">${getDelta(tennis.prev.matches,tennis.this.matches).text}</span></span>
+        <span class="motivation-metric-label">Sessions (planner)</span>
+        <span class="motivation-metric-value">${tennis.this.sessions} <span class="motivation-delta ${sessDelta.dir}">${sessDelta.text}</span></span>
       </div>
-      <div class="motivation-metric">
+      ${tennis.this.matches>0||tennis.prev.matches>0?`<div class="motivation-metric">
+        <span class="motivation-metric-label">Matches logged</span>
+        <span class="motivation-metric-value">${tennis.this.matches} <span class="motivation-delta ${matchDelta.dir}">${matchDelta.text}</span></span>
+      </div>`:''}
+      ${tennis.this.winPct!=null?`<div class="motivation-metric">
         <span class="motivation-metric-label">Win rate</span>
-        <span class="motivation-metric-value">${tennis.this.winPct}% <span class="motivation-delta ${winDelta.dir}">${winDelta.text}</span></span>
-      </div>
+        <span class="motivation-metric-value">${tennis.this.winPct}% ${winDelta?`<span class="motivation-delta ${winDelta.dir}">${winDelta.text}</span>`:''}</span>
+      </div>`:''}
       ${tennis.this.avgErr!=null?`<div class="motivation-metric">
         <span class="motivation-metric-label">Avg errors</span>
-        <span class="motivation-metric-value">${tennis.this.avgErr} ${errDelta?`<span class="motivation-delta ${errDelta.dir}">${errDelta.text}</span>`:''}</span>
+        <span class="motivation-metric-value">${tennis.this.avgErr} ${errDelta?`<span class="motivation-delta ${errDelta.dir==='dn'?'up':'dn'}">${errDelta.text}</span>`:''}</span>
       </div>`:''}
       ${tennis.this.avgDf!=null?`<div class="motivation-metric">
         <span class="motivation-metric-label">Avg double faults</span>
@@ -7334,32 +7337,47 @@ function getGymTrends(){
 }
 
 function getTennisTrends(){
-  const matches=[..._sbMatches,..._getTennisMatches()];
-  if(!matches.length) return null;
   const{thisStart,thisEnd,prevStart,prevEnd}=_rollingWindow();
 
-  let thisData={matches:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
-  let prevData={matches:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
+  let thisData={sessions:0,matches:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
+  let prevData={sessions:0,matches:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
 
+  // Count tennis sessions from the planner
+  const planData=DB.planData();
+  Object.keys(planData).forEach(weekKey=>{
+    (planData[weekKey]||[]).forEach((d,di)=>{
+      const dayDate=d.date||addDays(weekKey,di);
+      (d.sessions||[]).forEach(ps=>{
+        if(!ps||ps.trainingType!=='tennis')return;
+        if(_inWindow(dayDate,thisStart,thisEnd))thisData.sessions++;
+        else if(_inWindow(dayDate,prevStart,prevEnd))prevData.sessions++;
+      });
+    });
+  });
+
+  // Count formal match logs (Tennis tab + Supabase)
+  const matches=[..._sbMatches,..._getTennisMatches()];
   matches.forEach(m=>{
     const dateStr=(m.match_date||'').slice(0,10);
     const inThis=_inWindow(dateStr,thisStart,thisEnd);
     const inPrev=_inWindow(dateStr,prevStart,prevEnd);
     if(!inThis&&!inPrev)return;
-    const target=inThis?thisData:prevData;
-    target.matches++;
-    if(m.result==='won')target.won++;
-    if(m.unforced_errors!=null){target.errors+=m.unforced_errors;target.errCount++;}
-    if(m.double_faults!=null){target.df+=m.double_faults;target.dfCount++;}
+    const t=inThis?thisData:prevData;
+    t.matches++;
+    if(m.result==='won')t.won++;
+    if(m.unforced_errors!=null){t.errors+=m.unforced_errors;t.errCount++;}
+    if(m.double_faults!=null){t.df+=m.double_faults;t.dfCount++;}
   });
 
-  const winPct=d=>d.matches?Math.round(d.won/d.matches*100):0;
+  if(!thisData.sessions&&!thisData.matches&&!prevData.sessions&&!prevData.matches)return null;
+
+  const winPct=d=>d.matches?Math.round(d.won/d.matches*100):null;
   const avgErr=d=>d.errCount?Math.round(d.errors/d.errCount):null;
   const avgDf=d=>d.dfCount?Math.round(d.df/d.dfCount):null;
 
   return{
-    this:{matches:thisData.matches,winPct:winPct(thisData),avgErr:avgErr(thisData),avgDf:avgDf(thisData)},
-    prev:{matches:prevData.matches,winPct:winPct(prevData),avgErr:avgErr(prevData),avgDf:avgDf(prevData)},
+    this:{sessions:thisData.sessions,matches:thisData.matches,winPct:winPct(thisData),avgErr:avgErr(thisData),avgDf:avgDf(thisData)},
+    prev:{sessions:prevData.sessions,matches:prevData.matches,winPct:winPct(prevData),avgErr:avgErr(prevData),avgDf:avgDf(prevData)},
   };
 }
 
