@@ -7215,9 +7215,17 @@ function renderHomeMotivation(){
     tennisHtml+=`<div class="motivation-sport-title">🎾 Tennis <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">last 4 weeks vs prior 4</span></div>
     <div class="motivation-metrics">
       <div class="motivation-metric">
-        <span class="motivation-metric-label">Sessions (planner)</span>
+        <span class="motivation-metric-label">Sessions</span>
         <span class="motivation-metric-value">${tennis.this.sessions} <span class="motivation-delta ${sessDelta.dir}">${sessDelta.text}</span></span>
       </div>
+      ${tennis.this.time?`<div class="motivation-metric">
+        <span class="motivation-metric-label">Total time</span>
+        <span class="motivation-metric-value">${tennis.this.time}</span>
+      </div>`:''}
+      ${tennis.this.avgRpe!=null?`<div class="motivation-metric">
+        <span class="motivation-metric-label">Avg intensity (RPE)</span>
+        <span class="motivation-metric-value">${tennis.this.avgRpe} / 10</span>
+      </div>`:''}
       ${tennis.this.matches>0||tennis.prev.matches>0?`<div class="motivation-metric">
         <span class="motivation-metric-label">Matches logged</span>
         <span class="motivation-metric-value">${tennis.this.matches} <span class="motivation-delta ${matchDelta.dir}">${matchDelta.text}</span></span>
@@ -7229,10 +7237,6 @@ function renderHomeMotivation(){
       ${tennis.this.avgErr!=null?`<div class="motivation-metric">
         <span class="motivation-metric-label">Avg errors</span>
         <span class="motivation-metric-value">${tennis.this.avgErr} ${errDelta?`<span class="motivation-delta ${errDelta.dir==='dn'?'up':'dn'}">${errDelta.text}</span>`:''}</span>
-      </div>`:''}
-      ${tennis.this.avgDf!=null?`<div class="motivation-metric">
-        <span class="motivation-metric-label">Avg double faults</span>
-        <span class="motivation-metric-value">${tennis.this.avgDf}</span>
       </div>`:''}
     </div>`;
   }else{
@@ -7339,18 +7343,21 @@ function getGymTrends(){
 function getTennisTrends(){
   const{thisStart,thisEnd,prevStart,prevEnd}=_rollingWindow();
 
-  let thisData={sessions:0,matches:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
-  let prevData={sessions:0,matches:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
+  let thisData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
+  let prevData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
 
-  // Count tennis sessions from the planner
+  // Count tennis sessions from the planner (primary source)
   const planData=DB.planData();
   Object.keys(planData).forEach(weekKey=>{
     (planData[weekKey]||[]).forEach((d,di)=>{
       const dayDate=d.date||addDays(weekKey,di);
       (d.sessions||[]).forEach(ps=>{
         if(!ps||ps.trainingType!=='tennis')return;
-        if(_inWindow(dayDate,thisStart,thisEnd))thisData.sessions++;
-        else if(_inWindow(dayDate,prevStart,prevEnd))prevData.sessions++;
+        const t=_inWindow(dayDate,thisStart,thisEnd)?thisData:_inWindow(dayDate,prevStart,prevEnd)?prevData:null;
+        if(!t)return;
+        t.sessions++;
+        if(ps.duration)t.mins+=parseInt(ps.duration)||0;
+        if(ps.rpe){t.rpeSum+=(parseFloat(ps.rpe)||0);t.rpeCount++;}
       });
     });
   });
@@ -7374,10 +7381,12 @@ function getTennisTrends(){
   const winPct=d=>d.matches?Math.round(d.won/d.matches*100):null;
   const avgErr=d=>d.errCount?Math.round(d.errors/d.errCount):null;
   const avgDf=d=>d.dfCount?Math.round(d.df/d.dfCount):null;
+  const fmtTime=m=>m>=60?`${Math.floor(m/60)}h${m%60?` ${m%60}m`:''}`:m?`${m}m`:null;
+  const avgRpe=d=>d.rpeCount?Math.round(d.rpeSum/d.rpeCount*10)/10:null;
 
   return{
-    this:{sessions:thisData.sessions,matches:thisData.matches,winPct:winPct(thisData),avgErr:avgErr(thisData),avgDf:avgDf(thisData)},
-    prev:{sessions:prevData.sessions,matches:prevData.matches,winPct:winPct(prevData),avgErr:avgErr(prevData),avgDf:avgDf(prevData)},
+    this:{sessions:thisData.sessions,time:fmtTime(thisData.mins),avgRpe:avgRpe(thisData),matches:thisData.matches,winPct:winPct(thisData),avgErr:avgErr(thisData),avgDf:avgDf(thisData)},
+    prev:{sessions:prevData.sessions,time:fmtTime(prevData.mins),avgRpe:avgRpe(prevData),matches:prevData.matches,winPct:winPct(prevData),avgErr:avgErr(prevData),avgDf:avgDf(prevData)},
   };
 }
 
