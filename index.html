@@ -1737,11 +1737,12 @@ function suggestWeightFull(exName, intensity){
   if(assessments.length){
     const latest = assessments[0];
     const entry = (latest.exercises||[]).find(e=>e.name===exName && e.type==='strength');
-    if(entry && entry.weight && entry.reps){
-      const w = parseFloat(entry.weight);
-      const r = parseFloat(entry.reps);
-      if(!isNaN(w) && !isNaN(r) && w > 0 && r > 0){
-        const orm = w * (1 + r / 30);               // Epley
+    if(entry){
+      // new format: orm stored directly; legacy: compute from weight×reps
+      let orm=null;
+      if(entry.orm) orm=parseFloat(entry.orm);
+      else if(entry.weight&&entry.reps){const w=parseFloat(entry.weight),r=parseFloat(entry.reps);if(!isNaN(w)&&!isNaN(r)&&w>0&&r>0)orm=w*(1+r/30);}
+      if(orm&&!isNaN(orm)&&orm>0){
         const working = r4(orm * (intensity / 100));
         const weeksDiff = (Date.now() - new Date(latest.date + 'T12:00:00')) / (1000*60*60*24*7);
         return {
@@ -1833,6 +1834,7 @@ let gymEditId=null;
 // ── Gym draft autosave (survives app suspension) ──
 function _saveGymDraft(){
   if(gymEditId)return; // don't overwrite edit drafts
+  if(!gymSession.exercises.length)return; // don't erase a real draft with an empty session
   const draft={
     exercises:gymSession.exercises,
     date:document.getElementById('gym-date')?.value||'',
@@ -2118,12 +2120,14 @@ function loadPlanIntoLog(plan,intensity,phaseId){
         notes:ex.notes||''
       };
     }
+    const suggested=suggestWeightFull(ex.name,intensity);
+    const suggestedWeight=suggested?String(suggested.weight):(ex.weight||'');
     return {
       name:ex.name,cat:ex.cat,type:'strength',
       sets:phDef?phDef.sets:ex.sets,
       reps:phDef?phDef.reps:ex.reps,
       rest:phDef?phDef.rest:ex.rest,
-      intensity:intensity,weight:ex.weight||'',notes:ex.notes||''
+      intensity:intensity,weight:suggestedWeight,notes:ex.notes||''
     };
   });
   gymMode('log');
@@ -2353,6 +2357,7 @@ function addExerciseToSession(){
 function clearGymSession(){
   if(!confirm('Clear all exercises from this session?'))return;
   gymSession.exercises=[];
+  _clearGymDraft();
   clearDirty();
   renderSessionExercises();
   toast('Session cleared');
@@ -6693,11 +6698,9 @@ function captureAssessState(){
   if(n)_assessNotes=n.value;
   assessExercises=assessExercises.map((ex,i)=>{
     const base={...ex};
-    const w=document.getElementById('aex-w-'+i);
-    const r=document.getElementById('aex-r-'+i);
+    const orm=document.getElementById('aex-orm-'+i);
     const v=document.getElementById('aex-v-'+i);
-    if(w)base.weight=w.value;
-    if(r)base.reps=r.value;
+    if(orm)base.orm=orm.value;
     if(v)base.value=v.value;
     return base;
   });
@@ -6710,7 +6713,9 @@ function renderAssessModal(){
     let inputs='';
     const is=`style="width:56px;padding:4px 6px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:12px;text-align:center"`;
     if(ex.type==='strength'){
-      inputs=`<input type="number" inputmode="decimal" id="aex-w-${i}" value="${ex.weight||''}" placeholder="kg" step="0.5" ${is}> <span style="color:var(--muted)">kg ×</span> <input type="number" inputmode="decimal" id="aex-r-${i}" value="${ex.reps||''}" placeholder="reps" min="1" ${is}> <span style="color:var(--muted)">reps</span>`;
+      // orm field: use stored orm, or compute from legacy weight×reps, or blank
+      const ormVal=ex.orm||(ex.weight&&ex.reps?Math.round(Number(ex.weight)*(1+Number(ex.reps)/30)*10)/10:'')||'';
+      inputs=`<input type="number" inputmode="decimal" id="aex-orm-${i}" value="${ormVal}" placeholder="kg" step="0.25" ${is}> <span style="color:var(--muted)">kg (1RM)</span>`;
     } else if(ex.type==='timed'){
       inputs=`<input type="number" inputmode="decimal" id="aex-v-${i}" value="${ex.value||''}" placeholder="sec" min="1" ${is}> <span style="color:var(--muted)">sec</span>`;
     } else if(ex.type==='reps'){
@@ -6775,7 +6780,14 @@ function removeAssessEx(i){
 }
 
 function openAddGymAssessment(){
-  assessExercises=ASSESS_DEFAULTS.map(d=>({...d}));
+  const ormCache=DB.ormCache();
+  assessExercises=ASSESS_DEFAULTS.map(d=>{
+    const ex={...d};
+    if(ex.type==='strength'&&ormCache[ex.name]){
+      ex.orm=String(ormCache[ex.name].orm);
+    }
+    return ex;
+  });
   _assessDate=today();
   _assessBw='';
   _assessNotes='';
@@ -6796,7 +6808,7 @@ function saveGymAssessmentForm(){
     phase,
     exercises:assessExercises.map(ex=>{
       const e={name:ex.name,area:ex.area,type:ex.type};
-      if(ex.type==='strength'){e.weight=ex.weight||null;e.reps=ex.reps||null;}
+      if(ex.type==='strength'){e.orm=ex.orm?parseFloat(ex.orm)||null:null;}
       else{e.value=ex.value||null;}
       return e;
     }),
@@ -6827,8 +6839,14 @@ function renderGymAssessments(){
     const prev=assessments[idx+1];
     const prevByName=prev?Object.fromEntries((prev.exercises||[]).map(e=>[e.name,e])):{};
     const exRows=(a.exercises||[]).map(ex=>{
+      // helper: get comparable 1RM value from an entry (new orm field or legacy weight×reps)
+      function _ormOf(e){
+        if(e.orm)return Number(e.orm);
+        if(e.weight&&e.reps)return Math.round(Number(e.weight)*(1+Number(e.reps)/30)*10)/10;
+        return null;
+      }
       let valStr='';
-      if(ex.type==='strength')valStr=`${ex.weight||'—'} kg × ${ex.reps||'—'} reps`;
+      if(ex.type==='strength'){const v=_ormOf(ex);valStr=v!=null?`${v} kg (1RM)`:'—';}
       else if(ex.type==='timed')valStr=`${ex.value||'—'} sec`;
       else if(ex.type==='reps')valStr=`${ex.value||'—'} reps`;
       else if(ex.type==='distance')valStr=`${ex.value||'—'} cm`;
@@ -6836,10 +6854,8 @@ function renderGymAssessments(){
       const pe=prevByName[ex.name];
       if(pe){
         let curr=null,prevVal=null;
-        if(ex.type==='strength'&&ex.weight&&ex.reps&&pe.weight&&pe.reps){
-          curr=Number(ex.weight)*Number(ex.reps);
-          prevVal=Number(pe.weight)*Number(pe.reps);
-        } else if(ex.type!=='strength'&&(ex.value||ex.value===0)&&(pe.value||pe.value===0)){
+        if(ex.type==='strength'){curr=_ormOf(ex);prevVal=_ormOf(pe);}
+        else if(ex.type!=='strength'&&(ex.value||ex.value===0)&&(pe.value||pe.value===0)){
           curr=Number(ex.value);prevVal=Number(pe.value);
         }
         if(curr!==null&&prevVal!==null){
