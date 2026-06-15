@@ -162,9 +162,18 @@ class MatchMenuDelegate extends Ui.InputDelegate {
 
         for (var i = 0; i < view.optionYs.size(); i++) {
             if (y >= view.optionYs[i] - tolerance && y <= view.optionYs[i] + tolerance) {
-                view.selectedOption = i;
-                Ui.requestUpdate();
-                executeOption(i);
+                // v1.4.8: tap-twice confirmation. First tap only
+                // highlights the option; tapping the already-highlighted
+                // option executes it. Prevents mid-match mis-hits
+                // (SAVE/LATER/DISCARD were confused on 2026-06-12 —
+                // sweaty fingers + adjacent tap zones). RESUME is
+                // highlighted by default, so a single tap still resumes.
+                if (i == view.selectedOption) {
+                    executeOption(i);
+                } else {
+                    view.selectedOption = i;
+                    Ui.requestUpdate();
+                }
                 return true;
             }
         }
@@ -228,6 +237,15 @@ class MatchMenuDelegate extends Ui.InputDelegate {
             // per-point save in MainDelegate would never have fired).
             if (engine != null) {
                 MatchPersistence.saveState(engine);
+            }
+            // v1.4.8: stop and SAVE the recording so far (partial
+            // activity in Garmin Connect, no Supabase sync). Previously
+            // the session was left running, so the watch OS displayed
+            // its own save dialog — matches "saved" there bypassed
+            // MatchMind's sync and history. Resuming starts a fresh
+            // recording for the rest of the match.
+            if (manager != null && manager.isActive()) {
+                manager.stopSessionForLater(engine);
             }
             // Stack typically: [Setup, Main, MatchMenu] (fresh)
             //              or: [Main, MatchMenu]        (resumed)

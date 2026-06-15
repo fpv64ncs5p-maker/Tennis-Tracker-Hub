@@ -9,6 +9,7 @@
 using Toybox.Application as App;
 using Toybox.WatchUi as Ui;
 using Toybox.Lang;
+using Toybox.Timer;
 
 // TennisApp is the main application class.
 // Garmin calls onStart() automatically when the app opens.
@@ -18,14 +19,70 @@ class TennisApp extends App.AppBase {
     // callback reference stays alive while the HTTP request is in-flight.
     var _startupSync;
 
+    // v1.3.10: hold TennisActivityManager during a match upload so it
+    // is not garbage-collected before onResponse() fires.
+    var _matchSync;
+
+    // v1.3.10: timer used to defer the startup retry until after the app
+    // is fully initialised (makeWebRequest cannot fire during getInitialView).
+    var _retryTimer;
+
     function initialize() {
         AppBase.initialize();
         _startupSync = null;
+        _matchSync   = null;
+        _retryTimer  = null;
     }
 
-    // Called when the app starts — nothing to do here,
-    // getInitialView() handles the first screen.
+    // v1.3.10: schedule the pending-upload retry here (after view stack is
+    // ready) rather than inside getInitialView() where the Communications
+    // layer is not yet available and makeWebRequest returns -200.
     function onStart(state) {
+        if (MatchPersistence.firstPendingSlot() >= 0) {
+            _retryTimer = new Timer.Timer();
+            _retryTimer.start(method(:retryPendingUpload), 2000, false);
+        }
+    }
+
+    // Timer callback — fires 2 s after app start.
+    // By this point the view is rendered and makeWebRequest is allowed.
+    function retryPendingUpload() as Void {
+        _retryTimer = null;
+        retryNextPending();
+    }
+
+    // v1.4.8: processes the FIRST pending queue slot. Chained from
+    // SupabaseSync.onResponse() on each success, so multiple stuck
+    // matches drain one by one while connectivity is good. Stops on
+    // the first failure (payloads stay queued for next time).
+    function retryNextPending() as Void {
+        var slot = MatchPersistence.firstPendingSlot();
+        if (slot < 0) {
+            _startupSync = null;   // queue empty — release GC anchor
+            return;
+        }
+        try {
+            var state = MatchPersistence.loadSlot(slot);
+            if (state == null) {
+                MatchPersistence.clearSlot(slot);
+                return;
+            }
+            var config = {
+                :matchFormat           => state.hasKey("matchFormat") ? state["matchFormat"] : 0,
+                :setsToWin             => state["setsToWin"],
+                :tiebreakEnabled       => state["tbEnabled"],
+                :superTiebreakFinalSet => state["superTBFinal"]
+            };
+            var engine = new TennisMatchEngine(config);
+            engine.restore(state);
+            _startupSync = new SupabaseSync();
+            _startupSync.setSlot(slot);
+            _startupSync.uploadMatch(engine, null);
+        } catch (ex instanceof Lang.Exception) {
+            // Corrupted or stale payload — drop this slot so it
+            // doesn't block the rest of the queue.
+            MatchPersistence.clearSlot(slot);
+        }
     }
 
     // Called when the app stops (user exits or watch powers down).
@@ -34,38 +91,9 @@ class TennisApp extends App.AppBase {
     }
 
     // Required by Connect IQ — returns the initial view and delegate.
-    // v1.3.7: on startup, checks for any match data that wasn't uploaded
-    // in the previous session (e.g. OS-intercepted exit, mid-match save)
-    // and retries the Supabase POST silently in the background.
     function getInitialView() {
-        // ── v1.3.8: retry any pending Supabase upload ─────────
-        // Uses a dedicated payload key that survives clearState() —
-        // so retries work even when the match ended normally via
-        // finishAndExit (which wipes the resume state but not this key).
-        if (MatchPersistence.hasSupabasePayload()) {
-            try {
-                var state = MatchPersistence.loadSupabasePayload();
-                if (state != null) {
-                    var config = {
-                        :matchFormat           => state.hasKey("matchFormat") ? state["matchFormat"] : 0,
-                        :setsToWin             => state["setsToWin"],
-                        :tiebreakEnabled       => state["tbEnabled"],
-                        :superTiebreakFinalSet => state["superTBFinal"]
-                    };
-                    var engine = new TennisMatchEngine(config);
-                    engine.restore(state);
-                    _startupSync = new SupabaseSync();
-                    _startupSync.uploadMatch(engine, null);
-                }
-            } catch (ex instanceof Lang.Exception) {
-                // Corrupted or stale payload — clear it and continue.
-                // This prevents a bad payload from crashing the app on startup.
-                MatchPersistence.clearSupabasePayload();
-            }
-        }
-
         // ── Resume prompt or fresh setup ──────────────────────
-        // v1.3.7: also skip the resume prompt for completed matches
+        // v1.3.7: skip the resume prompt for completed matches
         // (matchOver = true) — no point resuming a finished game.
         if (MatchPersistence.hasSavedState()) {
             var state = MatchPersistence.loadState();

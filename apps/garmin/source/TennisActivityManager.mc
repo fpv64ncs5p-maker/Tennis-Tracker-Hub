@@ -222,10 +222,12 @@ class TennisActivityManager {
         if (_uploadFired) { return; }
         if (engine != null && _supabaseSync != null) {
             _uploadFired = true;
-            // v1.3.8: save the payload before firing so it survives
-            // in Storage even if the app exits before onResponse() fires.
-            // Cleared only when Supabase confirms success (200/201/204).
-            MatchPersistence.saveSupabasePayload(engine.getState());
+            // v1.4.8: queue the payload (own slot) before firing so it
+            // survives in Storage even if the app exits before
+            // onResponse() — and can no longer be overwritten by the
+            // next match. Cleared only on confirmed success.
+            var slot = MatchPersistence.queueSupabasePayload(engine.getState());
+            _supabaseSync.setSlot(slot);
             _supabaseSync.uploadMatch(engine, self);
             // v1.3.10: anchor self on TennisApp so GC cannot collect this
             // object (and the SupabaseSync callback within it) while the
@@ -260,11 +262,36 @@ class TennisActivityManager {
         // v1.3.8: save payload before firing so Storage survives app exit.
         if (engine != null && _supabaseSync != null && !_uploadFired) {
             _uploadFired = true;
-            MatchPersistence.saveSupabasePayload(engine.getState());
+            // v1.4.8: queued payload slot (see earlyUpload).
+            var slot = MatchPersistence.queueSupabasePayload(engine.getState());
+            _supabaseSync.setSlot(slot);
             _supabaseSync.uploadMatch(engine, self);
             // v1.3.10: anchor self on TennisApp against GC.
             Application.getApp()._matchSync = self;
         }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // stopSessionForLater(engine)
+    // v1.4.8: used by the LATER menu option. Stops and SAVES the
+    // recording (partial activity in Garmin Connect) WITHOUT firing
+    // the Supabase sync — the match isn't finished yet. Previously
+    // LATER left the session running, so the watch OS showed its own
+    // save dialog and "saved" matches bypassed MatchMind entirely.
+    // ─────────────────────────────────────────────────────────
+    function stopSessionForLater(engine) {
+        if (_session != null) {
+            if (engine != null) {
+                writeSessionFields(engine);
+            }
+            _session.stop();
+            _session.save();
+            _session = null;
+        }
+        if (Sensor has :setEnabledSensors) {
+            Sensor.setEnabledSensors([]);
+        }
+        isRunning = false;
     }
 
     function writeSessionFields(engine) {

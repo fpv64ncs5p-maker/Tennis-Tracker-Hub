@@ -2,6 +2,11 @@
 // MainView.mc — Main Match Screen (responsive layout)
 // MatchMind Tennis Tracker for Garmin Vivoactive 6
 // ============================================================
+// v1.4.9: NEUTRAL DEAD-ZONE added between the WON area and the ERROR/D.FAULT
+// buttons. Fixes ERROR taps silently scoring for YOU when the finger drifts a
+// little high: a tap in [deadZoneTopY, buttonTopY) now does nothing (grey
+// blink) instead of registering a point. Buttons also made taller, the score
+// block nudged up to clear the dead-zone, and the UNDO bar slimmed.
 // v1.3.6: earlyUpload() called in MainDelegate.onTap() the instant the last
 // point is scored (prevMatchOver false → engine.matchOver true). This fires
 // the Supabase POST before any button interaction, so it survives even if the
@@ -36,6 +41,7 @@ class MainView extends Ui.View {
     var buttonTopY;        // top of ERROR/D.FAULT buttons
     var buttonBottomY;     // bottom of buttons
     var centerX;           // vertical divider X (also splits the buttons)
+    var deadZoneTopY;      // v1.4.9: WON ends here; [deadZoneTopY, buttonTopY) is a neutral buffer
 
     function initialize(eng, mgr) {
         View.initialize();
@@ -44,6 +50,7 @@ class MainView extends Ui.View {
         buttonTopY    = 0;
         buttonBottomY = 0;
         centerX       = 0;
+        deadZoneTopY  = 0;
     }
 
     function onLayout(dc) {}
@@ -76,14 +83,18 @@ class MainView extends Ui.View {
         // doesn't clip them. Buttons taller for easier finger taps.
         centerX           = w / 2;
         var statusDivY    = h * 23 / 100;
-        buttonTopY        = h * 66 / 100;
-        buttonBottomY     = h * 86 / 100;
-        var brandingY     = h * 93 / 100;
+        // v1.4.9: neutral dead-zone sits between the WON area and the scoring
+        // buttons. A tap in [deadZoneTopY, buttonTopY) does nothing instead of
+        // being misread as a point for YOU. Buttons start higher and run lower
+        // (UNDO slimmed) so ERROR/D.FAULT are a bigger target.
+        deadZoneTopY      = h * 58 / 100;
+        buttonTopY        = h * 63 / 100;
+        buttonBottomY     = h * 87 / 100;
 
         drawStatusBar(dc, w, h, statusDivY);
         drawScoreArea(dc, w, h, statusDivY, buttonTopY);
         drawButtons(dc, w, h, buttonTopY, buttonBottomY);
-        drawBranding(dc, w, brandingY);
+        drawUndoButton(dc, w, h, buttonBottomY);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -150,11 +161,11 @@ class MainView extends Ui.View {
         // Anchor positions inside the score band
         var p1x         = w * 23 / 100;       // P1 column centre
         var p2x         = w * 77 / 100;       // P2 column centre
-        var labelsY     = statusDivY + (h * 5 / 100);   // ~110
+        var labelsY     = statusDivY + (h * 3 / 100);   // v1.4.9: raised ~2% to clear the dead-zone
         var gamesY      = labelsY + (h * 7 / 100);      // ~115
         var histTopY    = labelsY + (h * 21 / 100);     // ~170 — set history rows
         var pointsY     = labelsY + (h * 22 / 100);     // big points text top
-        var ovalCY      = labelsY + (h * 26 / 100);     // ~190 — oval centre (shifted up for breathing room above buttons)
+        var ovalCY      = labelsY + (h * 24 / 100);     // v1.4.9: raised so the oval sits fully above the dead-zone
 
         // ── Player labels ─────────────────────────────────────
         // v1.1.2: renamed P1/P2 → YOU/OPP for at-a-glance clarity.
@@ -215,7 +226,7 @@ class MainView extends Ui.View {
 
         // ── Green oval behind P1 points ───────────────────────
         var ovalRX = w * 12 / 100;
-        var ovalRY = h * 9 / 100;
+        var ovalRY = h * 8 / 100;   // v1.4.9: slightly smaller so it clears the dead-zone
         dc.setColor(0x003300, Gfx.COLOR_TRANSPARENT);
         dc.fillEllipse(p1x, ovalCY, ovalRX, ovalRY);
 
@@ -272,9 +283,28 @@ class MainView extends Ui.View {
             Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
     }
 
-    function drawBranding(dc, w, y) {
-        dc.setColor(0x555555, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, y, Gfx.FONT_XTINY, "MatchMind",
+    // ─────────────────────────────────────────────────────────
+    // drawUndoButton — v1.4.8: dedicated UNDO control (replaces the
+    // "MatchMind" branding). The swipe-up undo proved unreliable on
+    // the real watch: fast swipes register as taps on the top half,
+    // ADDING a point for the player instead of undoing one. The tap
+    // zone is the full strip below the ERROR/D.FAULT buttons.
+    // ─────────────────────────────────────────────────────────
+    function drawUndoButton(dc, w, h, btnBotY) {
+        // v1.4.9: slim UNDO bar. The tap target is the whole strip below the
+        // buttons (see MainDelegate), so this is just an affordance — kept
+        // short and narrow enough to stay inside the round bezel, freeing
+        // vertical space for the taller ERROR/D.FAULT buttons above.
+        var btnW = w * 32 / 100;
+        var btnX = w / 2 - btnW / 2;
+        var btnY = btnBotY + 3;
+        var btnH = h * 7 / 100;
+        if (btnH < 16) { btnH = 16; }
+
+        dc.setColor(Gfx.COLOR_DK_BLUE, Gfx.COLOR_TRANSPARENT);
+        dc.drawRectangle(btnX, btnY, btnW, btnH);
+        dc.setColor(Gfx.COLOR_BLUE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, btnY + btnH / 2, Gfx.FONT_XTINY, "UNDO",
             Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
     }
 
@@ -335,8 +365,31 @@ class MainDelegate extends Ui.InputDelegate {
 
         // Use the layout values the view computed last frame.
         // Fallback to safe defaults if onUpdate hasn't run yet.
-        var btnTop = (view.buttonTopY > 0) ? view.buttonTopY : 252;
-        var cx     = (view.centerX > 0)    ? view.centerX    : 195;
+        var btnTop  = (view.buttonTopY > 0)    ? view.buttonTopY    : 246;
+        var btnBot  = (view.buttonBottomY > 0) ? view.buttonBottomY : 339;
+        var cx      = (view.centerX > 0)       ? view.centerX       : 195;
+        var deadTop = (view.deadZoneTopY > 0)  ? view.deadZoneTopY  : 226;
+
+        // v1.4.8: UNDO — the full strip below the ERROR/D.FAULT buttons.
+        // Handled BEFORE the scoring zones so an undo can never be
+        // misread as a point input.
+        if (y > btnBot) {
+            engine.undo();
+            MatchPersistence.saveState(engine);
+            view.showFeedback(Gfx.COLOR_DK_BLUE);
+            Ui.requestUpdate();
+            return true;
+        }
+
+        // v1.4.9: NEUTRAL DEAD-ZONE between the WON area (top) and the
+        // ERROR/D.FAULT buttons. A tap here does NOTHING (grey blink) instead
+        // of being misread as a point for YOU — the fix for ERROR taps that
+        // silently scored for the player when the finger drifted a bit high.
+        if (y >= deadTop && y < btnTop) {
+            view.showFeedback(Gfx.COLOR_DK_GRAY);
+            Ui.requestUpdate();
+            return true;
+        }
 
         // v1.1.5: snapshot SET total before scoring so we can detect a
         // set-end transition and write a FIT lap with per-set custom
@@ -348,7 +401,7 @@ class MainDelegate extends Ui.InputDelegate {
         // detect the exact moment the match ends and fire earlyUpload().
         var prevMatchOver = engine.matchOver;
 
-        if (y < btnTop) {
+        if (y < deadTop) {
             engine.handleInput(engine.WON);
             view.showFeedback(Gfx.COLOR_DK_GREEN);
         } else if (x < cx) {

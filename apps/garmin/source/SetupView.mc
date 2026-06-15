@@ -110,6 +110,22 @@ class SetupView extends Ui.View {
         dc.setColor(Gfx.COLOR_YELLOW, Gfx.COLOR_TRANSPARENT);
         dc.drawText(w / 2, subtitleY, Gfx.FONT_XTINY, "MATCH SETUP", Gfx.TEXT_JUSTIFY_CENTER);
 
+        // ── v1.4.7: startup-retry sync status ─────────────────
+        // Shows the outcome of the pending-upload retry that App.mc
+        // fires 2 s after launch. Hidden when no upload was attempted.
+        var st = SyncStatus.text;
+        if (!st.equals("")) {
+            var stColor = Gfx.COLOR_LT_GRAY;
+            if (st.find("OK") != null) {
+                stColor = Gfx.COLOR_GREEN;
+            } else if (st.find("ERR") != null || st.find("EXC") != null) {
+                stColor = Gfx.COLOR_RED;
+            }
+            dc.setColor(stColor, Gfx.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, subtitleY + subtitleH, Gfx.FONT_XTINY, st,
+                Gfx.TEXT_JUSTIFY_CENTER);
+        }
+
         // ── TYPE row (v1.2) ──────────────────────────────────
         var typeLabels = ["Singles", "Doubles"];
         drawRow(dc, w, rowYs[0], "TYPE", typeLabels[matchTypeIdx], selectedItem == 0, false);

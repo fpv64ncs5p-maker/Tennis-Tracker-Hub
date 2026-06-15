@@ -41,7 +41,27 @@ class PostMatchView extends Ui.View {
             drawHealthPage(dc, w, h);
         }
 
+        drawSyncStatus(dc, w, h);
         drawPageIndicator(dc, w, h);
+    }
+
+    // ── v1.4.7: visible Supabase upload status ────────────────
+    // Drawn just above the page indicator dots on both pages.
+    // Green = confirmed insert, red = error (code shown), gray =
+    // request in-flight. Empty string = upload never attempted.
+    function drawSyncStatus(dc, w, h) {
+        var st = SyncStatus.text;
+        if (st.equals("")) { return; }
+
+        var color = Gfx.COLOR_LT_GRAY;
+        if (st.find("OK") != null) {
+            color = Gfx.COLOR_GREEN;
+        } else if (st.find("ERR") != null || st.find("EXC") != null) {
+            color = Gfx.COLOR_RED;
+        }
+        dc.setColor(color, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h - (h * 11 / 100), Gfx.FONT_XTINY, st,
+            Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
     }
 
     // ── Page 1: Score / Match Stats ───────────────────────────

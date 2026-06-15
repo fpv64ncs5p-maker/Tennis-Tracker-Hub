@@ -23,7 +23,17 @@ using Toybox.Application;
 
 class SupabaseSync {
 
+    // v1.4.8: queue slot this upload's payload lives in (see
+    // MatchPersistence queue). Cleared individually on success so a
+    // failed upload can never be overwritten by the next match.
+    var _slot;
+
     function initialize() {
+        _slot = -1;
+    }
+
+    function setSlot(i) {
+        _slot = i;
     }
 
     // ─────────────────────────────────────────────────────────
@@ -36,27 +46,50 @@ class SupabaseSync {
 
         var url = Secrets.SUPABASE_URL + "/rest/v1/matches";
 
+        // v1.4.7: Prefer return=representation (was return=minimal).
+        // With return=minimal Supabase replies 201 with an EMPTY body,
+        // and CIQ's JSON responseType turns an empty body into error
+        // -400 (INVALID_HTTP_BODY_IN_NETWORK_RESPONSE) — which would
+        // make a *successful* insert look like a failure on-watch.
+        // v1.4.7: Content-Type MUST be the CIQ enum constant, not the
+        // string "application/json". CIQ validates headers locally and
+        // rejects arbitrary Content-Type strings with -200
+        // (INVALID_HTTP_HEADER_FIELDS_IN_REQUEST) BEFORE sending — the
+        // request never leaves the watch. This was the silent sync
+        // killer on both simulator and real watch.
         var headers = {
-            "Content-Type"  => "application/json",
+            "Content-Type"  => Comm.REQUEST_CONTENT_TYPE_JSON,
             "apikey"        => Secrets.SUPABASE_ANON_KEY,
             "Authorization" => "Bearer " + Secrets.SUPABASE_ANON_KEY,
-            "Prefer"        => "return=minimal"
+            "Prefer"        => "return=representation"
         };
+
+        SyncStatus.set("SYNC ...");
 
         var body = buildPayload(engine, manager);
 
         Sys.println("SupabaseSync: POST " + url);
+        Sys.println("SupabaseSync: payload=" + body);
 
-        Comm.makeWebRequest(
-            url,
-            body,
-            {
-                :method       => Comm.HTTP_REQUEST_METHOD_POST,
-                :headers      => headers,
-                :responseType => Comm.HTTP_RESPONSE_CONTENT_TYPE_JSON
-            },
-            method(:onResponse)
-        );
+        // v1.4.7: wrap in try/catch and surface the outcome via
+        // SyncStatus — previously a serializer/argument failure here
+        // was completely silent on the real watch.
+        try {
+            Comm.makeWebRequest(
+                url,
+                body,
+                {
+                    :method       => Comm.HTTP_REQUEST_METHOD_POST,
+                    :headers      => headers,
+                    :responseType => Comm.HTTP_RESPONSE_CONTENT_TYPE_JSON
+                },
+                method(:onResponse)
+            );
+            SyncStatus.set("SYNC SENT");
+        } catch (ex) {
+            Sys.println("SupabaseSync: EXCEPTION " + ex.getErrorMessage());
+            SyncStatus.set("SYNC EXC");
+        }
     }
 
     // ─────────────────────────────────────────────────────────
@@ -67,14 +100,20 @@ class SupabaseSync {
     function onResponse(responseCode as Lang.Number, data as Lang.Dictionary or Lang.String or Null) as Void {
         if (responseCode == 200 || responseCode == 201 || responseCode == 204) {
             Sys.println("SupabaseSync: OK (" + responseCode + ")");
-            // v1.3.8: upload confirmed — clear the saved payload so
-            // App.mc doesn't retry on next startup.
-            MatchPersistence.clearSupabasePayload();
-            // v1.3.10: release GC anchors now that the request is done.
-            Application.getApp()._matchSync    = null;
-            Application.getApp()._startupSync  = null;
+            SyncStatus.set("SYNC OK");
+            // v1.4.8: upload confirmed — clear only THIS payload's queue
+            // slot, then chain to the next pending payload (if any) while
+            // connectivity is proven good. retryNextPending() manages the
+            // _startupSync anchor itself (sets a new one or nulls it).
+            if (_slot >= 0) {
+                MatchPersistence.clearSlot(_slot);
+                _slot = -1;
+            }
+            Application.getApp()._matchSync = null;
+            Application.getApp().retryNextPending();
         } else {
             Sys.println("SupabaseSync: FAILED code=" + responseCode + " data=" + data);
+            SyncStatus.set("SYNC ERR " + responseCode);
             // Payload stays in Storage — App.mc will retry on next open.
         }
     }
@@ -97,11 +136,11 @@ class SupabaseSync {
         var durationMs = Sys.getTimer() - engine.startTime;
         var durationSec = durationMs / 1000;
 
-        var hrAvg = null;
-        var hrMax = null;
-        // HR is best-effort: only included if the activity manager
-        // has them. (We don't always have these on demand.)
-
+        // v1.4.5: omit null values entirely — CIQ's JSON serializer
+        // silently fails when a Dictionary contains null values,
+        // preventing makeWebRequest from firing. hr_avg/hr_max are
+        // always null for now so we simply leave them out; Supabase
+        // will store NULL via the column default.
         var payload = {
             "match_date"           => formatTimestampUtc(),
             "match_type"           => engine.matchType,
@@ -109,7 +148,6 @@ class SupabaseSync {
             "result"               => matchResult(engine),
             "duration_sec"         => durationSec,
             "final_score"          => buildFinalScore(engine),
-            "set_scores"           => buildSetScoresJson(engine),
             "sets_won"             => engine.player[:sets],
             "sets_lost"            => engine.opponent[:sets],
             "points_won"           => engine.player[:winners],
@@ -122,9 +160,7 @@ class SupabaseSync {
             "tiebreaks_won"        => engine.player[:tiebreaksWon],
             "tiebreak_points_won"  => engine.player[:tiebreakPointsWon],
             "tiebreak_points_lost" => engine.player[:tiebreakPointsLost],
-            "hr_avg"               => hrAvg,
-            "hr_max"               => hrMax,
-            "player_served_first"  => engine.playerServing  // best approximation
+            "player_served_first"  => engine.playerServing ? 1 : 0
         };
 
         return payload;

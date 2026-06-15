@@ -9,7 +9,7 @@ Monorepo combining the Garmin tennis tracker app (MatchMind) and the Training Hu
 - Single-file HTML/JS/CSS web app (~7000+ lines in `index.html`)
 - Deployed via GitHub Pages
 - Multi-sport training dashboard: Gym · Climbing · Rehab · Planner · Tennis
-- **Current integration goal:** add a Tennis tab that reads match stats from Supabase
+- **Tennis tab LIVE (2026-06-12):** end-to-end pipeline verified — watch records match → syncs to Supabase `matches` → Tennis tab displays history, win rate, recent form, per-match stats
 - Main file: `index.html`
 - Live at: https://fpv64ncs5p-maker.github.io/Tennis-Tracker-Hub/
 
@@ -41,7 +41,21 @@ Monorepo combining the Garmin tennis tracker app (MatchMind) and the Training Hu
 - Supabase RLS: anon INSERT (watch app) + anon SELECT (web app)
 
 ## Current Version
-- Garmin app: **v1.4.0** (submitted to Garmin store 2026-05-28 — awaiting approval)
+- Garmin app: **v1.4.9** (submitted to store 2026-06-15, awaiting approval — sim-verified by Jo; NOT yet approved). v1.4.8 approved + real-watch tested 2026-06-15: Undo button works, but surfaced a tap-scoring bug (ERROR taps near the top of the button often registered as YOU/WON). v1.4.7 approved + real-watch verified 2026-06-12: sync works, rows arrive in `matches`.
+- v1.4.9 (tap-scoring fix — Option 2 "buffer + bigger buttons"; `MainView.mc` only): ERROR/D.FAULT sat in a thin strip directly under the huge "tap top half = YOU won" zone with NO gap, so an ERROR tap landing a few px high silently scored for the player — made worse by v1.4.8's UNDO bar eating the bottom of the scoring band. Fix: a NEUTRAL DEAD-ZONE between WON and the buttons — a tap in `[deadZoneTopY 58%, buttonTopY 63%)` does nothing (grey blink). Buttons enlarged (now `63%→87%`, was `66%→86%`), score block nudged up (oval bottom now 58%, clears the buffer), UNDO slimmed to a 32%-wide bar. Tap zones top→bottom: WON `y<58%` · DEAD `58–63%` · ERROR/D.FAULT `63–87%` (split at centre x) · UNDO `y>87%`. iCloud build source edited; `apps/garmin/source/` mirror synced.
+- v1.4.8 (4 fixes from first real-watch evening with working sync):
+  1. **Supabase retry QUEUE** (5 slots, `supabase_q_0..4`, legacy key migrated) — single slot meant a failed upload was OVERWRITTEN by the next match (one match permanently lost 2026-06-12). Queue drains by chaining: each successful `onResponse` triggers `retryNextPending()`.
+  2. **MatchMenu tap-twice confirm** — first tap highlights, second tap executes (RESUME pre-highlighted, so single-tap resume still works). Fixes mid-match SAVE/LATER/DISCARD mis-hits.
+  3. **LATER stops + saves the recording** (`stopSessionForLater`, no sync) — previously left the session running, watch OS showed its own save dialog, matches "saved" there bypassed sync + history. One interrupted match = two Garmin activities (Jo's choice over losing HR data).
+  4. **Dedicated UNDO button** (replaces MatchMind branding strip below ERROR/D.FAULT) — swipe-up undo registers as a top-half TAP on the real watch, ADDING a point instead of undoing. Swipe-up still works as fallback.
+- v1.4.6: approved + installed on watch 2026-06-12. Real-watch test: activity saves to Garmin Connect but NO request reaches Supabase (confirmed via API Gateway logs). curl test with same key/payload → 201, so Supabase side is fully working; failure is on-watch and silent.
+- v1.4.1: bigger fonts in MatchMenu and MatchHistory
+- v1.4.2: readability improvements across Setup, MainView, MatchMenu, MatchHistory
+- v1.4.3: fix Supabase sync — correct anon key in Secrets.mc; Supabase ALTER TABLE added DEFAULT 0 to stat columns, dropped NOT NULL from hr_avg/hr_max/player_served_first
+- v1.4.4: remove set_scores array-of-dicts from payload — CIQ JSON serializer silently failed on nested arrays, preventing makeWebRequest from firing at all
+- v1.4.5: remove hr_avg/hr_max null values + convert playerServing Boolean to 1/0 — CIQ JSON serializer silently fails on null and Boolean types
+- v1.4.6: rebuild + resubmit of the v1.4.5 payload fixes. NOTE (2026-06-12 correction): the versionCode theory was wrong — the sed edit landed in the monorepo manifest (never built), the submitted .iq had NO versionCode, and the store update still reached the watch fine. versionCode is not part of the CIQ manifest schema and is irrelevant. See `MatchMind_Supabase_Sync_Findings.md`
+- v1.4.7: **ROOT CAUSE FOUND & FIXED** — `"Content-Type" => "application/json"` (string) fails CIQ's local header validation with -200 (INVALID_HTTP_HEADER_FIELDS_IN_REQUEST); the request NEVER left the watch, on simulator and real device alike, in every version since sync was built. Fix: `"Content-Type" => Comm.REQUEST_CONTENT_TYPE_JSON` (enum constant). Verified in simulator: SYNC OK + rows inserted in `matches` (incl. retried stuck payload). Also in v1.4.7: visible sync status (new `SyncStatus.mc`) in PostMatchView + SetupView — `SYNC ...` / `SYNC SENT` / `SYNC OK` (green) / `SYNC ERR n` (red) / `SYNC EXC`; and Prefer header → `return=representation` (empty 201 body from `return=minimal` triggers CIQ -400 with JSON responseType, disguising success as failure)
 
 ## Deployment
 
@@ -52,6 +66,7 @@ Monorepo combining the Garmin tennis tracker app (MatchMind) and the Training Hu
 - Live at: https://fpv64ncs5p-maker.github.io/Tennis-Tracker-Hub/
 
 ### Garmin App
+- ⚠️ **The build source of truth is the iCloud folder** (`PROJ007_Garmin App/Tennistracker/`) — `package.sh`/`run.sh` build THERE. `apps/garmin/` in this repo is a mirror for version control. Always edit the iCloud copy (or edit both), then keep them in sync — on 2026-06-12 a fix applied only to the mirror never made it into the built `.iq`.
 - Source code in `apps/garmin/source/`
 - `Secrets.mc` is NOT in git (excluded via .gitignore) — kept locally only
 - Build for simulator: `./run.sh` (from iCloud project folder)
@@ -74,7 +89,9 @@ Monorepo combining the Garmin tennis tracker app (MatchMind) and the Training Hu
 ## Training Hub — Key Context
 - **Architecture:** single-file, localStorage-first, no build step
 - **Sync:** Supabase `user_data` table (migrated from GitHub Gist 2026-05-27 — DNS issue no longer present, Supabase confirmed working on mobile)
-- **Tennis integration:** will use Supabase JS SDK to read `matches` table (separate from localStorage data)
+- **Tennis integration:** Tennis tab reads `matches` from Supabase (REST + anon key) and merges them with manually-logged matches (`tennis_matches` in localStorage).
+- **Watch-match editing (overlay):** watch rows are read-only in the DB. Web-side enrichment — Competition/Training category, partner, opponent, location, notes — and "remove from tab" (soft-hide, reversible) live in a `tennis_overlay` localStorage object keyed by match id, synced across devices via `user_data`. No anon UPDATE/DELETE RLS, so watch data stays immutable. (Built 2026-06-15, pending Jo's test + deploy.)
+- **Serve/return %:** needs `service_points_played` + `return_points_played` columns (`db/2026-06-15_add_serve_return_played.sql`) + MatchMind **v1.5.0** to send them (engine already counts them; web already reads them, NULL-tolerant). v1.5.0 watch edit deferred until v1.4.9 is approved.
 - **Activity colours:** Tennis = `#a78bfa` (lavender)
 - **Tabs:** Home · Gym · Climbing · Rehab · Planner · (Tennis — to be added/integrated)
 

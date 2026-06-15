@@ -73,23 +73,52 @@ module MatchPersistence {
     }
 
     // ─────────────────────────────────────────────────────────
-    // Supabase payload — saved when an upload is attempted,
-    // cleared only on confirmed success. Survives clearState().
+    // v1.4.8: Supabase payload QUEUE (5 slots, keys supabase_q_0..4).
+    // Previously a single key meant that playing another match
+    // OVERWROTE an unsynced one — a match was permanently lost on
+    // 2026-06-12 this way. Now each pending payload gets its own
+    // slot; slots are cleared individually on confirmed upload.
     // ─────────────────────────────────────────────────────────
-    function saveSupabasePayload(state) {
-        Storage.setValue(SUPABASE_PAYLOAD_KEY, state);
+    const SUPABASE_QUEUE_SIZE = 5;
+
+    function queueKey(i) {
+        return "supabase_q_" + i.toString();
     }
 
-    function hasSupabasePayload() {
-        return (Storage.getValue(SUPABASE_PAYLOAD_KEY) != null);
+    // Saves a payload into the first free slot; returns the slot index.
+    // If all 5 slots are full, overwrites the NEWEST slot (the oldest
+    // pending matches are preserved).
+    function queueSupabasePayload(state) {
+        for (var i = 0; i < SUPABASE_QUEUE_SIZE; i++) {
+            if (Storage.getValue(queueKey(i)) == null) {
+                Storage.setValue(queueKey(i), state);
+                return i;
+            }
+        }
+        Storage.setValue(queueKey(SUPABASE_QUEUE_SIZE - 1), state);
+        return SUPABASE_QUEUE_SIZE - 1;
     }
 
-    function loadSupabasePayload() {
-        return Storage.getValue(SUPABASE_PAYLOAD_KEY);
+    // Returns the index of the first occupied slot, or -1 if none.
+    // Also migrates a legacy pre-1.4.8 single-key payload into the queue.
+    function firstPendingSlot() {
+        var legacy = Storage.getValue(SUPABASE_PAYLOAD_KEY);
+        if (legacy != null) {
+            Storage.deleteValue(SUPABASE_PAYLOAD_KEY);
+            queueSupabasePayload(legacy);
+        }
+        for (var i = 0; i < SUPABASE_QUEUE_SIZE; i++) {
+            if (Storage.getValue(queueKey(i)) != null) { return i; }
+        }
+        return -1;
     }
 
-    function clearSupabasePayload() {
-        Storage.deleteValue(SUPABASE_PAYLOAD_KEY);
+    function loadSlot(i) {
+        return Storage.getValue(queueKey(i));
+    }
+
+    function clearSlot(i) {
+        Storage.deleteValue(queueKey(i));
     }
 }
 
