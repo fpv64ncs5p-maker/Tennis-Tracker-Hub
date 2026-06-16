@@ -38,10 +38,10 @@ Monorepo combining the Garmin tennis tracker app (MatchMind) and the Training Hu
 ## Security
 - `Secrets.mc` is excluded from git (listed in `.gitignore`) — contains API keys and credentials for the Garmin app
 - The GitHub repo is private
-- Supabase RLS: anon INSERT (watch app) + anon SELECT (web app)
+- Supabase RLS: anon INSERT (watch app) + anon SELECT (web app) + anon DELETE (web "Delete permanently"). The anon key is public — accepted trade-off for a personal tracker (`db/2026-06-16_anon_delete_matches.sql`)
 
 ## Current Version
-- Garmin app: **v1.4.9** (submitted to store 2026-06-15, awaiting approval — sim-verified by Jo; NOT yet approved). v1.4.8 approved + real-watch tested 2026-06-15: Undo button works, but surfaced a tap-scoring bug (ERROR taps near the top of the button often registered as YOU/WON). v1.4.7 approved + real-watch verified 2026-06-12: sync works, rows arrive in `matches`.
+- Garmin app: **v1.4.9** (approved + real-watch tested 2026-06-15 — tap-scoring fix confirmed working). v1.5.0 (serve/return points-played) submitted 2026-06-15, awaiting approval. v1.4.8 approved + real-watch tested 2026-06-15: Undo button works, but surfaced a tap-scoring bug (ERROR taps near the top of the button often registered as YOU/WON). v1.4.7 approved + real-watch verified 2026-06-12: sync works, rows arrive in `matches`.
 - v1.4.9 (tap-scoring fix — Option 2 "buffer + bigger buttons"; `MainView.mc` only): ERROR/D.FAULT sat in a thin strip directly under the huge "tap top half = YOU won" zone with NO gap, so an ERROR tap landing a few px high silently scored for the player — made worse by v1.4.8's UNDO bar eating the bottom of the scoring band. Fix: a NEUTRAL DEAD-ZONE between WON and the buttons — a tap in `[deadZoneTopY 58%, buttonTopY 63%)` does nothing (grey blink). Buttons enlarged (now `63%→87%`, was `66%→86%`), score block nudged up (oval bottom now 58%, clears the buffer), UNDO slimmed to a 32%-wide bar. Tap zones top→bottom: WON `y<58%` · DEAD `58–63%` · ERROR/D.FAULT `63–87%` (split at centre x) · UNDO `y>87%`. iCloud build source edited; `apps/garmin/source/` mirror synced.
 - v1.4.8 (4 fixes from first real-watch evening with working sync):
   1. **Supabase retry QUEUE** (5 slots, `supabase_q_0..4`, legacy key migrated) — single slot meant a failed upload was OVERWRITTEN by the next match (one match permanently lost 2026-06-12). Queue drains by chaining: each successful `onResponse` triggers `retryNextPending()`.
@@ -82,16 +82,16 @@ Monorepo combining the Garmin tennis tracker app (MatchMind) and the Training Hu
 
 ## Supabase Integration
 - Project ID: `pmzzmvzbgeonjnbfreze`
-- Table: `matches` (27 columns: all engine stats + nullable opponent_name, location, notes)
-- RLS: anon INSERT (watch) + anon SELECT (web)
+- Table: `matches` (29 columns: all engine stats incl. serve/return points played+won, + nullable opponent_name, location, notes)
+- RLS: anon INSERT (watch) + anon SELECT (web) + anon DELETE (web permanent-delete, `db/2026-06-16_anon_delete_matches.sql`)
 - Watch app credentials in `Secrets.mc` (gitignored)
 
 ## Training Hub — Key Context
 - **Architecture:** single-file, localStorage-first, no build step
 - **Sync:** Supabase `user_data` table (migrated from GitHub Gist 2026-05-27 — DNS issue no longer present, Supabase confirmed working on mobile)
 - **Tennis integration:** Tennis tab reads `matches` from Supabase (REST + anon key) and merges them with manually-logged matches (`tennis_matches` in localStorage).
-- **Watch-match editing (overlay):** watch rows are read-only in the DB. Web-side enrichment — Competition/Training category, partner, opponent, location, notes — and "remove from tab" (soft-hide, reversible) live in a `tennis_overlay` localStorage object keyed by match id, synced across devices via `user_data`. No anon UPDATE/DELETE RLS, so watch data stays immutable. (Built 2026-06-15, pending Jo's test + deploy.)
-- **Serve/return %:** needs `service_points_played` + `return_points_played` columns (`db/2026-06-15_add_serve_return_played.sql`) + MatchMind **v1.5.0** to send them (engine already counts them; web already reads them, NULL-tolerant). v1.5.0 watch edit deferred until v1.4.9 is approved.
+- **Watch-match editing (overlay):** watch rows are not editable in the DB (no anon UPDATE). Web-side enrichment — Competition/Training category, partner, opponent, location, notes — and "remove from tab" (soft-hide, reversible) live in a `tennis_overlay` localStorage object keyed by match id, synced across devices via `user_data`. Two removal modes: "remove from tab" = reversible soft-hide (overlay only, no DB change); "Delete permanently" removes the row via an anon DELETE policy (`db/2026-06-16_anon_delete_matches.sql`). Doubles get a 2nd opponent field (Partner + Opponent 2 shown only for doubles). (Live + confirmed by Jo 2026-06-15.)
+- **Serve/return %:** needs `service_points_played` + `return_points_played` columns (`db/2026-06-15_add_serve_return_played.sql`) + MatchMind **v1.5.0** to send them (engine already counts them; web already reads them, NULL-tolerant). v1.4.9 approved 2026-06-15; v1.5.0 submitted 2026-06-15, awaiting approval. **SQL columns added 2026-06-15 (confirmed by Jo, before submission)** — once v1.5.0 is approved + installed, serve/return won-lost + win% populate for new matches.
 - **Activity colours:** Tennis = `#a78bfa` (lavender)
 - **Tabs:** Home · Gym · Climbing · Rehab · Planner · (Tennis — to be added/integrated)
 

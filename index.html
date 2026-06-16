@@ -8113,6 +8113,26 @@ function unhideWatchMatch(id){
   renderTennis();
   showToast('Restored');
 }
+async function deleteWatchPermanently(){
+  if(!_twId) return;
+  const realId=_twId.replace(/^sb_/,'');
+  if(!confirm('Permanently delete this match from the database?\n\nThis removes the data for good and cannot be undone.')) return;
+  try{
+    const res=await fetch(`${_SB_URL}/rest/v1/matches?id=eq.${encodeURIComponent(realId)}`,{
+      method:'DELETE',
+      headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    _sbMatches=_sbMatches.filter(x=>x.id!==_twId);
+    const ov=_getTennisOverlay();
+    if(ov[_twId]){ delete ov[_twId]; _saveTennisOverlay(ov); }
+    closeModal('modal-tennis-watch');
+    renderTennis();
+    showToast('Match deleted from database');
+  }catch(e){
+    showToast('Delete failed — '+e.message,'error');
+  }
+}
 
 function miniStat(label,value){
   return `<div style="background:var(--surface2);border-radius:6px;padding:5px 6px;text-align:center">
@@ -8313,6 +8333,7 @@ function miniStat(label,value){
 
     <button class="btn" onclick="saveWatchOverlay()" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:12px;border-radius:var(--radius-sm);font-weight:800;font-size:15px;margin-top:4px">Save details</button>
     <button class="btn" onclick="removeWatchFromModal()" style="width:100%;background:none;color:var(--red);border:1px solid var(--red);padding:10px;border-radius:var(--radius-sm);font-weight:700;font-size:14px;margin-top:8px">Remove from tab</button>
+    <button onclick="deleteWatchPermanently()" style="width:100%;background:none;color:var(--red);border:none;padding:8px;font-weight:600;font-size:12.5px;margin-top:6px;cursor:pointer;text-decoration:underline">Delete permanently from database</button>
   </div>
 </div>
 

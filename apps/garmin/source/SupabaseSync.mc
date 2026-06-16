@@ -2,6 +2,11 @@
 // SupabaseSync.mc — POST match results to Supabase
 // MatchMind Tennis Tracker for Garmin Vivoactive 6
 // ============================================================
+// v1.5.0: payload now also sends service_points_played + return_points_played
+// (the engine already counts them) so the Training Hub Tennis tab can show full
+// serve/return won-lost + win%. REQUIRES the matching Supabase columns to exist
+// first (db/2026-06-15_add_serve_return_played.sql) or the INSERT 400s on an
+// unknown column and sync breaks.
 // v1.2: at match end, builds a JSON payload from the engine
 // state and POSTs it to the `matches` table via Supabase's REST
 // API. Credentials live in Secrets.mc; the watch needs internet
@@ -153,8 +158,10 @@ class SupabaseSync {
             "points_won"           => engine.player[:winners],
             "unforced_errors"      => engine.player[:unforcedErrors],
             "double_faults"        => engine.player[:doubleFaults],
-            "service_points_won"   => engine.player[:servePtsWon],
-            "return_points_won"    => engine.player[:returnPtsWon],
+            "service_points_won"    => engine.player[:servePtsWon],
+            "service_points_played" => engine.player[:servePtsPlayed],
+            "return_points_won"     => engine.player[:returnPtsWon],
+            "return_points_played"  => engine.player[:returnPtsPlayed],
             "total_games_won"      => totalGamesP,
             "total_games_lost"     => totalGamesO,
             "tiebreaks_won"        => engine.player[:tiebreaksWon],
