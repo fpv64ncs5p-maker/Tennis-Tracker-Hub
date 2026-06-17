@@ -459,21 +459,21 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
             </div>
             <div class="form-group">
               <label>Body Weight (kg)</label>
-              <input type="number" inputmode="decimal" id="gym-bw" placeholder="e.g. 49.0" step="0.1">
+              <input type="text" inputmode="decimal" id="gym-bw" placeholder="e.g. 49.0" step="0.1">
             </div>
           </div>
           <div class="form-row cols3">
             <div class="form-group" style="margin-bottom:0">
               <label>Height (cm)</label>
-              <input type="number" inputmode="decimal" id="gym-height" placeholder="165" step="0.1" oninput="localStorage.setItem('gym_height',this.value)">
+              <input type="text" inputmode="decimal" id="gym-height" placeholder="165" oninput="localStorage.setItem('gym_height',_normalizeKgInput(this.value))">
             </div>
             <div class="form-group" style="margin-bottom:0">
               <label>Body Fat %</label>
-              <input type="number" inputmode="decimal" id="gym-bf" placeholder="22" step="0.1">
+              <input type="text" inputmode="decimal" id="gym-bf" placeholder="22" step="0.1">
             </div>
             <div class="form-group" style="margin-bottom:0">
               <label>Muscle Mass (kg)</label>
-              <input type="number" inputmode="decimal" id="gym-mm" placeholder="38" step="0.1">
+              <input type="text" inputmode="decimal" id="gym-mm" placeholder="38" step="0.1">
             </div>
           </div>
           <div class="form-row cols2">
@@ -691,7 +691,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           </div>
           <div id="custom-wall-wrap" style="display:none">
             <label>Wall Height (m)</label>
-            <input type="number" inputmode="decimal" id="custom-wall" placeholder="13" step="0.5" style="margin-bottom:0" oninput="updateClimbSummary()">
+            <input type="text" inputmode="decimal" id="custom-wall" placeholder="13" step="0.5" style="margin-bottom:0" oninput="updateClimbSummary()">
           </div>
         </div>
 
@@ -774,7 +774,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           <div class="card">
             <div class="form-row cols2">
               <div class="form-group"><label>Date</label><input type="date" id="fb-date"></div>
-              <div class="form-group"><label>Body Weight (kg)</label><input type="number" inputmode="decimal" id="fb-bw" placeholder="49.0" step="0.1"></div>
+              <div class="form-group"><label>Body Weight (kg)</label><input type="text" inputmode="decimal" id="fb-bw" placeholder="49.0" step="0.1"></div>
             </div>
             <div class="form-row cols2">
               <div class="form-group" style="margin-bottom:0"><label>Started</label><input type="text" id="fb-start" placeholder="09:00" maxlength="5" inputmode="numeric" oninput="autoColonTime(this);updateFBDuration()"></div>
@@ -995,17 +995,17 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           </div>
           <div>
             <label>Level / Resistance</label>
-            <input type="number" inputmode="decimal" id="ex-cardio-level" placeholder="e.g. 8" min="1" step="0.5">
+            <input type="text" inputmode="decimal" id="ex-cardio-level" placeholder="e.g. 8">
           </div>
         </div>
         <div class="form-row cols2">
           <div>
             <label id="ex-dist-label">Distance (km)</label>
-            <input type="number" inputmode="decimal" id="ex-cardio-dist" placeholder="0.0" step="0.1" min="0">
+            <input type="text" inputmode="decimal" id="ex-cardio-dist" placeholder="0.0">
           </div>
           <div>
             <label id="ex-rpm-label">Avg RPM</label>
-            <input type="number" inputmode="decimal" id="ex-cardio-rpm" placeholder="e.g. 85" min="0">
+            <input type="text" inputmode="decimal" id="ex-cardio-rpm" placeholder="e.g. 85">
           </div>
         </div>
       </div>
@@ -1101,11 +1101,11 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div id="edit-hist-cardio">
       <div class="form-row cols2">
         <div class="form-group"><label>Duration</label><input type="text" id="edit-hist-cduration" placeholder="e.g. 20'"></div>
-        <div class="form-group"><label id="edit-hist-level-label">Level / Resistance</label><input type="number" inputmode="decimal" id="edit-hist-level" min="1" step="0.5"></div>
+        <div class="form-group"><label id="edit-hist-level-label">Level / Resistance</label><input type="text" inputmode="decimal" id="edit-hist-level"></div>
       </div>
       <div class="form-row cols2">
-        <div class="form-group"><label id="edit-hist-dist-label">Distance (km)</label><input type="number" inputmode="decimal" id="edit-hist-dist" step="0.1" min="0"></div>
-        <div class="form-group"><label id="edit-hist-rpm-label">Avg RPM</label><input type="number" inputmode="decimal" id="edit-hist-rpm" min="0"></div>
+        <div class="form-group"><label id="edit-hist-dist-label">Distance (km)</label><input type="text" inputmode="decimal" id="edit-hist-dist"></div>
+        <div class="form-group"><label id="edit-hist-rpm-label">Avg RPM</label><input type="text" inputmode="decimal" id="edit-hist-rpm"></div>
       </div>
     </div>
     <div class="form-group"><label>Notes</label><input type="text" id="edit-hist-notes" placeholder="Optional"></div>
@@ -1129,23 +1129,23 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label>Body Mass (kg)</label>
-        <input type="number" inputmode="decimal" id="assess-bw" placeholder="49.0" step="0.1">
+        <input type="text" inputmode="decimal" id="assess-bw" placeholder="49.0" step="0.1">
       </div>
     </div>
     <div class="form-row cols2" style="margin-top:10px">
       <div class="form-group" style="margin-bottom:0">
         <label>Side Split (cm)</label>
-        <input type="number" inputmode="decimal" id="assess-split" placeholder="160" step="1">
+        <input type="text" inputmode="decimal" id="assess-split" placeholder="160" step="1">
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label>Pull-ups 2-rep (kg added)</label>
-        <input type="number" inputmode="decimal" id="assess-pullup" placeholder="12" step="0.5">
+        <input type="text" inputmode="decimal" id="assess-pullup" placeholder="12" step="0.5">
       </div>
     </div>
     <div class="form-row cols2" style="margin-top:10px">
       <div class="form-group" style="margin-bottom:0">
         <label>One-Arm Hang (kg added)</label>
-        <input type="number" inputmode="decimal" id="assess-hang" placeholder="+7" step="0.5">
+        <input type="text" inputmode="decimal" id="assess-hang" placeholder="+7" step="0.5">
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label>Hang Duration / Sets</label>
@@ -1615,7 +1615,7 @@ function closeModal(id){document.getElementById(id).classList.remove('open')}
 
 function getWallHeight(){
   const gym=document.getElementById('climb-gym').value;
-  if(gym==='custom') return parseFloat(document.getElementById('custom-wall').value)||0;
+  if(gym==='custom') return parseFloat(_normalizeKgInput(document.getElementById('custom-wall').value))||0;
   return GYMS[gym]||0;
 }
 
@@ -2197,8 +2197,9 @@ function confirmDeleteTemplate(id){
 
 // Add Exercise modal
 function openAddExercise(){
+  addExContext='gym';
   exFilterArea=''; exFilterEquip='';
-  document.querySelectorAll('#ex-area-chips .ex-chip').forEach((b,i)=>b.classList.toggle('active',i===0));
+  _renderExAreaChips('gym');
   document.querySelectorAll('#ex-equip-chips .ex-chip').forEach((b,i)=>b.classList.toggle('active',i===0));
   filterExercises();
   document.getElementById('ex-autofill').style.display='none';
@@ -2207,6 +2208,21 @@ function openAddExercise(){
 }
 
 let exFilterArea='', exFilterEquip='';
+
+// v2026-06-16: area chips are context-aware — Gym areas for the Gym tab,
+// Climbing Gym (CG) categories for the Climbing Gym tab.
+function _renderExAreaChips(context){
+  const sets={
+    gym:[['','All'],['Warm-up','Warm-up'],['Inferior','Inferior'],['Superior','Superior'],['Core','Core'],['Wrist','Wrist'],['Rehab','Rehab']],
+    fb:[['','All'],['CG-Fingers','🤌 Fingers'],['CG-Arms','💪 Arms'],['CG-Antagonist','🛡️ Antag.'],['CG-Rotator','🔄 Rotator'],['CG-Push','🏋️ Push'],['CG-Core','🧱 Core']]
+  };
+  const chips=sets[context]||sets.gym;
+  const host=document.getElementById('ex-area-chips');
+  if(!host)return;
+  host.innerHTML=chips.map(([val,label],i)=>
+    `<button class="ex-chip${i===0?' active':''}" onclick="setExChip('area','${val}',this)">${label}</button>`
+  ).join('');
+}
 
 function setExChip(type, val, el){
   if(type==='area'){
@@ -2223,8 +2239,17 @@ function setExChip(type, val, el){
 function filterExercises(){
   const sel=document.getElementById('ex-name');
   const AREA_MAP={'Inferior':'Inferior Members','Superior':'Superior','Core':'Core','Wrist':'Wrist','Fingers':'Fingers','Warm-up':'Warm-up','Rehab':'Rehab','Fingerboard':'Fingerboard'};
+  const isFB=addExContext==='fb';
   const filtered=EXERCISES.filter(e=>{
-    const areaOk=!exFilterArea||(exFilterArea==='Superior'?e.cat.startsWith('Superior'):e.cat===AREA_MAP[exFilterArea]);
+    const isCG=e.cat&&e.cat.startsWith('CG-');
+    // Climbing Gym picker shows ONLY CG exercises; Gym picker shows only non-CG
+    if(isFB!==isCG) return false;
+    let areaOk;
+    if(isFB){
+      areaOk=!exFilterArea||e.cat===exFilterArea;       // '' = all CG, else the chosen CG category
+    } else {
+      areaOk=!exFilterArea||(exFilterArea==='Superior'?e.cat.startsWith('Superior'):e.cat===AREA_MAP[exFilterArea]);
+    }
     const equipOk=!exFilterEquip||e.equip===exFilterEquip;
     return areaOk&&equipOk;
   });
@@ -2289,9 +2314,9 @@ function addExerciseToSession(){
     entry={
       name,cat:ex.cat,type:'cardio',
       duration:fmtCardioTime(document.getElementById('ex-cardio-duration').value),
-      level:document.getElementById('ex-cardio-level').value,
-      distance:document.getElementById('ex-cardio-dist').value,
-      rpm:document.getElementById('ex-cardio-rpm').value,
+      level:_normalizeKgInput(document.getElementById('ex-cardio-level').value),
+      distance:_normalizeKgInput(document.getElementById('ex-cardio-dist').value),
+      rpm:_normalizeKgInput(document.getElementById('ex-cardio-rpm').value),
       rpmLabel:ex.rpmLabel||'Avg RPM',
       distLabel:ex.distLabel||'Distance',
       notes:document.getElementById('ex-notes').value,
@@ -2568,10 +2593,10 @@ function _updateORMCache(exercises, date){
 
 function saveGymSession(){
   const date=document.getElementById('gym-date').value;
-  const bw=document.getElementById('gym-bw').value;
-  const height=document.getElementById('gym-height').value;
-  const bodyFat=document.getElementById('gym-bf').value;
-  const muscleMass=document.getElementById('gym-mm').value;
+  const bw=_normalizeKgInput(document.getElementById('gym-bw').value);
+  const height=_normalizeKgInput(document.getElementById('gym-height').value);
+  const bodyFat=_normalizeKgInput(document.getElementById('gym-bf').value);
+  const muscleMass=_normalizeKgInput(document.getElementById('gym-mm').value);
   const startTime=document.getElementById('gym-start').value;
   const endTime=document.getElementById('gym-end').value;
   const goal=document.getElementById('gym-goal').value;
@@ -3219,9 +3244,9 @@ function saveEditHistoryExercise(){
     if(!e)return;
     if(e.type==='cardio'){
       e.duration=document.getElementById('edit-hist-cduration').value;
-      e.level=document.getElementById('edit-hist-level').value;
-      e.distance=document.getElementById('edit-hist-dist').value;
-      e.rpm=document.getElementById('edit-hist-rpm').value;
+      e.level=_normalizeKgInput(document.getElementById('edit-hist-level').value);
+      e.distance=_normalizeKgInput(document.getElementById('edit-hist-dist').value);
+      e.rpm=_normalizeKgInput(document.getElementById('edit-hist-rpm').value);
     } else {
       e.sets=document.getElementById('edit-hist-sets').value;
       e.reps=document.getElementById('edit-hist-reps').value;
@@ -3431,7 +3456,7 @@ function climbMode(mode){
   if(mode==='log')renderClimbTemplates();
   if(mode==='macro')renderMacrocycle();
   if(mode==='selfassess')renderSelfAssess();
-  if(mode==='finger')fbMode('log');
+  if(mode==='finger'){fbMode('log');renderFBExercises();}
 }
 
 function updateWallHeight(){
@@ -4410,10 +4435,10 @@ function saveAssessment(){
   if(!date){toast('Please set a date');return;}
   const a={
     id:Date.now(),date,
-    bodyMass:document.getElementById('assess-bw').value,
-    sideSplit:document.getElementById('assess-split').value,
-    pullups:document.getElementById('assess-pullup').value,
-    hangKg:document.getElementById('assess-hang').value,
+    bodyMass:_normalizeKgInput(document.getElementById('assess-bw').value),
+    sideSplit:_normalizeKgInput(document.getElementById('assess-split').value),
+    pullups:_normalizeKgInput(document.getElementById('assess-pullup').value),
+    hangKg:_normalizeKgInput(document.getElementById('assess-hang').value),
     hangDetail:document.getElementById('assess-hang-detail').value,
     sportOS:document.getElementById('assess-sport-os').value,
     sportRP:document.getElementById('assess-sport-rp').value,
@@ -6083,10 +6108,12 @@ function clearFBSession(){
 
 function openFBAddExercise(){
   addExContext='fb';
-  exFilterArea='CG-Fingers';
-  document.querySelectorAll('#ex-area-chips .ex-chip').forEach(b=>b.classList.remove('active'));
-  document.querySelectorAll('#ex-area-chips .ex-chip').forEach(b=>{if(b.textContent.includes('Fingerboard'))b.classList.add('active');});
+  exFilterArea=''; exFilterEquip='';     // default: show all Climbing Gym exercises
+  _renderExAreaChips('fb');
+  document.querySelectorAll('#ex-equip-chips .ex-chip').forEach((b,i)=>b.classList.toggle('active',i===0));
   filterExercises();
+  document.getElementById('ex-autofill').style.display='none';
+  document.getElementById('ex-suggest').style.display='none';
   openModal('modal-exercise');
 }
 
@@ -6107,7 +6134,7 @@ function saveFBSession(){
   const date=document.getElementById('fb-date').value;
   if(!date){toast('Add a date first');return;}
   if(!fbSession.exercises.length){toast('Add at least one exercise');return;}
-  const bw=document.getElementById('fb-bw').value;
+  const bw=_normalizeKgInput(document.getElementById('fb-bw').value);
   const startTime=document.getElementById('fb-start').value;
   const endTime=document.getElementById('fb-end').value;
   let durationMins=null;
@@ -6699,14 +6726,14 @@ function captureAssessState(){
   const bw=document.getElementById('ga-bw');
   const n=document.getElementById('ga-notes');
   if(d)_assessDate=d.value;
-  if(bw)_assessBw=bw.value;
+  if(bw)_assessBw=_normalizeKgInput(bw.value);
   if(n)_assessNotes=n.value;
   assessExercises=assessExercises.map((ex,i)=>{
     const base={...ex};
     const orm=document.getElementById('aex-orm-'+i);
     const v=document.getElementById('aex-v-'+i);
-    if(orm)base.orm=orm.value;
-    if(v)base.value=v.value;
+    if(orm)base.orm=_normalizeKgInput(orm.value);
+    if(v)base.value=_normalizeKgInput(v.value);
     return base;
   });
 }
@@ -6720,13 +6747,13 @@ function renderAssessModal(){
     if(ex.type==='strength'){
       // orm field: use stored orm, or compute from legacy weight×reps, or blank
       const ormVal=ex.orm||(ex.weight&&ex.reps?Math.round(Number(ex.weight)*(1+Number(ex.reps)/30)*10)/10:'')||'';
-      inputs=`<input type="number" inputmode="decimal" id="aex-orm-${i}" value="${ormVal}" placeholder="kg" step="0.25" ${is}> <span style="color:var(--muted)">kg (1RM)</span>`;
+      inputs=`<input type="text" inputmode="decimal" id="aex-orm-${i}" value="${ormVal}" placeholder="kg" step="0.25" ${is}> <span style="color:var(--muted)">kg (1RM)</span>`;
     } else if(ex.type==='timed'){
-      inputs=`<input type="number" inputmode="decimal" id="aex-v-${i}" value="${ex.value||''}" placeholder="sec" min="1" ${is}> <span style="color:var(--muted)">sec</span>`;
+      inputs=`<input type="text" inputmode="decimal" id="aex-v-${i}" value="${ex.value||''}" placeholder="sec" min="1" ${is}> <span style="color:var(--muted)">sec</span>`;
     } else if(ex.type==='reps'){
-      inputs=`<input type="number" inputmode="decimal" id="aex-v-${i}" value="${ex.value||''}" placeholder="max" min="1" ${is}> <span style="color:var(--muted)">reps</span>`;
+      inputs=`<input type="text" inputmode="decimal" id="aex-v-${i}" value="${ex.value||''}" placeholder="max" min="1" ${is}> <span style="color:var(--muted)">reps</span>`;
     } else if(ex.type==='distance'){
-      inputs=`<input type="number" inputmode="decimal" id="aex-v-${i}" value="${ex.value||''}" placeholder="cm" step="0.5" ${is}> <span style="color:var(--muted)">cm</span>`;
+      inputs=`<input type="text" inputmode="decimal" id="aex-v-${i}" value="${ex.value||''}" placeholder="cm" step="0.5" ${is}> <span style="color:var(--muted)">cm</span>`;
     }
     return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
       <div style="flex:1;min-width:0">
@@ -6744,7 +6771,7 @@ function renderAssessModal(){
   body.innerHTML=`
     <div class="form-row cols2" style="margin-bottom:10px">
       <div class="form-group" style="margin-bottom:0"><label>Date</label><input type="date" id="ga-date" value="${_assessDate}"></div>
-      <div class="form-group" style="margin-bottom:0"><label>Body weight (kg)</label><input type="number" inputmode="decimal" id="ga-bw" value="${_assessBw}" placeholder="49.0" step="0.1"></div>
+      <div class="form-group" style="margin-bottom:0"><label>Body weight (kg)</label><input type="text" inputmode="decimal" id="ga-bw" value="${_assessBw}" placeholder="49.0" step="0.1"></div>
     </div>
     <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Best set per exercise</div>
     <div>${exRows||'<p style="color:var(--muted);font-size:12px;padding:6px 0">No exercises yet</p>'}</div>
