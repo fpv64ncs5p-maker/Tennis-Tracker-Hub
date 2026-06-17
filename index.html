@@ -7663,6 +7663,7 @@ function _saveTennisOverlay(obj){
   pushToCloud();
 }
 let _showHiddenTennis=false;
+let _tennisDetailCache=[];
 function toggleHiddenTennis(){_showHiddenTennis=!_showHiddenTennis;renderTennis();}
 
 // ── Supabase matches cache ────────────────────────────────────────────────────
@@ -7696,6 +7697,13 @@ async function _fetchSbMatches(){
       service_points_played:row.service_points_played??null,
       return_points_won:row.return_points_won??null,
       return_points_played:row.return_points_played??null,
+      sets_won:row.sets_won??null,
+      sets_lost:row.sets_lost??null,
+      total_games_won:row.total_games_won??null,
+      total_games_lost:row.total_games_lost??null,
+      tiebreaks_won:row.tiebreaks_won??null,
+      tiebreak_points_won:row.tiebreak_points_won??null,
+      tiebreak_points_lost:row.tiebreak_points_lost??null,
       category:null,
       partner:null,
       _source:'watch'
@@ -7736,6 +7744,7 @@ function renderTennis(){
     };
   });
   const _allMatches=[...watchMatches,...localMatches];
+  _tennisDetailCache=_allMatches;
   const hiddenCount=_allMatches.filter(m=>m._hidden).length;
   const matches=_allMatches.filter(m=>_showHiddenTennis|| !m._hidden)
     .sort((a,b)=>(b.match_date||'').localeCompare(a.match_date||''));
@@ -7812,12 +7821,12 @@ function renderTennis(){
     const locTxt=m.location?`📍${esc(m.location)}`:'';
     const metaLine=[partnerTxt,oppTxt,locTxt].filter(Boolean).join(' · ');
     const actBtns=isWatch
-      ? `<button onclick="openWatchEdit('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Edit details">✏️</button>`+
+      ? `<button onclick="event.stopPropagation();openWatchEdit('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Edit details">✏️</button>`+
         (m._hidden
-          ? `<button onclick="unhideWatchMatch('${m.id}')" style="background:none;border:none;color:var(--tennis);font-size:14px;cursor:pointer;padding:2px 4px;font-weight:700" title="Restore to tab">↩</button>`
-          : `<button onclick="hideWatchMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Remove from tab">🗑</button>`)
-      : `<button onclick="editTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Edit">✏️</button>`+
-        `<button onclick="deleteTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Delete">🗑</button>`;
+          ? `<button onclick="event.stopPropagation();unhideWatchMatch('${m.id}')" style="background:none;border:none;color:var(--tennis);font-size:14px;cursor:pointer;padding:2px 4px;font-weight:700" title="Restore to tab">↩</button>`
+          : `<button onclick="event.stopPropagation();hideWatchMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Remove from tab">🗑</button>`)
+      : `<button onclick="event.stopPropagation();editTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Edit">✏️</button>`+
+        `<button onclick="event.stopPropagation();deleteTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Delete">🗑</button>`;
 
     const srvDisp=m.service_points_won!=null?(m.service_points_played!=null?m.service_points_won+'/'+m.service_points_played:m.service_points_won):'--';
     const retDisp=m.return_points_won!=null?(m.return_points_played!=null?m.return_points_won+'/'+m.return_points_played:m.return_points_won):'--';
@@ -7831,7 +7840,7 @@ function renderTennis(){
 
     const notesRow=m.notes?`<div style="margin-top:6px;font-size:12px;color:var(--muted);font-style:italic">${esc(m.notes)}</div>`:'';
 
-    return `<div class="card" style="margin-bottom:10px;padding:12px 14px;border-left:4px solid ${isWon?'var(--tennis)':'var(--red)'};${m._hidden?'opacity:.55':''}">
+    return `<div class="card" onclick="openMatchDetail('${m.id}')" style="margin-bottom:10px;padding:12px 14px;border-left:4px solid ${isWon?'var(--tennis)':'var(--red)'};cursor:pointer;${m._hidden?'opacity:.55':''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <div>
           <span style="font-weight:700;font-size:15px">${dateDisp}</span>
@@ -8140,9 +8149,10 @@ function unhideWatchMatch(id){
   renderTennis();
   showToast('Restored');
 }
-async function deleteWatchPermanently(){
-  if(!_twId) return;
-  const realId=_twId.replace(/^sb_/,'');
+async function deleteWatchPermanently(id){
+  id=id||_twId;
+  if(!id) return;
+  const realId=String(id).replace(/^sb_/,'');
   if(!confirm('Permanently delete this match from the database?\n\nThis removes the data for good and cannot be undone.')) return;
   try{
     const res=await fetch(`${_SB_URL}/rest/v1/matches?id=eq.${encodeURIComponent(realId)}`,{
@@ -8150,15 +8160,74 @@ async function deleteWatchPermanently(){
       headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}
     });
     if(!res.ok) throw new Error('HTTP '+res.status);
-    _sbMatches=_sbMatches.filter(x=>x.id!==_twId);
+    _sbMatches=_sbMatches.filter(x=>x.id!==id);
     const ov=_getTennisOverlay();
-    if(ov[_twId]){ delete ov[_twId]; _saveTennisOverlay(ov); }
+    if(ov[id]){ delete ov[id]; _saveTennisOverlay(ov); }
     closeModal('modal-tennis-watch');
     renderTennis();
     showToast('Match deleted from database');
   }catch(e){
     showToast('Delete failed — '+e.message,'error');
   }
+}
+
+// ── Per-match detail sheet ────────────────────────────────────────────────────
+function openMatchDetail(id){
+  const m=_tennisDetailCache.find(x=>x.id===id);
+  if(!m) return;
+  const isWatch=m._source==='watch';
+  const isWon=m.result==='won';
+  const dateDisp=m.match_date?new Date(m.match_date+'T12:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'--';
+  const typeLabel={singles:'Singles',doubles:'Doubles'};
+  const fmtLabel={'best_of_3':'Best of 3','best_of_3_st':'Best of 3+ST','doubles_compact':'Best of 3+ST','single_set':'1 Set','super_tb':'Super TB','tiebreak':'Tiebreak'};
+  const catLabel={competition:'Competition',training:'Training'};
+  const pct=(w,p)=>(w!=null&&p!=null&&p>0)?Math.round(w/p*100)+'%':null;
+  const srvPct=pct(m.service_points_won,m.service_points_played);
+  const retPct=pct(m.return_points_won,m.return_points_played);
+  const rows=[];
+  const addRow=(label,val,sub)=>{ if(val==null||val===''||val==='--')return; rows.push(`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--muted)">${label}</span><span style="font-weight:700">${val}${sub?`<span style="font-size:11px;color:var(--muted);font-weight:400"> ${sub}</span>`:''}</span></div>`); };
+  addRow('Points won', m.points_won);
+  addRow('Points lost', m.points_lost);
+  addRow('Unforced errors', m.unforced_errors);
+  addRow('Double faults', m.double_faults);
+  if(m.service_points_won!=null) addRow('Serve points', m.service_points_played!=null?`${m.service_points_won} / ${m.service_points_played}`:m.service_points_won, srvPct?`· ${srvPct} won`:'');
+  if(m.return_points_won!=null) addRow('Return points', m.return_points_played!=null?`${m.return_points_won} / ${m.return_points_played}`:m.return_points_won, retPct?`· ${retPct} won`:'');
+  if(m.sets_won!=null||m.sets_lost!=null) addRow('Sets won / lost', `${m.sets_won??'–'} / ${m.sets_lost??'–'}`);
+  if(m.total_games_won!=null||m.total_games_lost!=null) addRow('Games won / lost', `${m.total_games_won??'–'} / ${m.total_games_lost??'–'}`);
+  if(m.tiebreaks_won!=null&&m.tiebreaks_won>0) addRow('Tiebreaks won', m.tiebreaks_won);
+  if((m.tiebreak_points_won!=null&&m.tiebreak_points_won>0)||(m.tiebreak_points_lost!=null&&m.tiebreak_points_lost>0)) addRow('Tiebreak points', `${m.tiebreak_points_won??0} / ${m.tiebreak_points_lost??0}`, 'won/lost');
+
+  const oppNames=[m.opponent_name,m.opponent_name_2].filter(Boolean).map(esc).join(' & ');
+  const metaBits=[ m.partner?`with ${esc(m.partner)}`:'', oppNames?`vs ${oppNames}`:'', m.location?`📍${esc(m.location)}`:'' ].filter(Boolean).join(' · ');
+  const statsHtml = rows.length
+    ? `<div class="card" style="margin:12px 0;padding:6px 14px">${rows.join('')}</div>`
+    : `<div style="margin:14px 0;text-align:center;color:var(--muted);font-size:13px">No detailed stats recorded for this match.</div>`;
+
+  let actions;
+  if(isWatch){
+    actions = `<button class="btn" onclick="closeModal('modal-tennis-detail');openWatchEdit('${m.id}')" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:11px;border-radius:var(--radius-sm);font-weight:800;font-size:14px">✏️ Edit details</button>`
+      + (m._hidden
+          ? `<button class="btn" onclick="closeModal('modal-tennis-detail');unhideWatchMatch('${m.id}')" style="width:100%;background:none;color:var(--tennis);border:1px solid var(--tennis);padding:9px;border-radius:var(--radius-sm);font-weight:700;font-size:13px;margin-top:6px">↩ Restore to tab</button>`
+          : `<button class="btn" onclick="closeModal('modal-tennis-detail');hideWatchMatch('${m.id}')" style="width:100%;background:none;color:var(--red);border:1px solid var(--red);padding:9px;border-radius:var(--radius-sm);font-weight:700;font-size:13px;margin-top:6px">Remove from tab</button>`)
+      + `<button onclick="closeModal('modal-tennis-detail');deleteWatchPermanently('${m.id}')" style="width:100%;background:none;color:var(--red);border:none;padding:8px;font-weight:600;font-size:12px;margin-top:4px;cursor:pointer;text-decoration:underline">Delete permanently from database</button>`;
+  } else {
+    actions = `<button class="btn" onclick="closeModal('modal-tennis-detail');editTennisMatch('${m.id}')" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:11px;border-radius:var(--radius-sm);font-weight:800;font-size:14px">✏️ Edit match</button>`
+      + `<button class="btn" onclick="closeModal('modal-tennis-detail');deleteTennisMatch('${m.id}')" style="width:100%;background:none;color:var(--red);border:1px solid var(--red);padding:9px;border-radius:var(--radius-sm);font-weight:700;font-size:13px;margin-top:6px">🗑 Delete match</button>`;
+  }
+
+  document.getElementById('tennis-detail-body').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <div style="font-weight:800;font-size:17px">${dateDisp}</div>
+      <span style="font-size:13px;font-weight:800;color:${isWon?'var(--tennis)':'var(--red)'};background:${isWon?'var(--tennis-dim)':'#fce7e7'};padding:3px 12px;border-radius:20px">${isWon?'WIN':'LOSS'}</span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">${typeLabel[m.match_type]||m.match_type||''}${(m.category&&catLabel[m.category])?' · '+catLabel[m.category]:''}${(m.format&&(fmtLabel[m.format]||m.format))?' · '+(fmtLabel[m.format]||m.format):''} · ${isWatch?'⌚ watch':'📝 manual'}</div>
+    <div style="font-size:22px;font-weight:800;letter-spacing:.02em">${esc(m.final_score||'--')}${m.duration_min?`<span style="font-size:13px;color:var(--muted);font-weight:400"> · ${m.duration_min}m</span>`:''}</div>
+    ${metaBits?`<div style="margin-top:4px;font-size:13px;color:var(--muted)">${metaBits}</div>`:''}
+    ${statsHtml}
+    ${m.notes?`<div style="font-size:13px;color:var(--muted);font-style:italic;margin-bottom:12px">"${esc(m.notes)}"</div>`:''}
+    ${actions}
+  `;
+  openModal('modal-tennis-detail');
 }
 
 function miniStat(label,value){
@@ -8315,6 +8384,18 @@ function miniStat(label,value){
 </div>
 
 <!-- WATCH MATCH DETAILS MODAL — overlay edit for read-only Supabase rows -->
+<!-- PER-MATCH DETAIL SHEET -->
+<div class="modal-overlay" role="dialog" aria-modal="true" id="modal-tennis-detail">
+  <div class="modal" style="max-height:90vh;overflow-y:auto">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">Match</div>
+      <button class="modal-close" aria-label="Close" onclick="closeModal('modal-tennis-detail')">✕</button>
+    </div>
+    <div id="tennis-detail-body"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" role="dialog" aria-modal="true" id="modal-tennis-watch">
   <div class="modal" style="max-height:90vh;overflow-y:auto">
     <div class="modal-handle"></div>
