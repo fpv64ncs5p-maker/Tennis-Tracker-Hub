@@ -61,8 +61,10 @@ Monorepo combining the Garmin tennis tracker app (MatchMind) and the Training Hu
 
 ### Training Hub (web app)
 - Edit `index.html` in `apps/training-hub/`
-- Copy changes to root: `cp apps/training-hub/index.html .`
-- Commit and push to GitHub → auto-deploys via GitHub Pages
+- Copy changes to root: `cp apps/training-hub/index.html .` (the root file is what GitHub Pages serves)
+- **Deploy via GitHub Desktop** (replaces the old `curl`/GitHub-API push): open GitHub Desktop → review the diff → type a summary → **Commit to main** → **Push origin**. GitHub Pages auto-deploys in ~1 min. Desktop handles auth, so no token needed.
+- GitHub Desktop and Claude both work in the **same** folder (`~/Documents/Tennis-Tracker-Hub`) — single source of truth, no duplicate clones.
+- Day-to-day cheat-sheet: see `GIT_WORKFLOW.md` (repo root).
 - Live at: https://fpv64ncs5p-maker.github.io/Tennis-Tracker-Hub/
 
 ### Garmin App
