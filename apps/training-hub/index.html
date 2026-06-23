@@ -670,16 +670,21 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           <button onclick="discardClimbDraft()" style="background:#e5e7eb;color:#374151;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">Discard</button>
         </div>
         <div class="card">
+          <div class="form-group">
+            <label>Date</label>
+            <input type="date" id="climb-date" onchange="_saveDraftClimb()">
+          </div>
           <div class="form-row cols2">
-            <div>
-              <label>Date</label>
-              <input type="date" id="climb-date">
+            <div class="form-group" style="margin-bottom:0">
+              <label>Started</label>
+              <input type="text" id="climb-start" placeholder="18:00" maxlength="5" inputmode="numeric" oninput="autoColonTime(this);updateClimbDuration();_saveDraftClimb()">
             </div>
-            <div>
-              <label>Duration (min)</label>
-              <input type="number" inputmode="decimal" id="climb-duration" placeholder="90">
+            <div class="form-group" style="margin-bottom:0">
+              <label>Finished</label>
+              <input type="text" id="climb-end" placeholder="19:30" maxlength="5" inputmode="numeric" oninput="autoColonTime(this);updateClimbDuration();_saveDraftClimb()">
             </div>
           </div>
+          <div id="climb-duration-display" style="display:none;margin-top:10px;padding:8px 12px;background:rgba(29,78,216,.08);border:1px solid rgba(29,78,216,.25);border-radius:var(--radius-sm);font-size:13px;font-weight:600;color:var(--climb);text-align:center"></div>
           <div class="form-group">
             <label>Gym</label>
             <select id="climb-gym" onchange="updateWallHeight()">
@@ -691,17 +696,41 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           </div>
           <div id="custom-wall-wrap" style="display:none">
             <label>Wall Height (m)</label>
-            <input type="text" inputmode="decimal" id="custom-wall" placeholder="13" step="0.5" style="margin-bottom:0" oninput="updateClimbSummary()">
+            <input type="text" inputmode="decimal" id="custom-wall" placeholder="13" step="0.5" style="margin-bottom:0" oninput="updateClimbSummary();_saveDraftClimb()">
+          </div>
+        </div>
+
+        <!-- ADD GYM MODAL -->
+        <div class="modal-overlay" role="dialog" aria-modal="true" id="modal-add-gym">
+          <div class="modal">
+            <div class="modal-handle"></div>
+            <div class="modal-header">
+              <div class="modal-title">➕ Add a gym</div>
+              <button class="modal-close" aria-label="Close" onclick="closeModal('modal-add-gym')">✕</button>
+            </div>
+            <div class="form-group">
+              <label>Gym name</label>
+              <input type="text" id="newgym-name" placeholder="e.g. Klimmuur Centraal">
+            </div>
+            <div class="form-group">
+              <label>Wall height (m)</label>
+              <input type="text" inputmode="decimal" id="newgym-height" placeholder="e.g. 16">
+            </div>
+            <div class="flex-gap8">
+              <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-add-gym')">Cancel</button>
+              <button class="btn btn-climb" style="flex:2" onclick="saveNewGym()">💾 Save gym</button>
+            </div>
           </div>
         </div>
 
         <div id="climb-templates-section"></div>
         <div id="climb-blocks-list"></div>
 
-        <div style="display:flex;gap:8px;margin-bottom:10px">
-          <button class="btn btn-climb" style="flex:1;font-size:12px" onclick="addClimbBlock('routes')">🪨 Routes</button>
-          <button class="btn" style="flex:1;font-size:12px;background:#7c3aed;color:#fff;border:none" onclick="addClimbBlock('board')">🟫 Board</button>
-          <button class="btn" style="flex:1;font-size:12px;background:#16a34a;color:#fff;border:none" onclick="addClimbBlock('arc')">🔁 ARC</button>
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+          <button class="btn btn-climb" style="flex:1;min-width:90px;font-size:12px" onclick="addClimbBlock('routes')">🧗 Routes</button>
+          <button class="btn" style="flex:1;min-width:90px;font-size:12px;background:#a78bfa;color:#fff;border:none" onclick="addClimbBlock('routes','Boulder')">🪨 Boulder</button>
+          <button class="btn" style="flex:1;min-width:90px;font-size:12px;background:#7c3aed;color:#fff;border:none" onclick="addClimbBlock('board')">🟫 Board</button>
+          <button class="btn" style="flex:1;min-width:90px;font-size:12px;background:#16a34a;color:#fff;border:none" onclick="addClimbBlock('arc')">🔁 ARC</button>
         </div>
 
         <div class="card" id="climb-session-summary" style="display:none">
@@ -1493,7 +1522,7 @@ function checkDirtyBeforeNav(targetTab){
 const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'climb_sessions','climb_assessments','plan_data','rehab_data','macro_data',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
-  'gym_height','tennis_matches','tennis_overlay'];
+  'gym_height','tennis_matches','tennis_overlay','custom_gyms'];
 
 function exportAllData(){
   const data={};
@@ -1613,10 +1642,30 @@ function openModal(id){
 }
 function closeModal(id){document.getElementById(id).classList.remove('open')}
 
+// ── Custom gyms (user-added, persisted + cloud-synced via DATA_KEYS) ──
+const _DEFAULT_GYM=Object.keys(GYMS)[0]; // "Neoliet" — the fresh-load default
+function getCustomGyms(){try{return JSON.parse(localStorage.getItem('custom_gyms')||'{}')||{};}catch(e){return {};}}
+function saveCustomGyms(o){DB.set('custom_gyms',o);}
+function allGyms(){return Object.assign({},GYMS,getCustomGyms());}
+
+// Rebuild the gym <select> from base + custom gyms, keeping the chosen value.
+function renderGymOptions(selected){
+  const sel=document.getElementById('climb-gym');
+  if(!sel)return;
+  const keep=selected||sel.value||_DEFAULT_GYM;
+  const gyms=allGyms();
+  let html='';
+  Object.keys(gyms).forEach(n=>{html+=`<option value="${esc(n)}">${esc(n)} (${gyms[n]}m)</option>`;});
+  html+='<option value="custom">Other (one-off)…</option>';
+  html+='<option value="__add__">➕ Add new gym…</option>';
+  sel.innerHTML=html;
+  if(Array.from(sel.options).some(o=>o.value===keep)) sel.value=keep;
+}
+
 function getWallHeight(){
   const gym=document.getElementById('climb-gym').value;
   if(gym==='custom') return parseFloat(_normalizeKgInput(document.getElementById('custom-wall').value))||0;
-  return GYMS[gym]||0;
+  return allGyms()[gym]||0;
 }
 
 // Parse rest string to seconds
@@ -3459,10 +3508,35 @@ function climbMode(mode){
   if(mode==='finger'){fbMode('log');renderFBExercises();}
 }
 
+let _lastGym=_DEFAULT_GYM; // remembers the real selection so "Add new gym…" can revert
 function updateWallHeight(){
-  const gym=document.getElementById('climb-gym').value;
+  const sel=document.getElementById('climb-gym');
+  const gym=sel.value;
+  if(gym==='__add__'){ sel.value=_lastGym; openAddGymModal(); return; }
+  _lastGym=gym;
   document.getElementById('custom-wall-wrap').style.display=gym==='custom'?'block':'none';
   updateClimbSummary();
+  _saveDraftClimb();
+}
+
+function openAddGymModal(){
+  document.getElementById('newgym-name').value='';
+  document.getElementById('newgym-height').value='';
+  openModal('modal-add-gym');
+}
+function saveNewGym(){
+  const name=document.getElementById('newgym-name').value.trim();
+  const h=parseFloat(_normalizeKgInput(document.getElementById('newgym-height').value));
+  if(!name){toast('Enter a gym name');return;}
+  if(!h||h<=0){toast('Enter a valid wall height');return;}
+  const cg=getCustomGyms(); cg[name]=h; saveCustomGyms(cg);
+  renderGymOptions(name);
+  _lastGym=name;
+  document.getElementById('custom-wall-wrap').style.display='none';
+  closeModal('modal-add-gym');
+  updateClimbSummary();
+  _saveDraftClimb();
+  toast('✅ Gym added!');
 }
 
 function toggleAttempts(){
@@ -3472,11 +3546,11 @@ function toggleAttempts(){
 
 
 // ── Climb blocks ──────────────────────────────────
-function addClimbBlock(type){
+function addClimbBlock(type,climbingType){
   const block={type};
   if(type==='routes'){
     block.routes=[];
-    block.climbingType='Lead';
+    block.climbingType=climbingType||'Lead';
     block.wallHeight='';
   }
   if(type==='board'){block.board='Moonboard B';block.sets=[];}
@@ -3624,7 +3698,7 @@ function renderClimbBlocks(){
       return `<div class="card" style="margin-bottom:10px;border-top:3px solid var(--climb)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:700;color:var(--climb);text-transform:uppercase;letter-spacing:.05em">🪨 Block ${bi+1}: Routes</div>
+            <div style="font-size:12px;font-weight:700;color:var(--climb);text-transform:uppercase;letter-spacing:.05em">${b.climbingType==='Boulder'?'🪨 Block '+(bi+1)+': Boulder':'🧗 Block '+(bi+1)+': Routes'}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">${typeLabel} · ${wallLabel}</div>
           </div>
           <button class="btn-icon" onclick="removeClimbBlock(${bi})">✕</button>
@@ -3881,7 +3955,7 @@ function renderClimbBlocksLegacy(){
       return `<div class="card" style="margin-bottom:10px;border-top:3px solid var(--climb)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:700;color:var(--climb);text-transform:uppercase;letter-spacing:.05em">🪨 Block ${bi+1}: Routes</div>
+            <div style="font-size:12px;font-weight:700;color:var(--climb);text-transform:uppercase;letter-spacing:.05em">${b.climbingType==='Boulder'?'🪨 Block '+(bi+1)+': Boulder':'🧗 Block '+(bi+1)+': Routes'}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">${typeLabel} · ${wallLabel}</div>
           </div>
           <button class="btn-icon" onclick="removeClimbBlock(${bi})">✕</button>
@@ -4113,7 +4187,9 @@ let _editingClimbId=null;
 function saveClimbSession(){
   const date=document.getElementById('climb-date').value;
   const gym=document.getElementById('climb-gym').value;
-  const duration=document.getElementById('climb-duration').value;
+  const startTime=document.getElementById('climb-start').value;
+  const endTime=document.getElementById('climb-end').value;
+  const duration=_climbDurationMins(); // total minutes from Started/Finished (null if not both set)
   if(!date){toast('Add a date first');return;}
   if(!climbSession.warmup.length && !climbSession.blocks.length && !climbSession.cooldown.length){toast('Add at least one route');return;}
   const wallH=getWallHeight();
@@ -4122,7 +4198,7 @@ function saveClimbSession(){
     const all=DB.climbSessions();
     const idx=all.findIndex(s=>String(s.id)===String(_editingClimbId));
     if(idx!==-1){
-      all[idx]={...all[idx],date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown]};
+      all[idx]={...all[idx],date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,startTime,endTime,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown]};
       DB.set('climb_sessions',all);
     }
     _editingClimbId=null;
@@ -4131,7 +4207,7 @@ function saveClimbSession(){
     document.getElementById('climb-save-btn').textContent='Save Session';
     toast('✅ Session updated!');
   } else {
-    const session={id:Date.now(),date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown]};
+    const session={id:Date.now(),date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,startTime,endTime,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown]};
     DB.saveClimb(session);
     clearDirty();
     toast('✅ Session saved!');
@@ -4140,7 +4216,9 @@ function saveClimbSession(){
   _clearDraftClimb();
   renderClimbBlocks();
   document.getElementById('climb-date').value=today();
-  document.getElementById('climb-duration').value='';
+  document.getElementById('climb-start').value='';
+  document.getElementById('climb-end').value='';
+  updateClimbDuration();
 }
 
 function editClimbSession(id){
@@ -4154,7 +4232,9 @@ function editClimbSession(id){
   climbMode('log');
   // Populate fields
   document.getElementById('climb-date').value=s.date||'';
-  document.getElementById('climb-duration').value=s.duration||'';
+  document.getElementById('climb-start').value=s.startTime||'';
+  document.getElementById('climb-end').value=s.endTime||'';
+  updateClimbDuration();
   const gymSel=document.getElementById('climb-gym');
   const gymOpts=Array.from(gymSel.options).map(o=>o.value);
   gymSel.value=gymOpts.includes(s.gym)?s.gym:'custom';
@@ -4211,18 +4291,58 @@ function cancelClimbEdit(){
   document.getElementById('climb-save-btn').textContent='Save Session';
   climbSession={warmup:[],blocks:[],cooldown:[]};_clearDraftClimb();renderClimbBlocks();
   document.getElementById('climb-date').value=today();
-  document.getElementById('climb-duration').value='';
+  document.getElementById('climb-start').value='';
+  document.getElementById('climb-end').value='';
+  updateClimbDuration();
   toast('Edit cancelled');
 }
 
+// ── Climb session duration (from Started / Finished times, like the Gym tab) ──
+function _climbDurationMins(){
+  const s=document.getElementById('climb-start')?.value;
+  const e=document.getElementById('climb-end')?.value;
+  if(!s||!e)return null;
+  const [sh,sm]=s.split(':').map(Number);
+  const [eh,em]=e.split(':').map(Number);
+  if([sh,sm,eh,em].some(n=>isNaN(n)))return null;
+  let d=(eh*60+em)-(sh*60+sm);
+  if(d<0)d+=1440; // handles a session that crosses midnight
+  return d;
+}
+function updateClimbDuration(){
+  const box=document.getElementById('climb-duration-display');
+  if(!box)return;
+  const mins=_climbDurationMins();
+  if(mins!=null){
+    const h=Math.floor(mins/60), m=mins%60;
+    box.style.display='block';
+    box.textContent=`⏱ Climbing time: ${h>0?h+'h ':''}${m}min`;
+  } else {
+    box.style.display='none';
+  }
+}
+
 // ── Climb draft autosave ──
+// Returns true if there's anything worth restoring: any logged climb/block,
+// a start/finish time, a one-off custom wall height, or a non-default gym selection.
+function _climbDraftWorthSaving(gym,timeSet,customWall){
+  return !!(climbSession.warmup.length||climbSession.blocks.length||climbSession.cooldown.length
+    ||timeSet||customWall||(gym&&gym!=='__add__'&&gym!==_DEFAULT_GYM));
+}
 function _saveDraftClimb(){
-  if(!climbSession.warmup.length&&!climbSession.blocks.length&&!climbSession.cooldown.length)return;
+  if(_editingClimbId)return; // don't autosave while editing an already-saved session
+  const gym=document.getElementById('climb-gym')?.value||'';
+  const start=document.getElementById('climb-start')?.value||'';
+  const end=document.getElementById('climb-end')?.value||'';
+  const customWall=document.getElementById('custom-wall')?.value||'';
+  if(!_climbDraftWorthSaving(gym,start||end,customWall))return;
   const draft={
     session:climbSession,
     date:document.getElementById('climb-date')?.value||'',
-    gym:document.getElementById('climb-gym')?.value||'',
-    duration:document.getElementById('climb-duration')?.value||'',
+    gym,
+    start,
+    end,
+    customWall,
     savedAt:new Date().toISOString()
   };
   localStorage.setItem('_draft_climb',JSON.stringify(draft));
@@ -4231,21 +4351,36 @@ function _clearDraftClimb(){localStorage.removeItem('_draft_climb');}
 function _restoreDraftClimb(){
   const raw=localStorage.getItem('_draft_climb');
   if(!raw)return;
-  const draft=JSON.parse(raw);
-  const routeCount=(draft.session.warmup?.length||0)+(draft.session.cooldown?.length||0)+(draft.session.blocks?.reduce((s,b)=>(s+(b.routes?.length||0)+(b.sets?.length||0)),0)||0);
-  if(!routeCount){_clearDraftClimb();return;}
+  let draft;
+  try{draft=JSON.parse(raw);}catch(e){_clearDraftClimb();return;}
+  if(!draft||!draft.session){_clearDraftClimb();return;}
+  const s=draft.session;
+  const routeCount=(s.warmup?.length||0)+(s.cooldown?.length||0)+(s.blocks?.reduce((a,b)=>(a+(b.routes?.length||0)+(b.sets?.length||0)),0)||0);
+  const meaningful=routeCount>0||(s.blocks?.length||0)>0||draft.start||draft.end||draft.customWall||(draft.gym&&draft.gym!==_DEFAULT_GYM);
+  if(!meaningful){_clearDraftClimb();return;}
   const when=draft.savedAt?new Date(draft.savedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+  const label=routeCount?`${routeCount} ${routeCount===1?'entry':'entries'}`:'session in progress';
   const banner=document.getElementById('climb-draft-banner');
-  if(banner){banner.style.display='flex';banner.querySelector('span').textContent=`Unsaved session from ${when} (${routeCount} entries). Restore?`;}
+  if(banner){banner.style.display='flex';banner.querySelector('span').textContent=`Unsaved ${label} from ${when}. Resume?`;}
 }
 function restoreClimbDraft(){
   const raw=localStorage.getItem('_draft_climb');
   if(!raw)return;
-  const draft=JSON.parse(raw);
-  climbSession=draft.session;
+  let draft;
+  try{draft=JSON.parse(raw);}catch(e){_clearDraftClimb();return;}
+  climbSession=draft.session||{warmup:[],blocks:[],cooldown:[]};
   if(draft.date)document.getElementById('climb-date').value=draft.date;
-  if(draft.gym)document.getElementById('climb-gym').value=draft.gym;
-  if(draft.duration)document.getElementById('climb-duration').value=draft.duration;
+  if(draft.gym){
+    renderGymOptions(draft.gym);
+    const sel=document.getElementById('climb-gym');
+    sel.value=Array.from(sel.options).some(o=>o.value===draft.gym)?draft.gym:'custom';
+    _lastGym=sel.value;
+  }
+  if(draft.start)document.getElementById('climb-start').value=draft.start;
+  if(draft.end)document.getElementById('climb-end').value=draft.end;
+  if(draft.customWall)document.getElementById('custom-wall').value=draft.customWall;
+  updateWallHeight(); // reveals the custom-wall field if gym==='custom'
+  updateClimbDuration();
   _clearDraftClimb();
   document.getElementById('climb-draft-banner').style.display='none';
   renderClimbBlocks();
@@ -7439,6 +7574,8 @@ document.addEventListener('DOMContentLoaded',async ()=>{
   document.getElementById('stretch-date').value=today();
   currentWeekStart=getMonday(today());
   renderSessionExercises();
+  renderGymOptions();
+  _lastGym=document.getElementById('climb-gym')?.value||_DEFAULT_GYM;
   renderClimbBlocks();
   renderClimbTemplates();
   renderGymMacroContextBanner();
@@ -7465,6 +7602,11 @@ document.querySelectorAll('.modal-overlay').forEach(overlay=>{
 window.addEventListener('beforeunload',e=>{
   if(isDirty()){e.preventDefault();e.returnValue='';}
 });
+
+// Persist an in-progress climb session whenever the app is backgrounded or the
+// screen turns off — iOS fires these reliably even when 'beforeunload' does not.
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')_saveDraftClimb();});
+window.addEventListener('pagehide',()=>{_saveDraftClimb();});
 
 // Supabase project constants (used by sync + Tennis tab)
 const _SB_URL  = 'https://pmzzmvzbgeonjnbfreze.supabase.co';
