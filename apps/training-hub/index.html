@@ -3053,7 +3053,11 @@ function renderGymHistory(){
     el.innerHTML='<div class="empty"><div class="empty-icon">📋</div><p>No sessions yet.<br>Start logging to see your history.</p></div>';
     return;
   }
-  sessions.sort((a,b)=>b.date.localeCompare(a.date));
+  sessions.sort((a,b)=>{
+    const da=a.date||'', db=b.date||'';
+    if(da!==db) return db.localeCompare(da);
+    return (Number(b.id)||0)-(Number(a.id)||0);
+  });
   const visible=sessions.slice(0,_gymHistoryShown);
   const remaining=sessions.length-_gymHistoryShown;
   el.innerHTML=visible.map(s=>{
@@ -6467,6 +6471,12 @@ function renderFBHistory(){
   const sessions=DB.fbSessions();
   const el=document.getElementById('fb-history-list');
   if(!sessions.length){el.innerHTML='<div class="empty"><div class="empty-icon">🪨</div><p>No Climbing Gym sessions yet.<br>Log a fingerboard workout to see it here.</p></div>';return;}
+  // Newest-by-DATE first, so back-dated entries land in the right spot (tie-break: most recently added)
+  sessions.sort((a,b)=>{
+    const da=a.date||'', db=b.date||'';
+    if(da!==db) return db.localeCompare(da);
+    return (Number(b.id)||0)-(Number(a.id)||0);
+  });
   const visible=sessions.slice(0,_fbHistoryShown);
   const remaining=sessions.length-_fbHistoryShown;
   el.innerHTML=visible.map(s=>{
