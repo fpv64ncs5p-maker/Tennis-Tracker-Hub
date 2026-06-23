@@ -924,6 +924,11 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <button class="seg-btn active" data-tennis-mode="history" onclick="tennisMode('history')">History</button>
         <button class="seg-btn" data-tennis-mode="stats" onclick="tennisMode('stats')">Stats</button>
       </div>
+      <div class="segment" id="tennis-cat-filter" style="margin-bottom:16px;display:flex;background:var(--surface2);border-radius:var(--radius-sm);padding:3px;gap:2px">
+        <button class="seg-btn active" data-tennis-cat="all" onclick="tennisCatFilter('all')">All</button>
+        <button class="seg-btn" data-tennis-cat="competition" onclick="tennisCatFilter('competition')">Competition</button>
+        <button class="seg-btn" data-tennis-cat="training" onclick="tennisCatFilter('training')">Training</button>
+      </div>
       <div id="tennis-summary" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px"></div>
       <div id="tennis-form" style="margin-bottom:16px;display:none">
         <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin-bottom:6px">RECENT FORM</div>
@@ -7928,8 +7933,18 @@ async function _fetchSbMatches(){
 let _tennisMode='history';
 function tennisMode(mode){
   _tennisMode=mode;
-  document.querySelectorAll('#tab-tennis .seg-btn').forEach(b=>{
+  document.querySelectorAll('#tab-tennis .seg-btn[data-tennis-mode]').forEach(b=>{
     b.classList.toggle('active', b.dataset.tennisMode===mode);
+  });
+  renderTennis();
+}
+
+// Competition / Training filter — applies to both stats and history
+let _tennisCatFilter='all';
+function tennisCatFilter(cat){
+  _tennisCatFilter=cat;
+  document.querySelectorAll('#tennis-cat-filter .seg-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.tennisCat===cat);
   });
   renderTennis();
 }
@@ -7956,8 +7971,9 @@ function renderTennis(){
   });
   const _allMatches=[...watchMatches,...localMatches];
   _tennisDetailCache=_allMatches;
-  const hiddenCount=_allMatches.filter(m=>m._hidden).length;
-  const matches=_allMatches.filter(m=>_showHiddenTennis|| !m._hidden)
+  const catOk=m=>_tennisCatFilter==='all'||(m.category||null)===_tennisCatFilter;
+  const hiddenCount=_allMatches.filter(m=>m._hidden&&catOk(m)).length;
+  const matches=_allMatches.filter(m=>(_showHiddenTennis|| !m._hidden)&&catOk(m))
     .sort((a,b)=>(b.match_date||'').localeCompare(a.match_date||''));
   const list    =document.getElementById('tennis-list');
   const summary =document.getElementById('tennis-summary');
