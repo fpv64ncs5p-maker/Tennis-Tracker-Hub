@@ -730,7 +730,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <div id="climb-templates-section"></div>
         <div id="climb-blocks-list"></div>
 
-        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <div id="add-block-row" style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
           <button class="btn btn-climb" style="flex:1;min-width:90px;font-size:12px" onclick="addClimbBlock('routes')">🧗 Routes</button>
           <button class="btn" style="flex:1;min-width:90px;font-size:12px;background:#a78bfa;color:#fff;border:none" onclick="addClimbBlock('routes','Boulder')">🪨 Boulder</button>
           <button class="btn" style="flex:1;min-width:90px;font-size:12px;background:#7c3aed;color:#fff;border:none" onclick="addClimbBlock('board')">🟫 Board</button>
@@ -3699,6 +3699,10 @@ function renderClimbBlocks(){
   const saveBtn=document.getElementById('climb-save-btn');
   if(clearBtn)clearBtn.style.display=hasData?'':'none';
   if(saveBtn)saveBtn.style.display=hasData?'':'none';
+  // The bottom button row is only needed to start the FIRST block; once there's
+  // content the inline "➕ Add block" row (rendered above Cool-down) takes over.
+  const addRow=document.getElementById('add-block-row');
+  if(addRow)addRow.style.display=hasData?'none':'flex';
   if(!hasData){
     el.innerHTML='<div class="empty"><div class="empty-icon">🧗</div><p>Tap a block type below<br>to start logging.</p></div>';
     document.getElementById('climb-session-summary').style.display='none';
@@ -3841,6 +3845,19 @@ function renderClimbBlocks(){
     }
     return '';
   }).join('');
+
+  // ── INLINE "ADD BLOCK" ROW (sits right after the blocks, above Cool-down) ──
+  // Lets you start the next burn without scrolling — each block = one set of
+  // routes between rests/belaying, so block count + routes-per-block stay meaningful.
+  html+=`<div style="margin:2px 0 12px">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">➕ Add another block</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-climb" style="flex:1;min-width:80px;font-size:12px" onclick="addClimbBlock('routes')">🧗 Routes</button>
+      <button class="btn" style="flex:1;min-width:80px;font-size:12px;background:#a78bfa;color:#fff;border:none" onclick="addClimbBlock('routes','Boulder')">🪨 Boulder</button>
+      <button class="btn" style="flex:1;min-width:80px;font-size:12px;background:#7c3aed;color:#fff;border:none" onclick="addClimbBlock('board')">🟫 Board</button>
+      <button class="btn" style="flex:1;min-width:80px;font-size:12px;background:#16a34a;color:#fff;border:none" onclick="addClimbBlock('arc')">🔁 ARC</button>
+    </div>
+  </div>`;
 
   // COOL-DOWN SECTION
   html+=`<div class="card" style="margin-bottom:10px;border-top:3px solid #06b6d4">
