@@ -712,9 +712,13 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
               <label>Gym name</label>
               <input type="text" id="newgym-name" placeholder="e.g. Klimmuur Centraal">
             </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius-sm)">
+              <input type="checkbox" id="newgym-boulder" style="width:18px;height:18px;flex-shrink:0;cursor:pointer">
+              <label for="newgym-boulder" style="font-size:14px;cursor:pointer;user-select:none">Has a bouldering area 🪨</label>
+            </div>
             <div class="form-group">
-              <label>Wall height (m)</label>
-              <input type="text" inputmode="decimal" id="newgym-height" placeholder="e.g. 16">
+              <label>Rope wall heights (m) — separate several with commas</label>
+              <input type="text" inputmode="decimal" id="newgym-heights" placeholder="e.g. 14, 18">
             </div>
             <div class="flex-gap8">
               <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-add-gym')">Cancel</button>
@@ -1643,29 +1647,60 @@ function openModal(id){
 function closeModal(id){document.getElementById(id).classList.remove('open')}
 
 // ── Custom gyms (user-added, persisted + cloud-synced via DATA_KEYS) ──
+// A gym value is EITHER a plain number (legacy single-height form, incl. base GYMS)
+// OR an object {walls:[14,18], boulder:true} for gyms with several walls.
 const _DEFAULT_GYM=Object.keys(GYMS)[0]; // "Neoliet" — the fresh-load default
 function getCustomGyms(){try{return JSON.parse(localStorage.getItem('custom_gyms')||'{}')||{};}catch(e){return {};}}
 function saveCustomGyms(o){DB.set('custom_gyms',o);}
-function allGyms(){return Object.assign({},GYMS,getCustomGyms());}
+function allGymsRaw(){return Object.assign({},GYMS,getCustomGyms());}
+
+// Normalised accessors — work for both the number form and the {walls,boulder} form.
+function gymWalls(name){
+  const raw=allGymsRaw()[name];
+  if(raw==null)return [];
+  if(typeof raw==='number')return [raw];
+  return Array.isArray(raw.walls)?raw.walls.slice():[];
+}
+function gymHasBoulder(name){
+  const raw=allGymsRaw()[name];
+  return !!(raw&&typeof raw==='object'&&raw.boulder);
+}
+function gymPrimaryHeight(name){const w=gymWalls(name);return w.length?w[0]:0;}
+function gymLabel(name){
+  const parts=[];
+  if(gymHasBoulder(name))parts.push('Boulder');
+  const w=gymWalls(name);
+  if(w.length)parts.push(w.join('/')+'m');
+  return parts.length?`${name} (${parts.join(' · ')})`:name;
+}
 
 // Rebuild the gym <select> from base + custom gyms, keeping the chosen value.
 function renderGymOptions(selected){
   const sel=document.getElementById('climb-gym');
   if(!sel)return;
   const keep=selected||sel.value||_DEFAULT_GYM;
-  const gyms=allGyms();
   let html='';
-  Object.keys(gyms).forEach(n=>{html+=`<option value="${esc(n)}">${esc(n)} (${gyms[n]}m)</option>`;});
+  Object.keys(allGymsRaw()).forEach(n=>{html+=`<option value="${esc(n)}">${esc(gymLabel(n))}</option>`;});
   html+='<option value="custom">Other (one-off)…</option>';
   html+='<option value="__add__">➕ Add new gym…</option>';
   sel.innerHTML=html;
   if(Array.from(sel.options).some(o=>o.value===keep)) sel.value=keep;
 }
 
+// Wall-height <option>s for a routes/boulder block — offers the selected gym's walls.
+function gymWallOptions(selected){
+  const gym=document.getElementById('climb-gym')?.value||'';
+  const heights=gym==='custom'?[]:[...new Set(gymWalls(gym))];
+  let html=`<option value="">Default (${getWallHeight()}m)</option>`;
+  heights.forEach(h=>{html+=`<option value="${h}"${String(selected)===String(h)?' selected':''}>${h}m</option>`;});
+  html+=`<option value="custom"${selected==='custom'?' selected':''}>Custom…</option>`;
+  return html;
+}
+
 function getWallHeight(){
   const gym=document.getElementById('climb-gym').value;
   if(gym==='custom') return parseFloat(_normalizeKgInput(document.getElementById('custom-wall').value))||0;
-  return allGyms()[gym]||0;
+  return gymPrimaryHeight(gym);
 }
 
 // Parse rest string to seconds
@@ -3515,25 +3550,33 @@ function updateWallHeight(){
   if(gym==='__add__'){ sel.value=_lastGym; openAddGymModal(); return; }
   _lastGym=gym;
   document.getElementById('custom-wall-wrap').style.display=gym==='custom'?'block':'none';
+  renderClimbBlocks(); // each block's wall-height picker depends on the selected gym
   updateClimbSummary();
   _saveDraftClimb();
 }
 
 function openAddGymModal(){
   document.getElementById('newgym-name').value='';
-  document.getElementById('newgym-height').value='';
+  document.getElementById('newgym-heights').value='';
+  document.getElementById('newgym-boulder').checked=false;
   openModal('modal-add-gym');
 }
 function saveNewGym(){
   const name=document.getElementById('newgym-name').value.trim();
-  const h=parseFloat(_normalizeKgInput(document.getElementById('newgym-height').value));
+  const boulder=document.getElementById('newgym-boulder').checked;
+  // Accept several heights separated by comma / semicolon / slash / space.
+  const walls=document.getElementById('newgym-heights').value
+    .split(/[\s,;/]+/)
+    .map(x=>parseFloat(_normalizeKgInput(x.trim())))
+    .filter(n=>!isNaN(n)&&n>0);
   if(!name){toast('Enter a gym name');return;}
-  if(!h||h<=0){toast('Enter a valid wall height');return;}
-  const cg=getCustomGyms(); cg[name]=h; saveCustomGyms(cg);
+  if(!boulder&&!walls.length){toast('Add a wall height or tick bouldering');return;}
+  const cg=getCustomGyms(); cg[name]={walls,boulder}; saveCustomGyms(cg);
   renderGymOptions(name);
   _lastGym=name;
   document.getElementById('custom-wall-wrap').style.display='none';
   closeModal('modal-add-gym');
+  renderClimbBlocks(); // refresh block wall pickers for the new gym
   updateClimbSummary();
   _saveDraftClimb();
   toast('✅ Gym added!');
@@ -3715,11 +3758,7 @@ function renderClimbBlocks(){
           <div>
             <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase">Wall Height (m)</label>
             <select style="font-size:13px;width:100%" onchange="updateClimbBlockField(${bi},'wallHeight',this.value)">
-              <option value="">Default (${getWallHeight()}m)</option>
-              <option value="13" ${b.wallHeight==='13'?'selected':''}>13m</option>
-              <option value="20" ${b.wallHeight==='20'?'selected':''}>20m</option>
-              <option value="4" ${b.wallHeight==='4'?'selected':''}>4m</option>
-              <option value="custom">Custom…</option>
+              ${gymWallOptions(b.wallHeight)}
             </select>
           </div>
         </div>
@@ -3972,11 +4011,7 @@ function renderClimbBlocksLegacy(){
           <div>
             <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase">Wall Height (m)</label>
             <select style="font-size:13px;width:100%" onchange="updateClimbBlockField(${bi},'wallHeight',this.value)">
-              <option value="">Default (${getWallHeight()}m)</option>
-              <option value="13" ${b.wallHeight==='13'?'selected':''}>13m</option>
-              <option value="20" ${b.wallHeight==='20'?'selected':''}>20m</option>
-              <option value="4" ${b.wallHeight==='4'?'selected':''}>4m</option>
-              <option value="custom">Custom…</option>
+              ${gymWallOptions(b.wallHeight)}
             </select>
           </div>
         </div>
