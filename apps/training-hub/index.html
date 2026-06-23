@@ -4457,6 +4457,13 @@ function renderClimbHistory(){
     el.innerHTML='<div class="empty"><div class="empty-icon">🧗</div><p>No climbing sessions yet.<br>Log your first session from the Log tab!</p></div>';
     return;
   }
+  // Always show newest-by-DATE first, so back-dated entries land in the right spot
+  // (the stored array is in insertion order). Tie-break by id = most recently added.
+  sessions.sort((a,b)=>{
+    const da=a.date||'', db=b.date||'';
+    if(da!==db) return db.localeCompare(da);
+    return (Number(b.id)||0)-(Number(a.id)||0);
+  });
   const visible=sessions.slice(0,_climbHistoryShown);
   const remaining=sessions.length-_climbHistoryShown;
   el.innerHTML=visible.map(s=>{
