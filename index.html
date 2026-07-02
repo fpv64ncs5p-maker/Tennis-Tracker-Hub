@@ -1172,25 +1172,83 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     </div>
     <div class="form-row cols2" style="margin-top:10px">
       <div class="form-group" style="margin-bottom:0">
-        <label>Side Split (cm)</label>
-        <input type="text" inputmode="decimal" id="assess-split" placeholder="160" step="1">
+        <label>Height (cm)</label>
+        <input type="text" inputmode="decimal" id="assess-height" placeholder="154">
       </div>
       <div class="form-group" style="margin-bottom:0">
-        <label>Pull-ups 2-rep (kg added)</label>
-        <input type="text" inputmode="decimal" id="assess-pullup" placeholder="12" step="0.5">
+        <label>Wingspan (cm)</label>
+        <input type="text" inputmode="decimal" id="assess-wingspan" placeholder="152">
       </div>
     </div>
-    <div class="form-row cols2" style="margin-top:10px">
+    <div class="form-group" style="margin-top:10px">
+      <label>Goal</label>
+      <input type="text" id="assess-goal" placeholder="e.g. Steady 7a rope climbing">
+    </div>
+
+    <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-weight:700;font-size:12px;color:var(--climb)">Finger Strength — Two-Arm Max Hang</div>
+    <div class="form-row cols2" style="margin-top:8px">
       <div class="form-group" style="margin-bottom:0">
-        <label>One-Arm Hang (kg added)</label>
-        <input type="text" inputmode="decimal" id="assess-hang" placeholder="+7" step="0.5">
+        <label>Edge (mm)</label>
+        <input type="text" inputmode="decimal" id="assess-fs-edge" placeholder="20">
       </div>
       <div class="form-group" style="margin-bottom:0">
-        <label>Hang Duration / Sets</label>
-        <input type="text" id="assess-hang-detail" placeholder="7'' × 8 sets">
+        <label>Fingerboard</label>
+        <input type="text" id="assess-fs-board" placeholder="Beastmaker 1000">
       </div>
     </div>
-    <div class="form-row cols2" style="margin-top:10px">
+    <div class="form-row cols2" style="margin-top:8px">
+      <div class="form-group" style="margin-bottom:0">
+        <label>Load added/removed (kg)</label>
+        <input type="text" inputmode="decimal" id="assess-fs-load" placeholder="+15 or -10">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Priority</label>
+        <select id="assess-fs-priority"><option value="">—</option><option value="Low">Low</option><option value="Moderate">Moderate</option><option value="High">High</option></select>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-weight:700;font-size:12px;color:var(--climb)">Power Endurance — Strength Endurance 60%</div>
+    <div class="form-row cols2" style="margin-top:8px">
+      <div class="form-group" style="margin-bottom:0">
+        <label>Load used (kg added/removed)</label>
+        <input type="text" inputmode="decimal" id="assess-pe-load" placeholder="+30">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Time (sec)</label>
+        <input type="text" inputmode="decimal" id="assess-pe-time" placeholder="190">
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:8px">
+      <label>Priority</label>
+      <select id="assess-pe-priority"><option value="">—</option><option value="Low">Low</option><option value="Moderate">Moderate</option><option value="High">High</option></select>
+    </div>
+
+    <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-weight:700;font-size:12px;color:var(--climb)">Pulling Strength — 2-Rep Max Pull-up</div>
+    <div class="form-row cols2" style="margin-top:8px">
+      <div class="form-group" style="margin-bottom:0">
+        <label>Load added/removed (kg)</label>
+        <input type="text" inputmode="decimal" id="assess-pu-load" placeholder="+12">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Priority</label>
+        <select id="assess-pu-priority"><option value="">—</option><option value="Low">Low</option><option value="Moderate">Moderate</option><option value="High">High</option></select>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-weight:700;font-size:12px;color:var(--climb)">Hip Flexibility</div>
+    <div class="form-row cols2" style="margin-top:8px">
+      <div class="form-group" style="margin-bottom:0">
+        <label>Heel-to-heel (cm)</label>
+        <input type="text" inputmode="decimal" id="assess-hf-cm" placeholder="160">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Priority</label>
+        <select id="assess-hf-priority"><option value="">—</option><option value="Low">Low</option><option value="Moderate">Moderate</option><option value="High">High</option></select>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-weight:700;font-size:12px;color:var(--climb)">Recent Climbing Performance</div>
+    <div class="form-row cols2" style="margin-top:8px">
       <div class="form-group" style="margin-bottom:0">
         <label>Sport OS Grade</label>
         <input type="text" id="assess-sport-os" placeholder="6c+">
@@ -4641,7 +4699,11 @@ function renderPyramid(){
 // ══════════════════════════════════════════════════
 function openAddAssessment(){
   document.getElementById('assess-date').value=today();
-  ['assess-bw','assess-split','assess-pullup','assess-hang','assess-hang-detail',
+  ['assess-bw','assess-height','assess-wingspan','assess-goal',
+   'assess-fs-edge','assess-fs-board','assess-fs-load','assess-fs-priority',
+   'assess-pe-load','assess-pe-time','assess-pe-priority',
+   'assess-pu-load','assess-pu-priority',
+   'assess-hf-cm','assess-hf-priority',
    'assess-sport-os','assess-sport-rp','assess-boulder-os','assess-boulder-rp','assess-notes']
     .forEach(id=>{document.getElementById(id).value='';});
   openModal('modal-assessment');
@@ -4653,10 +4715,20 @@ function saveAssessment(){
   const a={
     id:Date.now(),date,
     bodyMass:_normalizeKgInput(document.getElementById('assess-bw').value),
-    sideSplit:_normalizeKgInput(document.getElementById('assess-split').value),
-    pullups:_normalizeKgInput(document.getElementById('assess-pullup').value),
-    hangKg:_normalizeKgInput(document.getElementById('assess-hang').value),
-    hangDetail:document.getElementById('assess-hang-detail').value,
+    height:_normalizeKgInput(document.getElementById('assess-height').value),
+    wingspan:_normalizeKgInput(document.getElementById('assess-wingspan').value),
+    goal:document.getElementById('assess-goal').value,
+    fsEdge:document.getElementById('assess-fs-edge').value,
+    fsBoard:document.getElementById('assess-fs-board').value,
+    fsLoad:_normalizeKgInput(document.getElementById('assess-fs-load').value),
+    fsPriority:document.getElementById('assess-fs-priority').value,
+    peLoad:_normalizeKgInput(document.getElementById('assess-pe-load').value),
+    peTime:_normalizeKgInput(document.getElementById('assess-pe-time').value),
+    pePriority:document.getElementById('assess-pe-priority').value,
+    puLoad:_normalizeKgInput(document.getElementById('assess-pu-load').value),
+    puPriority:document.getElementById('assess-pu-priority').value,
+    hfCm:_normalizeKgInput(document.getElementById('assess-hf-cm').value),
+    hfPriority:document.getElementById('assess-hf-priority').value,
     sportOS:document.getElementById('assess-sport-os').value,
     sportRP:document.getElementById('assess-sport-rp').value,
     boulderOS:document.getElementById('assess-boulder-os').value,
@@ -4677,6 +4749,23 @@ function deleteAssessment(id){
   pushUndo('Assessment deleted',()=>{DB.saveClimbAssessment(backup);renderAssessments();});
 }
 
+function _assessPctBM(bodyMass,load){
+  const bm=parseFloat(bodyMass);const l=parseFloat(load);
+  if(isNaN(bm)||bm<=0||isNaN(l))return null;
+  return Math.round((bm+l)/bm*100);
+}
+function _assessPctHeight(height,cm){
+  const h=parseFloat(height);const c=parseFloat(cm);
+  if(isNaN(h)||h<=0||isNaN(c))return null;
+  return Math.round(c/h*100);
+}
+function _assessPriorityBadge(p){
+  if(!p)return'';
+  const colors={High:'var(--red)',Moderate:'#d97706',Low:'var(--green)'};
+  const c=colors[p]||'var(--muted)';
+  return`<span style="background:${c}22;color:${c};border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:6px">${p}</span>`;
+}
+
 function renderAssessments(){
   const el=document.getElementById('assessment-list');
   if(!el)return;
@@ -4688,25 +4777,32 @@ function renderAssessments(){
   el.innerHTML=list.map((a,i)=>{
     const prev=list[i+1];
     const arrow=(cur,prv,higher=true)=>{
-      if(!cur||!prv)return'';
+      if(cur==null||prv==null)return'';
       const cN=parseFloat(cur),pN=parseFloat(prv);
       if(isNaN(cN)||isNaN(pN))return'';
       const up=higher?(cN>pN):(cN<pN);
       const down=higher?(cN<pN):(cN>pN);
       return up?'<span style="color:var(--green)"> ↑</span>':down?'<span style="color:var(--red)"> ↓</span>':'';
     };
-    const row=(label,val,prevVal,higher=true)=>{
+    const row=(label,val,prevVal,higher=true,badge='')=>{
       if(!val)return'';
       return`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);font-size:12px">
         <span style="color:var(--muted)">${label}</span>
-        <span><strong>${val}</strong>${arrow(val,prevVal,higher)}</span>
+        <span><strong>${val}</strong>${arrow(val,prevVal,higher)}${badge}</span>
       </div>`;
     };
+
+    const fsPct=_assessPctBM(a.bodyMass,a.fsLoad);
+    const puPct=_assessPctBM(a.bodyMass,a.puLoad);
+    const hfPct=_assessPctHeight(a.height,a.hfCm);
+    const apeIdx=(a.height&&a.wingspan)?(parseFloat(a.wingspan)-parseFloat(a.height)):null;
+
     return`<div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div>
           <div style="font-weight:700;font-size:13px">${a.date}</div>
-          ${a.bodyMass?`<div class="text-xxs-muted">${a.bodyMass} kg</div>`:''}
+          <div class="text-xxs-muted">${[a.bodyMass?a.bodyMass+' kg':'',a.height?a.height+' cm':'',apeIdx!=null?(apeIdx>=0?'+':'')+apeIdx+' cm ape':''].filter(Boolean).join(' · ')}</div>
+          ${a.goal?`<div class="text-xxs-muted" style="font-style:italic">${esc(a.goal)}</div>`:''}
         </div>
         <button class="btn btn-ghost" style="padding:3px 8px;font-size:12px;color:var(--red)" onclick="deleteAssessment(${a.id})">🗑</button>
       </div>
@@ -4718,9 +4814,10 @@ function renderAssessments(){
         ${a.boulderOS?`<span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:12px">Boulder OS: ${a.boulderOS}${arrow(a.boulderOS,prev?.boulderOS)}</span>`:''}
         ${a.boulderRP?`<span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:12px">Boulder RP: ${a.boulderRP}</span>`:''}
       </div>`:''}
-      ${row('Side Split',a.sideSplit,prev?.sideSplit,false)}
-      ${row('Pull-ups 2-rep',a.pullups?a.pullups+' kg added':null,prev?.pullups?prev.pullups+' kg':null)}
-      ${row('One-Arm Hang',a.hangKg?(a.hangKg>0?'+':'')+a.hangKg+' kg'+(a.hangDetail?' ('+a.hangDetail+')':''):null,prev?.hangKg?(prev.hangKg>0?'+':'')+prev.hangKg+' kg':null)}
+      ${row('Finger Strength'+(a.fsEdge?' ('+a.fsEdge+'mm)':''),a.fsLoad!=null&&a.fsLoad!==''?(parseFloat(a.fsLoad)>=0?'+':'')+a.fsLoad+' kg'+(fsPct?' ('+fsPct+'% BM)':''):null,prev?.fsLoad,true,_assessPriorityBadge(a.fsPriority))}
+      ${row('Power Endurance',a.peTime?a.peTime+' sec'+(a.peLoad!=null&&a.peLoad!==''?' @ '+(parseFloat(a.peLoad)>=0?'+':'')+a.peLoad+' kg':''):null,prev?.peTime,true,_assessPriorityBadge(a.pePriority))}
+      ${row('Pull-ups 2-rep',a.puLoad!=null&&a.puLoad!==''?(parseFloat(a.puLoad)>=0?'+':'')+a.puLoad+' kg'+(puPct?' ('+puPct+'% BM)':''):null,prev?.puLoad,true,_assessPriorityBadge(a.puPriority))}
+      ${row('Hip Flexibility',a.hfCm?a.hfCm+' cm'+(hfPct?' ('+hfPct+'% height)':''):null,prev?.hfCm,true,_assessPriorityBadge(a.hfPriority))}
       ${a.notes?`<div style="font-size:11px;color:var(--muted);margin-top:6px;font-style:italic">${esc(a.notes)}</div>`:''}
     </div>`;
   }).join('');
