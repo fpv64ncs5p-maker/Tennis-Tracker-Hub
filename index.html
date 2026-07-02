@@ -751,15 +751,6 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       <!-- PYRAMID MODE -->
       <div id="climb-pyramid" style="display:none">
 
-        <!-- ── ASSESSMENT SECTION ── -->
-        <div class="card" style="margin-bottom:8px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <div class="card-title" style="margin:0">Lattice Assessment</div>
-            <button class="btn btn-climb" style="padding:5px 10px;font-size:12px" onclick="openAddAssessment()">＋ Add</button>
-          </div>
-          <div id="assessment-list"><p class="text-sm-muted">No assessments yet. Tap ＋ Add to log your first Lattice test.</p></div>
-        </div>
-
         <!-- ── PYRAMID SECTION ── -->
         <div class="card" style="margin-bottom:8px">
           <div class="card-title">2026 Grade Pyramid</div>
@@ -789,6 +780,16 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 
       <!-- SELF-ASSESSMENT MODE -->
       <div id="climb-selfassess" style="display:none">
+
+        <!-- ── LATTICE ASSESSMENT SECTION ── -->
+        <div class="card" style="margin-bottom:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div class="card-title" style="margin:0">Lattice Assessment</div>
+            <button class="btn btn-climb" style="padding:5px 10px;font-size:12px" onclick="openAddAssessment()">＋ Add</button>
+          </div>
+          <div id="assessment-list"><p class="text-sm-muted">No assessments yet. Tap ＋ Add to log your first Lattice test.</p></div>
+        </div>
+
         <div id="sa-summary-section"></div>
         <div id="sa-wizard-section"></div>
       </div>
@@ -1179,6 +1180,20 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <label>Wingspan (cm)</label>
         <input type="text" inputmode="decimal" id="assess-wingspan" placeholder="152">
       </div>
+    </div>
+    <div class="form-row cols2" style="margin-top:10px">
+      <div class="form-group" style="margin-bottom:0">
+        <label>Body Fat (%)</label>
+        <input type="text" inputmode="decimal" id="assess-bodyfat" placeholder="18">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Skeletal Muscle (kg)</label>
+        <input type="text" inputmode="decimal" id="assess-muscle" placeholder="20">
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:10px">
+      <label>Bone Mass (kg)</label>
+      <input type="text" inputmode="decimal" id="assess-bonemass" placeholder="2.2">
     </div>
     <div class="form-group" style="margin-top:10px">
       <label>Goal</label>
@@ -3616,11 +3631,11 @@ function climbMode(mode){
   document.querySelectorAll('#tab-climb .seg-btn').forEach((b,i)=>{
     b.classList.toggle('active',['log','pyramid','history','macro','selfassess','finger'][i]===mode);
   });
-  if(mode==='pyramid'){renderPyramid();renderAssessments();}
+  if(mode==='pyramid')renderPyramid();
   if(mode==='history'){_climbHistoryShown=HISTORY_PAGE_SIZE;renderClimbHistory();}
   if(mode==='log')renderClimbTemplates();
   if(mode==='macro')renderMacrocycle();
-  if(mode==='selfassess')renderSelfAssess();
+  if(mode==='selfassess'){renderSelfAssess();renderAssessments();}
   if(mode==='finger'){fbMode('log');renderFBExercises();}
 }
 
@@ -4699,7 +4714,7 @@ function renderPyramid(){
 // ══════════════════════════════════════════════════
 function openAddAssessment(){
   document.getElementById('assess-date').value=today();
-  ['assess-bw','assess-height','assess-wingspan','assess-goal',
+  ['assess-bw','assess-height','assess-wingspan','assess-bodyfat','assess-muscle','assess-bonemass','assess-goal',
    'assess-fs-edge','assess-fs-board','assess-fs-load','assess-fs-priority',
    'assess-pe-load','assess-pe-time','assess-pe-priority',
    'assess-pu-load','assess-pu-priority',
@@ -4717,6 +4732,9 @@ function saveAssessment(){
     bodyMass:_normalizeKgInput(document.getElementById('assess-bw').value),
     height:_normalizeKgInput(document.getElementById('assess-height').value),
     wingspan:_normalizeKgInput(document.getElementById('assess-wingspan').value),
+    bodyFatPct:_normalizeKgInput(document.getElementById('assess-bodyfat').value),
+    skeletalMuscleKg:_normalizeKgInput(document.getElementById('assess-muscle').value),
+    boneMassKg:_normalizeKgInput(document.getElementById('assess-bonemass').value),
     goal:document.getElementById('assess-goal').value,
     fsEdge:document.getElementById('assess-fs-edge').value,
     fsBoard:document.getElementById('assess-fs-board').value,
@@ -4765,6 +4783,13 @@ function _assessPriorityBadge(p){
   const c=colors[p]||'var(--muted)';
   return`<span style="background:${c}22;color:${c};border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:6px">${p}</span>`;
 }
+// Normalizes a ±kg value so a user-typed leading "+" doesn't double up with the display sign
+function _signed(val){
+  if(val==null||val==='')return null;
+  const n=parseFloat(val);
+  if(isNaN(n))return null;
+  return(n>=0?'+':'')+n;
+}
 
 function renderAssessments(){
   const el=document.getElementById('assessment-list');
@@ -4801,7 +4826,7 @@ function renderAssessments(){
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div>
           <div style="font-weight:700;font-size:13px">${a.date}</div>
-          <div class="text-xxs-muted">${[a.bodyMass?a.bodyMass+' kg':'',a.height?a.height+' cm':'',apeIdx!=null?(apeIdx>=0?'+':'')+apeIdx+' cm ape':''].filter(Boolean).join(' · ')}</div>
+          <div class="text-xxs-muted">${[a.bodyMass?a.bodyMass+' kg':'',a.height?a.height+' cm':'',apeIdx!=null?(apeIdx>=0?'+':'')+apeIdx+' cm ape':'',a.bodyFatPct?a.bodyFatPct+'% fat':'',a.skeletalMuscleKg?a.skeletalMuscleKg+' kg muscle':'',a.boneMassKg?a.boneMassKg+' kg bone':''].filter(Boolean).join(' · ')}</div>
           ${a.goal?`<div class="text-xxs-muted" style="font-style:italic">${esc(a.goal)}</div>`:''}
         </div>
         <button class="btn btn-ghost" style="padding:3px 8px;font-size:12px;color:var(--red)" onclick="deleteAssessment(${a.id})">🗑</button>
@@ -4814,9 +4839,9 @@ function renderAssessments(){
         ${a.boulderOS?`<span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:12px">Boulder OS: ${a.boulderOS}${arrow(a.boulderOS,prev?.boulderOS)}</span>`:''}
         ${a.boulderRP?`<span style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:12px">Boulder RP: ${a.boulderRP}</span>`:''}
       </div>`:''}
-      ${row('Finger Strength'+(a.fsEdge?' ('+a.fsEdge+'mm)':''),a.fsLoad!=null&&a.fsLoad!==''?(parseFloat(a.fsLoad)>=0?'+':'')+a.fsLoad+' kg'+(fsPct?' ('+fsPct+'% BM)':''):null,prev?.fsLoad,true,_assessPriorityBadge(a.fsPriority))}
-      ${row('Power Endurance',a.peTime?a.peTime+' sec'+(a.peLoad!=null&&a.peLoad!==''?' @ '+(parseFloat(a.peLoad)>=0?'+':'')+a.peLoad+' kg':''):null,prev?.peTime,true,_assessPriorityBadge(a.pePriority))}
-      ${row('Pull-ups 2-rep',a.puLoad!=null&&a.puLoad!==''?(parseFloat(a.puLoad)>=0?'+':'')+a.puLoad+' kg'+(puPct?' ('+puPct+'% BM)':''):null,prev?.puLoad,true,_assessPriorityBadge(a.puPriority))}
+      ${row('Finger Strength'+(a.fsEdge?' ('+a.fsEdge+'mm)':''),a.fsLoad!=null&&a.fsLoad!==''?_signed(a.fsLoad)+' kg'+(fsPct?' ('+fsPct+'% BM)':''):null,prev?.fsLoad,true,_assessPriorityBadge(a.fsPriority))}
+      ${row('Power Endurance',a.peTime?a.peTime+' sec'+(a.peLoad!=null&&a.peLoad!==''?' @ '+_signed(a.peLoad)+' kg':''):null,prev?.peTime,true,_assessPriorityBadge(a.pePriority))}
+      ${row('Pull-ups 2-rep',a.puLoad!=null&&a.puLoad!==''?_signed(a.puLoad)+' kg'+(puPct?' ('+puPct+'% BM)':''):null,prev?.puLoad,true,_assessPriorityBadge(a.puPriority))}
       ${row('Hip Flexibility',a.hfCm?a.hfCm+' cm'+(hfPct?' ('+hfPct+'% height)':''):null,prev?.hfCm,true,_assessPriorityBadge(a.hfPriority))}
       ${a.notes?`<div style="font-size:11px;color:var(--muted);margin-top:6px;font-style:italic">${esc(a.notes)}</div>`:''}
     </div>`;
