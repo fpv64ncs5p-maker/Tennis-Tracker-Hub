@@ -798,7 +798,6 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       <div id="gym-finger" style="display:none">
         <div class="segment" style="margin-bottom:10px">
           <button class="seg-btn active" data-fb-mode="log" onclick="fbMode('log')">Log</button>
-          <button class="seg-btn" data-fb-mode="build" onclick="fbMode('build')">Build</button>
           <button class="seg-btn" data-fb-mode="history" onclick="fbMode('history')">History</button>
           <button class="seg-btn" data-fb-mode="progress" onclick="fbMode('progress')">📈 Progress</button>
         </div>
@@ -817,42 +816,14 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
             <div id="fb-duration-display" style="display:none;margin-top:8px;padding:6px 10px;background:var(--gym-glow);border:1px solid rgba(22,163,74,.25);border-radius:var(--radius-sm);font-size:13px;font-weight:600;color:var(--gym);text-align:center"></div>
           </div>
           <div id="fb-exercises-list"></div>
-          <button class="btn btn-gym btn-block" id="btn-add-fb-exercise" onclick="openFBAddExercise()">＋ Add Exercise</button>
+          <div id="fb-ex-picker"></div>
+          <button class="btn btn-gym btn-block" id="btn-add-fb-exercise" onclick="openFBAddExercise()">＋ Add Hang Exercise</button>
+          <button class="btn btn-ghost btn-block" id="btn-fb-repeat" style="margin-top:8px" onclick="repeatLastFBSession()">🔁 Repeat last session</button>
           <div style="height:8px"></div>
           <div class="flex-gap8">
             <button class="btn btn-ghost" id="btn-clear-fb" style="flex:1;display:none;color:var(--red)" onclick="clearFBSession()">✕ Clear</button>
             <button class="btn btn-ghost" id="btn-save-fb" style="flex:2" onclick="saveFBSession()">Save Session</button>
           </div>
-        </div>
-
-        <!-- FB BUILD -->
-        <div id="fb-build" style="display:none">
-          <div id="fb-templates-section"></div>
-          <div class="card">
-            <div class="card-title">Select Exercises</div>
-            <div style="display:flex;gap:6px;margin-bottom:12px">
-              <button class="ex-chip active" id="fb-lvl-both" onclick="setFBLevel('both',this)">All</button>
-              <button class="ex-chip" id="fb-lvl-beginner" onclick="setFBLevel('beginner',this)">🟢 Beginner</button>
-              <button class="ex-chip" id="fb-lvl-intermediate" onclick="setFBLevel('intermediate',this)">🔶 Intermediate</button>
-            </div>
-            <div id="fb-exercise-checklist" style="margin-bottom:12px"></div>
-            <div class="form-row cols2" style="margin-bottom:10px">
-              <div><label>Duration Target</label>
-                <select id="fb-build-duration">
-                  <option value="20">20 min</option>
-                  <option value="30" selected>30 min</option>
-                  <option value="45">45 min</option>
-                  <option value="60">60 min</option>
-                </select>
-              </div>
-              <div><label>Intensity %</label><input type="number" inputmode="decimal" id="fb-build-intensity" value="85" min="50" max="100" step="5"></div>
-            </div>
-            <div class="flex-gap8">
-              <button class="btn btn-ghost" style="flex:1" onclick="fbMode('log')">← Log</button>
-              <button class="btn btn-gym" style="flex:2" onclick="generateFBPlan()">⚡ Generate Plan</button>
-            </div>
-          </div>
-          <div id="fb-build-result"></div>
         </div>
 
         <!-- FB HISTORY -->
@@ -863,14 +834,14 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <!-- FB PROGRESS -->
         <div id="fb-progress" style="display:none">
           <div class="card" style="margin-bottom:8px">
-            <div class="card-title">Max Hang Progression</div>
+            <div class="card-title">Day Max Progression</div>
             <select id="fb-progress-ex" onchange="renderFBProgression()" style="margin-bottom:10px">
               <option value="">— Select exercise —</option>
             </select>
             <div id="fb-progression-chart"></div>
           </div>
           <div class="card">
-            <div class="card-title">Recent Sessions</div>
+            <div class="card-title">Personal Bests</div>
             <div id="fb-recent-summary"></div>
           </div>
         </div>
@@ -1619,7 +1590,7 @@ function checkDirtyBeforeNav(targetTab){
 const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'climb_sessions','climb_assessments','plan_data','rehab_data','macro_data',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
-  'gym_height','tennis_matches','tennis_overlay','custom_gyms'];
+  'gym_height','tennis_matches','tennis_overlay','custom_gyms','fb_custom_ex'];
 
 function exportAllData(){
   const data={};
@@ -6501,46 +6472,146 @@ function finishSAWizard(){
 // ══════════════════════════════════════════════════
 //  FINGERBOARD TAB
 // ══════════════════════════════════════════════════
-const FB_EXERCISES=EXERCISES.filter(e=>e.cat&&e.cat.startsWith('CG-'));
+// ══════════════════════════════════════════════════
+//  FINGERBOARD (Climbing Gym) — protocol-first redesign (2026-07-06)
+//  New session format: fbv:2, exercises:[{name,sets,reps,time,restRep,restSet,loads[],done[],rpe,notes}]
+//  Old-format sessions (no fbv) remain in storage + cloud backup but are
+//  hidden from this tab ("fresh start"). Week/Home aggregates still count them.
+// ══════════════════════════════════════════════════
+const FB_PRESETS=[
+  {name:"Hang 1-Arm Hang",sets:6,reps:1,time:10,restRep:"3'",restSet:"5'"},
+  {name:"Edge Iso Holds",sets:6,reps:1,time:7,restRep:"3'",restSet:"5'"},
+  {name:"AnaCap FB – Two Arms",sets:6,reps:7,time:7,restRep:"3'",restSet:"5'"},
+  {name:"MS Load Straight",sets:6,reps:1,time:7,restRep:"3'",restSet:"5'"},
+  {name:"1/2 Wooden Ball",sets:5,reps:1,time:7,restRep:"3'",restSet:"5'"},
+  {name:"Wide Wood Pinch",sets:5,reps:1,time:7,restRep:"3'",restSet:"5'"},
+  {name:"Narrow Wood Pinch",sets:5,reps:1,time:7,restRep:"3'",restSet:"5'"},
+  {name:"Small Finger Pinch Block",sets:5,reps:1,time:7,restRep:"3'",restSet:"5'"},
+];
 let fbSession={exercises:[]};
-let addExContext='gym'; // 'gym' | 'fb'
+let addExContext='gym'; // kept for the shared gym add-exercise modal
+
+function _fbCustomEx(){return DB.get('fb_custom_ex')||[];}
+function _fbAllPresets(){return FB_PRESETS.concat(_fbCustomEx());}
+function _fbV2Sessions(){return DB.fbSessions().filter(s=>s.fbv===2);}
 
 function fbMode(mode){
-  ['log','build','history','progress'].forEach(m=>{
-    document.getElementById('fb-'+m).style.display=m===mode?'':'none';
+  ['log','history','progress'].forEach(m=>{
+    const el=document.getElementById('fb-'+m);
+    if(el)el.style.display=m===mode?'':'none';
   });
   document.querySelectorAll('#gym-finger .segment .seg-btn').forEach(b=>{
     b.classList.toggle('active',b.dataset.fbMode===mode);
   });
-  if(mode==='build')renderFBBuild();
   if(mode==='history'){_fbHistoryShown=HISTORY_PAGE_SIZE;renderFBHistory();}
   if(mode==='progress')renderFBProgress();
 }
 
+// ── helpers ────────────────────────────────────────
+function _fbDayMax(e){
+  const ls=(e.loads||[]).map(v=>parseFloat(String(v).replace(',','.'))).filter(n=>!isNaN(n));
+  return ls.length?Math.max(...ls):null;
+}
+function _fbPrevDayMax(name,excludeSessionId){
+  const ss=_fbV2Sessions()
+    .filter(s=>String(s.id)!==String(excludeSessionId)&&s.exercises.some(x=>x.name===name&&_fbDayMax(x)!==null))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if(!ss.length)return null;
+  const maxes=ss[0].exercises.filter(x=>x.name===name).map(_fbDayMax).filter(n=>n!==null);
+  return maxes.length?Math.max(...maxes):null;
+}
+function _fbSigned(n){const r=Math.round(n*100)/100;return (r>0?'+':'')+r;}
+function _fbBW(){const v=parseFloat(_normalizeKgInput(document.getElementById('fb-bw').value));return isNaN(v)?null:v;}
+function _fbChips(dayMax,prevMax,bw){
+  const chips=[];
+  if(dayMax===null)return '';
+  chips.push(`<span class="meta-pill weight">Day Max ${_fbSigned(dayMax)} kg</span>`);
+  if(prevMax)chips.push(`<span class="meta-pill intensity">${Math.round(dayMax/prevMax*100)}% of last (${_fbSigned(prevMax)})</span>`);
+  if(bw)chips.push(`<span class="meta-pill">${Math.round((bw+dayMax)/bw*100)}% BM</span>`);
+  return chips.join('');
+}
+
+// ── Log: render hang entries ───────────────────────
+function _fbCfgInput(label,i,field,val,w){
+  return `<div style="display:flex;flex-direction:column;gap:2px">
+    <span style="font-size:10px;color:var(--muted);font-weight:600">${label}</span>
+    <input type="text" inputmode="numeric" value="${val??''}" style="width:${w}px;text-align:center;padding:6px 2px;font-size:13px" onchange="fbExField(${i},'${field}',this.value)">
+  </div>`;
+}
 function renderFBExercises(){
   const el=document.getElementById('fb-exercises-list');
   const clearBtn=document.getElementById('btn-clear-fb');
   if(clearBtn)clearBtn.style.display=fbSession.exercises.length?'':'none';
   if(!fbSession.exercises.length){
-    el.innerHTML='<div class="empty"><div class="empty-icon">🏋️</div><p>No exercises yet.<br>Tap "Add Exercise" to start.</p></div>';
+    el.innerHTML='<div class="empty"><div class="empty-icon">🤌</div><p>No hangs yet.<br>Tap "Add Hang Exercise" to start.</p></div>';
     return;
   }
-  el.innerHTML=fbSession.exercises.map((e,i)=>`
-    <div class="ex-row">
-      <div class="ex-row-info">
-        <div class="ex-row-name">${e.name}</div>
-        <div class="ex-row-meta">
-          <span>📦 ${e.sets} sets</span>
-          <span>🔁 ${e.reps}</span>
-          <span>⏱ ${e.rest}</span>
-          ${e.weight?`<span class="meta-pill weight">${e.weight} kg</span>`:''}
-          ${e.intensity?`<span class="meta-pill intensity">${e.intensity}%</span>`:''}
-        </div>
-        ${e.notes?`<div class="text-xs-muted">${esc(e.notes)}</div>`:''}
+  const bw=_fbBW();
+  el.innerHTML=fbSession.exercises.map((e,i)=>{
+    const dayMax=_fbDayMax(e);
+    const prevMax=_fbPrevDayMax(e.name);
+    return `<div class="card" style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-weight:700;font-size:14px">${esc(e.name)}</div>
+        <button class="btn btn-ghost" style="padding:2px 8px;font-size:13px;color:var(--red)" onclick="removeFBExercise(${i})">🗑</button>
       </div>
-      <button class="btn btn-ghost" style="padding:4px 8px;font-size:13px;color:var(--red);flex-shrink:0" onclick="removeFBExercise(${i})">🗑</button>
-    </div>`).join('');
-  setTimeout(()=>document.getElementById('btn-add-fb-exercise')?.scrollIntoView({behavior:'smooth',block:'nearest'}),80);
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        ${_fbCfgInput('SETS',i,'sets',e.sets,40)}
+        ${_fbCfgInput('REPS',i,'reps',e.reps,40)}
+        ${_fbCfgInput('TIME (S)',i,'time',e.time,52)}
+        ${_fbCfgInput('REST REP',i,'restRep',e.restRep,56)}
+        ${_fbCfgInput('REST SET',i,'restSet',e.restSet,56)}
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span style="font-size:10px;color:var(--muted);font-weight:600">FILL ALL (±KG)</span>
+          <input type="text" placeholder="e.g. 39.5" style="width:72px;text-align:center;padding:6px 2px;font-size:13px" onchange="fbFillLoads(${i},this.value)">
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);font-weight:600;margin-bottom:4px">LOAD PER SET (±KG) · TAP DOT WHEN DONE</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        ${(e.loads||[]).map((v,s)=>`<div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <input type="text" value="${v??''}" style="width:50px;text-align:center;padding:6px 2px;font-size:13px" onchange="fbSetLoad(${i},${s},this.value)">
+          <button onclick="fbToggleDone(${i},${s})" aria-label="Set ${s+1} done" style="width:16px;height:16px;border-radius:50%;border:2px solid var(--gym);background:${e.done&&e.done[s]?'var(--gym)':'transparent'};padding:0;cursor:pointer"></button>
+        </div>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+        <span style="font-size:10px;color:var(--muted);font-weight:600">RPE</span>
+        <input type="text" inputmode="numeric" value="${e.rpe??''}" placeholder="8" style="width:40px;text-align:center;padding:6px 2px;font-size:13px" onchange="fbExField(${i},'rpe',this.value)"><span style="font-size:11px;color:var(--muted)">/10</span>
+        ${_fbChips(dayMax,prevMax,bw)}
+      </div>
+      <input type="text" value="${esc(e.notes||'')}" placeholder="Notes (grip, edge, feel…)" style="width:100%;padding:6px 8px;font-size:12px" onchange="fbExField(${i},'notes',this.value)">
+    </div>`;
+  }).join('');
+}
+
+function fbExField(i,field,val){
+  const e=fbSession.exercises[i];if(!e)return;
+  if(field==='sets'){
+    const n=Math.max(1,Math.min(12,parseInt(val)||1));
+    e.sets=n;
+    e.loads=(e.loads||[]).slice(0,n);while(e.loads.length<n)e.loads.push('');
+    e.done=(e.done||[]).slice(0,n);while(e.done.length<n)e.done.push(false);
+  }else{
+    e[field]=val;
+  }
+  markDirty('fb');renderFBExercises();
+}
+function fbFillLoads(i,val){
+  const e=fbSession.exercises[i];if(!e)return;
+  const v=String(val).replace(',','.').trim();
+  if(v==='')return;
+  e.loads=e.loads.map(()=>v);
+  markDirty('fb');renderFBExercises();
+}
+function fbSetLoad(i,s,val){
+  const e=fbSession.exercises[i];if(!e)return;
+  e.loads[s]=String(val).replace(',','.').trim();
+  markDirty('fb');renderFBExercises();
+}
+function fbToggleDone(i,s){
+  const e=fbSession.exercises[i];if(!e)return;
+  if(!e.done)e.done=Array(e.loads.length).fill(false);
+  e.done[s]=!e.done[s];
+  markDirty('fb');renderFBExercises();
 }
 
 function removeFBExercise(idx){
@@ -6554,15 +6625,56 @@ function clearFBSession(){
   fbSession.exercises=[];clearDirty();renderFBExercises();toast('Session cleared');
 }
 
+// ── Add exercise (inline picker) ───────────────────
 function openFBAddExercise(){
-  addExContext='fb';
-  exFilterArea=''; exFilterEquip='';     // default: show all Climbing Gym exercises
-  _renderExAreaChips('fb');
-  document.querySelectorAll('#ex-equip-chips .ex-chip').forEach((b,i)=>b.classList.toggle('active',i===0));
-  filterExercises();
-  document.getElementById('ex-autofill').style.display='none';
-  document.getElementById('ex-suggest').style.display='none';
-  openModal('modal-exercise');
+  const el=document.getElementById('fb-ex-picker');
+  if(el.innerHTML){el.innerHTML='';return;} // toggle closed
+  const presets=_fbAllPresets();
+  el.innerHTML=`<div class="card" style="margin-bottom:8px">
+    <div class="card-title">Choose exercise</div>
+    ${presets.map((p,idx)=>`<button class="btn btn-ghost btn-block" style="text-align:left;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center" onclick="addFBExercise(${idx})">
+      <span>🤌 ${esc(p.name)}</span>
+      <span class="text-xxs-muted">${p.sets}×${p.reps}×${p.time}s · ${esc(p.restRep)}/${esc(p.restSet)}</span>
+    </button>`).join('')}
+    <button class="btn btn-ghost btn-block" style="text-align:left" onclick="addFBCustomExercise()">➕ New exercise…</button>
+  </div>`;
+}
+function addFBExercise(idx){
+  const p=_fbAllPresets()[idx];if(!p)return;
+  _pushFBEntry(p);
+}
+function _pushFBEntry(p){
+  const n=p.sets||5;
+  fbSession.exercises.push({
+    name:p.name,sets:n,reps:p.reps||1,time:p.time||7,
+    restRep:p.restRep||"3'",restSet:p.restSet||"5'",
+    loads:Array(n).fill(''),done:Array(n).fill(false),rpe:'',notes:''
+  });
+  document.getElementById('fb-ex-picker').innerHTML='';
+  markDirty('fb');renderFBExercises();
+  setTimeout(()=>document.getElementById('btn-add-fb-exercise')?.scrollIntoView({behavior:'smooth',block:'nearest'}),80);
+}
+function addFBCustomExercise(){
+  showTextModal('New fingerboard exercise','','Add',name=>{
+    if(_fbAllPresets().some(p=>p.name.toLowerCase()===name.toLowerCase())){toast('That exercise already exists');return;}
+    const p={name,sets:5,reps:1,time:7,restRep:"3'",restSet:"5'"};
+    const a=_fbCustomEx();a.push(p);DB.set('fb_custom_ex',a);
+    _pushFBEntry(p);
+    toast(`➕ "${esc(name)}" added to your exercises`);
+  });
+}
+
+function repeatLastFBSession(){
+  const ss=_fbV2Sessions().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if(!ss.length){toast('No previous session to repeat');return;}
+  if(fbSession.exercises.length&&!confirm('Replace current exercises with last session?'))return;
+  fbSession.exercises=ss[0].exercises.map(e=>({
+    ...e,
+    loads:[...(e.loads||[])],
+    done:Array((e.loads||[]).length).fill(false)
+  }));
+  markDirty('fb');renderFBExercises();
+  toast(`🔁 Loaded ${fmtDate(ss[0].date)} — adjust loads and go`);
 }
 
 function updateFBDuration(){
@@ -6591,7 +6703,7 @@ function saveFBSession(){
     const [eh,em]=endTime.split(':').map(Number);
     let d=(eh*60+em)-(sh*60+sm);if(d<0)d+=1440;durationMins=d;
   }
-  const session={id:Date.now(),date,bodyWeight:bw,startTime,endTime,durationMins,exercises:[...fbSession.exercises]};
+  const session={id:Date.now(),fbv:2,date,bodyWeight:bw,startTime,endTime,durationMins,exercises:[...fbSession.exercises]};
   DB.saveFB(session);
   clearDirty();
   fbSession={exercises:[]};
@@ -6604,140 +6716,11 @@ function saveFBSession(){
   toast('✅ Climbing Gym session saved!');
 }
 
-// ── FB Build ──────────────────────────────────────
-const CG_CATS={
-  'CG-Fingers': {label:'🤌 Finger Flexors', color:'#7c3aed'},
-  'CG-Arms':    {label:'💪 Arms & Torso',   color:'#2563eb'},
-  'CG-Antagonist':{label:'🛡️ Antagonist – Wrist & Forearm', color:'#16a34a'},
-  'CG-Rotator': {label:'🔄 Rotator Cuff & Scapular', color:'#ea7c3a'},
-  'CG-Push':    {label:'🏋️ Antagonist Push', color:'#e11d48'},
-  'CG-Core':    {label:'🧱 Climbing Core',   color:'#0891b2'},
-};
-let _fbLevel='both'; // 'both' | 'beginner' | 'intermediate'
-
-function renderFBBuild(){
-  renderFBTemplates();
-  const el=document.getElementById('fb-exercise-checklist');
-  const filtered=FB_EXERCISES.filter(e=>_fbLevel==='both'||e.level===_fbLevel||e.level==='both');
-
-  // Group by category
-  const byCat={};
-  filtered.forEach(e=>{(byCat[e.cat]=byCat[e.cat]||[]).push(e);});
-
-  el.innerHTML=Object.entries(CG_CATS).map(([cat,meta])=>{
-    const exs=byCat[cat]||[];
-    if(!exs.length) return '';
-    return `<div style="margin-bottom:14px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${meta.color};margin-bottom:6px">${meta.label}</div>
-      ${exs.map(e=>`
-        <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border);cursor:pointer;margin-bottom:4px">
-          <input type="checkbox" data-fb-ex="${e.name}" style="width:16px;height:16px;accent-color:${meta.color}">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:600">${e.name}</div>
-            <div class="text-xxs-muted">${e.sets} sets · ${e.reps} · rest ${e.rest}${e.level==='both'?'':' · 🔶 Intermediate'}</div>
-          </div>
-        </label>`).join('')}
-    </div>`;
-  }).join('');
-  document.getElementById('fb-build-result').innerHTML='';
-}
-
-function generateFBPlan(){
-  const checked=[...document.querySelectorAll('[data-fb-ex]:checked')].map(cb=>cb.dataset.fbEx);
-  if(!checked.length){toast('Select at least one exercise');return;}
-  const dur=parseInt(document.getElementById('fb-build-duration').value);
-  const intensity=parseInt(document.getElementById('fb-build-intensity').value);
-  const plan=[];let totalSec=0;const maxSec=dur*60;
-  for(const name of checked){
-    const ex=FB_EXERCISES.find(e=>e.name===name);if(!ex)continue;
-    const t=exTimeSec(ex);
-    if(totalSec+t<=maxSec){plan.push(ex);totalSec+=t;}
-  }
-  if(!plan.length){toast('No exercises fit in that time — try longer duration');return;}
-  const estMin=Math.round(totalSec/60);
-  document.getElementById('fb-build-result').innerHTML=`
-    <div class="card">
-      <div class="card-title">Suggested Plan · ~${estMin} min · ${intensity}%</div>
-      ${plan.map(ex=>{
-        const sw=suggestWeight(ex.name,intensity);
-        const wStr=typeof sw==='number'?`${sw} kg`:(sw||'—');
-        return `<div class="ex-row">
-          <div class="ex-row-info">
-            <div class="ex-row-name">${ex.name}</div>
-            <div class="ex-row-meta"><span>📦 ${ex.sets} sets</span><span>🔁 ${ex.reps}</span><span>⏱ ${ex.rest}</span></div>
-          </div>
-          <div class="meta-pill weight" style="flex-shrink:0">${wStr}</div>
-        </div>`;
-      }).join('')}
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-ghost" style="flex:1" onclick="document.getElementById('fb-build-result').innerHTML=''">✕ Discard</button>
-        <button class="btn btn-ghost" style="flex:1" onclick="saveFBGeneratedPlanAsTemplate(${JSON.stringify(plan).replace(/"/g,'&quot;')})">⭐ Save</button>
-        <button class="btn btn-gym" style="flex:2" onclick="loadFBPlan(${JSON.stringify(plan).replace(/"/g,'&quot;')},${intensity})">▶ Start</button>
-      </div>
-    </div>`;
-}
-
-function loadFBPlan(plan,intensity){
-  fbSession.exercises=plan.map(ex=>({
-    name:ex.name,cat:ex.cat,sets:ex.sets,reps:ex.reps,rest:ex.rest,
-    intensity:intensity,weight:'',notes:''
-  }));
-  fbMode('log');renderFBExercises();
-  toast('Plan loaded — fill in weights and save');
-}
-
-function setFBLevel(level, el){
-  _fbLevel=level;
-  document.querySelectorAll('#fb-build .ex-chip').forEach(b=>b.classList.remove('active'));
-  el.classList.add('active');
-  renderFBBuild();
-}
-
-function saveFBGeneratedPlanAsTemplate(plan){
-  if(!plan||!plan.length){toast('Nothing to save');return;}
-  const defaultName=plan.slice(0,2).map(e=>e.name.split(' ')[0]).join('+');
-  showTextModal('Save as Template',defaultName||'FB Plan','Save Template',name=>{
-    DB.saveFBTemplate({id:Date.now(),name,exercises:plan});
-    renderFBTemplates();
-    toast(`⭐ "${esc(name)}" saved as template!`);
-  });
-}
-
-// ── FB Templates ──────────────────────────────────
-function renderFBTemplates(){
-  const ts=DB.fbTemplates();
-  const el=document.getElementById('fb-templates-section');
-  if(!el||!ts.length){if(el)el.innerHTML='';return;}
-  el.innerHTML=`<div style="margin-bottom:12px">
-    <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px">YOUR TEMPLATES</div>
-    <div style="display:flex;flex-direction:column;gap:6px">
-      ${ts.map(t=>`<div style="display:flex;align-items:center;gap:6px">
-        <button class="btn btn-ghost" style="flex:1;text-align:left;font-size:13px;padding:8px 12px" onclick="loadFBTemplate(${t.id})">⭐ ${esc(t.name)}</button>
-        <button class="btn btn-ghost" style="padding:7px 12px;color:var(--muted)" onclick="deleteFBTemplate(${t.id})">✕</button>
-      </div>`).join('')}
-    </div>
-  </div>`;
-}
-
-function loadFBTemplate(id){
-  const t=DB.fbTemplates().find(x=>x.id===id);
-  if(!t)return;
-  fbSession.exercises=[...t.exercises];
-  fbMode('log');renderFBExercises();
-  toast(`⭐ "${t.name}" loaded`);
-}
-
-function deleteFBTemplate(id){
-  const backup=DB.fbTemplates().find(t=>t.id===id);
-  DB.deleteFBTemplate(id);renderFBTemplates();
-  pushUndo('Template removed',()=>{DB.saveFBTemplate(backup);renderFBTemplates();});
-}
-
 // ── FB History ────────────────────────────────────
 function renderFBHistory(){
-  const sessions=DB.fbSessions();
+  const sessions=_fbV2Sessions();
   const el=document.getElementById('fb-history-list');
-  if(!sessions.length){el.innerHTML='<div class="empty"><div class="empty-icon">🪨</div><p>No Climbing Gym sessions yet.<br>Log a fingerboard workout to see it here.</p></div>';return;}
+  if(!sessions.length){el.innerHTML='<div class="empty"><div class="empty-icon">🤌</div><p>No fingerboard sessions yet.<br>Log your first hang session to see it here.</p></div>';return;}
   // Newest-by-DATE first, so back-dated entries land in the right spot (tie-break: most recently added)
   sessions.sort((a,b)=>{
     const da=a.date||'', db=b.date||'';
@@ -6749,14 +6732,16 @@ function renderFBHistory(){
   el.innerHTML=visible.map(s=>{
     const durStr=s.durationMins?(()=>{const h=Math.floor(s.durationMins/60),m=s.durationMins%60;return (h>0?h+'h ':'')+ m+'min';})():'';
     const timeStr=s.startTime&&s.endTime?` · ${s.startTime}–${s.endTime}`:'';
+    const exChips=s.exercises.map(e=>{
+      const dm=_fbDayMax(e);
+      return `<span class="meta-pill" style="font-size:10px">${esc(e.name)}${dm!==null?' '+_fbSigned(dm)+'kg':''}</span>`;
+    }).join(' ');
     return `<div class="card" onclick="showFBSessionDetail('${s.id}')" style="cursor:pointer">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div>
-          <div style="font-weight:700;font-size:14px">${fmtDate(s.date)}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">${s.exercises.length} exercises${durStr?' · '+durStr:''}${timeStr}</div>
-        </div>
-        <div style="font-size:11px;color:var(--gym);font-weight:600">${[...new Set(s.exercises.map(e=>e.name))].slice(0,2).join(', ')}${s.exercises.length>2?'…':''}</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+        <div style="font-weight:700;font-size:14px">${fmtDate(s.date)}</div>
+        <div style="font-size:12px;color:var(--muted)">${s.exercises.length} ex${durStr?' · '+durStr:''}${timeStr}</div>
       </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${exChips}</div>
     </div>`;
   }).join('')
   +(remaining>0?`<button class="btn btn-ghost btn-block" style="margin-top:8px" onclick="_fbHistoryShown+=${HISTORY_PAGE_SIZE};renderFBHistory()">Load more (${remaining} older)</button>`:'')
@@ -6766,46 +6751,43 @@ function renderFBHistory(){
 function showFBSessionDetail(id){
   const s=DB.fbSessions().find(x=>String(x.id)===String(id));
   if(!s)return;
+  const bw=parseFloat(s.bodyWeight)||null;
   const durStr=s.durationMins?(()=>{const h=Math.floor(s.durationMins/60),m=s.durationMins%60;return '⏱ '+(h>0?h+'h ':'')+m+'min';})():'';
-  let html=`<div class="modal-header"><div class="modal-title">${fmtDate(s.date)} · 🪨 Fingerboard</div><button class="modal-close" aria-label="Close" onclick="closeModal('modal-session-detail')">✕</button></div>`;
-  if(s.bodyWeight)html+=`<p style="color:var(--muted);font-size:13px;margin-bottom:8px">⚖️ ${s.bodyWeight} kg</p>`;
-  if(durStr)html+=`<p style="color:var(--muted);font-size:13px;margin-bottom:12px">${durStr}</p>`;
-  html+=s.exercises.map((e,i)=>`
-    <div class="ex-row">
-      <div class="ex-row-info">
-        <div class="ex-row-name">${e.name}</div>
-        <div class="ex-row-meta">
-          <span>📦 ${e.sets} sets</span><span>🔁 ${e.reps}</span><span>⏱ ${e.rest}</span>
-          ${e.weight?`<span class="meta-pill weight">${e.weight} kg</span>`:''}
-          ${e.intensity?`<span class="meta-pill intensity">${e.intensity}%</span>`:''}
-        </div>
-        ${e.notes?`<div class="text-xs-muted">${esc(e.notes)}</div>`:''}
+  let html=`<div class="modal-header"><div class="modal-title">${fmtDate(s.date)} · 🤌 Fingerboard</div><button class="modal-close" aria-label="Close" onclick="closeModal('modal-session-detail')">✕</button></div>`;
+  const meta=[];
+  if(bw)meta.push(`⚖️ ${s.bodyWeight} kg`);
+  if(durStr)meta.push(durStr);
+  if(meta.length)html+=`<p style="color:var(--muted);font-size:13px;margin-bottom:12px">${meta.join(' · ')}</p>`;
+  html+=s.exercises.map((e,i)=>{
+    const dm=_fbDayMax(e);
+    const prevMax=_fbPrevDayMax(e.name,s.id);
+    const setStr=(e.loads||[]).map((v,si)=>{
+      const done=e.done&&e.done[si];
+      return `<span style="${done?'':'opacity:.45'}">${v!==''&&v!=null?_fbSigned(parseFloat(String(v).replace(',','.'))||0):'—'}${done?' ✓':''}</span>`;
+    }).join(' · ');
+    return `<div class="card" style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="font-weight:700;font-size:13px">${esc(e.name)}</div>
+        <button class="btn btn-ghost" style="padding:2px 8px;font-size:13px;color:var(--red)" onclick="deleteFBHistoryEx('${s.id}',${i})">🗑</button>
       </div>
-      <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0;margin-left:8px">
-        <button class="btn btn-ghost" style="padding:4px 8px;font-size:13px" onclick="openEditFBHistoryEx('${s.id}',${i})">✏️</button>
-        <button class="btn btn-ghost" style="padding:4px 8px;font-size:13px;color:var(--red)" onclick="deleteFBHistoryEx('${s.id}',${i})">🗑</button>
-      </div>
-    </div>`).join('');
-  const saveBtn=`<button class="btn btn-ghost btn-block" style="margin-top:12px" onclick="saveFBAsTemplate('${s.id}')">⭐ Save as Template</button>`;
-  document.getElementById('session-detail-content').innerHTML=html+saveBtn+'<div style="height:8px"></div>';
+      <div class="text-xs-muted" style="margin-bottom:4px">${e.sets}×${e.reps}×${e.time}s · rest ${esc(e.restRep||'')}/${esc(e.restSet||'')}${e.rpe?` · RPE ${esc(String(e.rpe))}/10`:''}</div>
+      <div style="font-size:12px;margin-bottom:4px">${setStr}</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${_fbChips(dm,prevMax,bw)}</div>
+      ${e.notes?`<div class="text-xs-muted" style="margin-top:4px">${esc(e.notes)}</div>`:''}
+    </div>`;
+  }).join('');
+  html+=`<button class="btn btn-ghost btn-block" style="margin-top:8px" onclick="closeModal('modal-session-detail');fbLoadSessionIntoLog('${s.id}')">🔁 Load into Log</button>`;
+  document.getElementById('session-detail-content').innerHTML=html+'<div style="height:8px"></div>';
   openModal('modal-session-detail');
 }
 
-function openEditFBHistoryEx(sessionId,exIndex){
-  const s=DB.fbSessions().find(x=>String(x.id)===String(sessionId));
+function fbLoadSessionIntoLog(id){
+  const s=DB.fbSessions().find(x=>String(x.id)===String(id));
   if(!s)return;
-  const e=s.exercises[exIndex];if(!e)return;
-  _editHistCtx={sessionId,exIndex,type:'fb'};
-  document.getElementById('edit-hist-name').textContent='✏️ '+e.name;
-  document.getElementById('edit-hist-strength').style.display='';
-  document.getElementById('edit-hist-cardio').style.display='none';
-  document.getElementById('edit-hist-sets').value=e.sets||'';
-  document.getElementById('edit-hist-reps').value=e.reps||'';
-  document.getElementById('edit-hist-weight').value=e.weight||'';
-  document.getElementById('edit-hist-intensity').value=e.intensity||'';
-  document.getElementById('edit-hist-rest').value=e.rest||'';
-  document.getElementById('edit-hist-notes').value=e.notes||'';
-  openModal('modal-edit-history-ex');
+  if(fbSession.exercises.length&&!confirm('Replace current exercises with this session?'))return;
+  fbSession.exercises=s.exercises.map(e=>({...e,loads:[...(e.loads||[])],done:Array((e.loads||[]).length).fill(false)}));
+  fbMode('log');markDirty('fb');renderFBExercises();
+  toast('🔁 Loaded — adjust loads and go');
 }
 
 function deleteFBHistoryEx(sessionId,exIndex){
@@ -6818,32 +6800,30 @@ function deleteFBHistoryEx(sessionId,exIndex){
   pushUndo('Exercise removed',()=>{s.exercises.splice(exIndex,0,removed);DB.updateFB(s);showFBSessionDetail(sessionId);});
 }
 
-function saveFBAsTemplate(sessionId){
-  const s=DB.fbSessions().find(x=>String(x.id)===String(sessionId));
-  if(!s||!s.exercises.length){toast('No exercises to save');return;}
-  const names=[...new Set(s.exercises.map(e=>e.name))].slice(0,2).join(' + ');
-  const d=new Date(s.date);
-  const label=`${names} · ${d.toLocaleDateString('en',{month:'short',day:'numeric'})}`;
-  DB.saveFBTemplate({id:Date.now(),name:label,exercises:s.exercises});
-  toast('⭐ Saved as template!');
-}
-
 // ── FB Progress ───────────────────────────────────
 function renderFBProgress(){
-  const sessions=DB.fbSessions();
-  const exNames=[...new Set(sessions.flatMap(s=>s.exercises.filter(e=>e.weight).map(e=>e.name)))].sort();
+  const sessions=_fbV2Sessions();
+  const exNames=[...new Set(sessions.flatMap(s=>s.exercises.filter(e=>_fbDayMax(e)!==null).map(e=>e.name)))].sort();
   const sel=document.getElementById('fb-progress-ex');
   const cur=sel.value;
-  sel.innerHTML='<option value="">— Select exercise —</option>'+exNames.map(n=>`<option value="${n}"${n===cur?' selected':''}>${n}</option>`).join('');
+  sel.innerHTML='<option value="">— Select exercise —</option>'+exNames.map(n=>`<option value="${esc(n)}"${n===cur?' selected':''}>${esc(n)}</option>`).join('');
   renderFBProgression();
-  // recent sessions summary
+  // personal bests
   const el=document.getElementById('fb-recent-summary');
-  if(!sessions.length){el.innerHTML='<p class="text-sm-muted">No sessions yet.</p>';return;}
-  el.innerHTML=sessions.slice(0,5).map(s=>{
-    const durStr=s.durationMins?(()=>{const h=Math.floor(s.durationMins/60),m=s.durationMins%60;return (h>0?h+'h ':'')+m+'min';})():'—';
+  if(!exNames.length){el.innerHTML='<p class="text-sm-muted">No hang data yet.</p>';return;}
+  el.innerHTML=exNames.map(name=>{
+    let best=null;
+    sessions.forEach(s=>{
+      s.exercises.filter(e=>e.name===name).forEach(e=>{
+        const dm=_fbDayMax(e);
+        if(dm!==null&&(best===null||dm>best.dm))best={dm,date:s.date,bw:parseFloat(s.bodyWeight)||null};
+      });
+    });
+    if(!best)return '';
+    const bmStr=best.bw?` · ${Math.round((best.bw+best.dm)/best.bw*100)}% BM`:'';
     return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <span style="font-weight:600">${fmtDate(s.date)}</span>
-      <span style="color:var(--muted)">${s.exercises.length} ex · ${durStr}</span>
+      <span style="font-weight:600">${esc(name)}</span>
+      <span><span style="color:var(--gym);font-weight:700">${_fbSigned(best.dm)} kg</span><span style="color:var(--muted)">${bmStr} · ${fmtDate(best.date)}</span></span>
     </div>`;
   }).join('');
 }
@@ -6852,27 +6832,30 @@ function renderFBProgression(){
   const name=document.getElementById('fb-progress-ex').value;
   const el=document.getElementById('fb-progression-chart');
   if(!name){el.innerHTML='<p class="text-sm-muted">Select an exercise above.</p>';return;}
-  const sessions=DB.fbSessions();
   const pts=[];
-  sessions.forEach(s=>{
-    s.exercises.filter(e=>e.name===name&&e.weight&&!isNaN(parseFloat(e.weight))).forEach(e=>{
-      pts.push({date:s.date,weight:parseFloat(e.weight),sets:e.sets,reps:e.reps});
+  _fbV2Sessions().forEach(s=>{
+    s.exercises.filter(e=>e.name===name).forEach(e=>{
+      const dm=_fbDayMax(e);
+      if(dm!==null)pts.push({date:s.date,dm,bw:parseFloat(s.bodyWeight)||null,sets:e.sets,reps:e.reps,time:e.time,rpe:e.rpe});
     });
   });
-  pts.sort((a,b)=>a.date.localeCompare(b.date));
-  if(!pts.length){el.innerHTML='<p class="text-sm-muted">No weight data for this exercise yet.</p>';return;}
-  const maxW=Math.max(...pts.map(p=>p.weight));
+  pts.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  if(!pts.length){el.innerHTML='<p class="text-sm-muted">No load data for this exercise yet.</p>';return;}
+  // bar scale: range-normalised so negative (assisted) loads still read visually
+  const vals=pts.map(p=>p.dm);
+  const lo=Math.min(...vals),hi=Math.max(...vals);
   el.innerHTML=pts.map(p=>{
-    const pct=Math.round(p.weight/maxW*100);
+    const pct=hi===lo?100:Math.round(15+((p.dm-lo)/(hi-lo))*85);
+    const bmStr=p.bw?` · ${Math.round((p.bw+p.dm)/p.bw*100)}% BM`:'';
     return `<div style="margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
         <span style="font-weight:600">${fmtDate(p.date)}</span>
-        <span style="color:var(--gym);font-weight:700">${p.weight} kg</span>
+        <span style="color:var(--gym);font-weight:700">${_fbSigned(p.dm)} kg<span style="color:var(--muted);font-weight:400">${bmStr}</span></span>
       </div>
       <div style="height:6px;background:var(--surface2);border-radius:3px;overflow:hidden">
         <div style="height:100%;width:${pct}%;background:var(--gym);border-radius:3px;transition:width .4s"></div>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">${p.sets} sets · ${p.reps}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${p.sets}×${p.reps}×${p.time}s${p.rpe?` · RPE ${esc(String(p.rpe))}`:''}</div>
     </div>`;
   }).join('');
 }
