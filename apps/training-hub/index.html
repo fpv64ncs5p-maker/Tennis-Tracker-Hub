@@ -2819,20 +2819,109 @@ function saveGymSession(){
 }
 
 // ── Body diagram SVG ──────────────────────────────────
-function drawBodyDiagram(workedCats){
-  const ZONE_MAP=[
-    {cats:['Superior – Machine','Superior – No Machine'],col:'#388bfd',label:'Superior'},
-    {cats:['Core'],                                      col:'#f0883e',label:'Core'},
-    {cats:['Inferior Members','Rehab'],                  col:'#2ea043',label:'Inferior'},
-    {cats:['Wrist','Fingers','Fingerboard'],              col:'#a78bfa',label:'Wrist/Fingers/FB'},
+// Per-muscle body map (2026-07-06): each exercise lights only the muscles it
+// actually works. Exercises not in EX_MUSCLES (e.g. custom ones) fall back to
+// lighting their whole category zone via CAT_MUSCLES.
+const EX_MUSCLES={
+  // Inferior Members
+  'Hip Abductor':['glutes'],
+  'Hip Adductor':['quads'],
+  'Ext. Quadriceps':['quads'],
+  'Prone Leg Curl':['hamstrings'],
+  'Leg Press':['quads','glutes'],
+  'Leg Extension':['quads'],
+  'Hip Thrust Machine':['glutes','hamstrings'],
+  // Core
+  'Plank':['abs'],
+  'Russian Sit-ups':['abs','obliques'],
+  'Floor ABS Rotation':['abs','obliques'],
+  'Leg + Arms Ups':['abs','lowerback'],
+  'Matrix Abd. N4':['abs'],
+  'Matrix Abd. Up':['abs'],
+  'Rotary Torso':['obliques'],
+  'Pallof Press':['abs','obliques'],
+  'Cable Anti-rotation':['abs','obliques'],
+  'Hanging Knees':['abs'],
+  'Feet-up Crunches':['abs'],
+  'Mountain Climber Plank':['abs'],
+  'One-Arm Elbow & Side Plank':['abs','obliques'],
+  'Sling Trainer "Marine Core"':['abs','obliques'],
+  'Windshield Wipers':['abs','obliques'],
+  'Superman':['lowerback','glutes'],
+  'Reverse Plank':['lowerback','glutes'],
+  'Reverse Mountain Climber Plank':['abs','glutes'],
+  'Side Hip Raises':['obliques','glutes'],
+  'Dumbbell Snatch':['delts','lowerback','glutes','hamstrings'],
+  'Sumo Deadlift (DB/KB)':['glutes','hamstrings','lowerback','quads'],
+  'Barbell Deadlift':['hamstrings','glutes','lowerback'],
+  'Barbell Squat':['quads','glutes','lowerback'],
+  // Superior – No Machine
+  'Scapular Pull-up':['traps','lats'],
+  'ISO Scapular Pull':['traps','lats'],
+  '1-Arm Scap. Pull-up':['traps','lats'],
+  'Pull-up':['lats','biceps'],
+  'Pull-up + Weight':['lats','biceps'],
+  // Superior – Machine
+  'Lat Pulldown / Pull-up Bar':['lats','biceps'],
+  'Rear Deltoid N1':['delts','traps'],
+  'Fly Deltoid N2':['delts'],
+  'Shoulder Press':['delts','triceps'],
+  'Chest Press':['pecs','triceps','delts'],
+  'Cable Cross Over':['pecs'],
+  'Low Row':['lats','traps','biceps'],
+  'Shoulder Rotation':['delts'],
+  'Biceps':['biceps'],
+  'Seated Triceps Press':['triceps'],
+  'Seated Row – Matrix':['lats','traps','biceps'],
+  'Arm Curls (Biceps)':['biceps'],
+  'Div. Seated Row':['lats','traps','biceps'],
+  'Conv. Shoulder Press':['delts','triceps'],
+  // Wrist / Fingers
+  'Wrist Extension':['forearms'],
+  'Wrist Internal':['forearms'],
+  'Wrist Curls Int Roll':['forearms'],
+  'Wrist Curls Ext Roll':['forearms'],
+  'Grips w/ Machine':['forearms'],
+  // Rehab (calf protocol — no longer lights the whole leg)
+  'Leg Press (Calfs)':['calves'],
+  'Calfs Raise (w/ weight)':['calves'],
+  'Leg Curl (Machine)':['hamstrings'],
+  'Calfs Machine':['calves'],
+};
+const MUSCLE_ZONE={pecs:'sup',delts:'sup',biceps:'sup',triceps:'sup',traps:'sup',lats:'sup',
+  abs:'cor',obliques:'cor',lowerback:'cor',
+  quads:'inf',glutes:'inf',hamstrings:'inf',calves:'inf',forearms:'wri'};
+// Fallback for exercises not in EX_MUSCLES: light the whole category zone (old behaviour)
+const CAT_MUSCLES={
+  'Superior – Machine':['pecs','delts','biceps','triceps','traps','lats'],
+  'Superior – No Machine':['pecs','delts','biceps','triceps','traps','lats'],
+  'Core':['abs','obliques','lowerback'],
+  'Inferior Members':['quads','glutes','hamstrings','calves'],
+  'Rehab':['quads','glutes','hamstrings','calves'],
+  'Wrist':['forearms'],'Fingers':['forearms'],'Fingerboard':['forearms'],
+  'CG-Fingers':['forearms'],'CG-Antagonist':['forearms'],
+  'CG-Arms':['lats','biceps','traps'],'CG-Rotator':['delts','traps'],
+  'CG-Push':['pecs','delts','triceps'],'CG-Core':['abs','obliques'],
+};
+function drawBodyDiagram(exercises){
+  const ZONE_INFO=[
+    {z:'sup',col:'#388bfd',label:'Superior'},
+    {z:'cor',col:'#f0883e',label:'Core'},
+    {z:'inf',col:'#2ea043',label:'Inferior'},
+    {z:'wri',col:'#a78bfa',label:'Wrist/Fingers/FB'},
   ];
   const sk='#3d4656'; // skin/base silhouette
-  const zCol=cats=>{const z=ZONE_MAP.find(z=>z.cats.some(c=>workedCats.has(c)&&cats.includes(c)));return z?z.col:'#2a3140';};
-  const sup=zCol(['Superior – Machine','Superior – No Machine']);
-  const cor=zCol(['Core']);
-  const inf=zCol(['Inferior Members','Rehab']);
-  const wri=zCol(['Wrist','Fingers','Fingerboard']);
-  const legend=ZONE_MAP.filter(z=>z.cats.some(c=>workedCats.has(c)))
+  // Accepts an exercises array; a Set of category names still works (legacy callers)
+  const list=exercises instanceof Set?[...exercises].map(c=>({cat:c})):(exercises||[]);
+  const worked=new Set();
+  list.forEach(e=>{const ms=EX_MUSCLES[e.name]||CAT_MUSCLES[e.cat];if(ms)ms.forEach(m=>worked.add(m));});
+  const zc={};ZONE_INFO.forEach(z=>zc[z.z]=z.col);
+  const mc=m=>worked.has(m)?zc[MUSCLE_ZONE[m]]:'#2a3140';
+  const pec=mc('pecs'),del=mc('delts'),bic=mc('biceps'),tri=mc('triceps'),tra=mc('traps'),
+    lat=mc('lats'),fore=mc('forearms'),ab=mc('abs'),obl=mc('obliques'),lob=mc('lowerback'),
+    qua=mc('quads'),glu=mc('glutes'),ham=mc('hamstrings'),cal=mc('calves');
+  const zonesWorked=new Set([...worked].map(m=>MUSCLE_ZONE[m]));
+  const legend=ZONE_INFO.filter(z=>zonesWorked.has(z.z))
     .map(z=>`<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="display:inline-block;width:7px;height:7px;border-radius:1px;background:${z.col}"></span>${z.label}</span>`)
     .join('');
   // fx=front centre, bx=back centre
@@ -2872,36 +2961,36 @@ function drawBodyDiagram(workedCats){
     <rect x="${fx+6}" y="166" width="16" height="8" rx="3" fill="${sk}"/>
 
     <!-- ══ FRONT MUSCLES ══ -->
-    <!-- Pecs L & R (Superior) -->
-    <path d="M${fx-7},27 Q${fx-15},26 ${fx-19},31 Q${fx-21},38 ${fx-18},43 Q${fx-14},46 ${fx-9},44 Q${fx-6},40 ${fx-6},33 Z" fill="${sup}" opacity=".92"/>
-    <path d="M${fx+7},27 Q${fx+15},26 ${fx+19},31 Q${fx+21},38 ${fx+18},43 Q${fx+14},46 ${fx+9},44 Q${fx+6},40 ${fx+6},33 Z" fill="${sup}" opacity=".92"/>
-    <!-- Front deltoids (Superior) -->
-    <ellipse cx="${fx-21}" cy="26" rx="6" ry="4" transform="rotate(-10,${fx-21},26)" fill="${sup}" opacity=".9"/>
-    <ellipse cx="${fx+21}" cy="26" rx="6" ry="4" transform="rotate(10,${fx+21},26)" fill="${sup}" opacity=".9"/>
-    <!-- Biceps (Superior) -->
-    <ellipse cx="${fx-26}" cy="42" rx="3.5" ry="8" fill="${sup}" opacity=".88"/>
-    <ellipse cx="${fx+26}" cy="42" rx="3.5" ry="8" fill="${sup}" opacity=".88"/>
+    <!-- Pecs L & R -->
+    <path d="M${fx-7},27 Q${fx-15},26 ${fx-19},31 Q${fx-21},38 ${fx-18},43 Q${fx-14},46 ${fx-9},44 Q${fx-6},40 ${fx-6},33 Z" fill="${pec}" opacity=".92"/>
+    <path d="M${fx+7},27 Q${fx+15},26 ${fx+19},31 Q${fx+21},38 ${fx+18},43 Q${fx+14},46 ${fx+9},44 Q${fx+6},40 ${fx+6},33 Z" fill="${pec}" opacity=".92"/>
+    <!-- Front deltoids -->
+    <ellipse cx="${fx-21}" cy="26" rx="6" ry="4" transform="rotate(-10,${fx-21},26)" fill="${del}" opacity=".9"/>
+    <ellipse cx="${fx+21}" cy="26" rx="6" ry="4" transform="rotate(10,${fx+21},26)" fill="${del}" opacity=".9"/>
+    <!-- Biceps -->
+    <ellipse cx="${fx-26}" cy="42" rx="3.5" ry="8" fill="${bic}" opacity=".88"/>
+    <ellipse cx="${fx+26}" cy="42" rx="3.5" ry="8" fill="${bic}" opacity=".88"/>
     <!-- Forearms/Wrist -->
-    <path d="M${fx-30},59 Q${fx-32},70 ${fx-30},79 Q${fx-28},82 ${fx-24},80 L${fx-23},61 Z" fill="${wri}" opacity=".9"/>
-    <path d="M${fx+30},59 Q${fx+32},70 ${fx+30},79 Q${fx+28},82 ${fx+24},80 L${fx+23},61 Z" fill="${wri}" opacity=".9"/>
-    <!-- Abs – 6 blocks (Core) -->
-    <rect x="${fx-7}" y="47" width="5.5" height="5" rx="1.5" fill="${cor}" opacity=".92"/>
-    <rect x="${fx+1.5}" y="47" width="5.5" height="5" rx="1.5" fill="${cor}" opacity=".92"/>
-    <rect x="${fx-7}" y="54" width="5.5" height="5" rx="1.5" fill="${cor}" opacity=".92"/>
-    <rect x="${fx+1.5}" y="54" width="5.5" height="5" rx="1.5" fill="${cor}" opacity=".92"/>
-    <rect x="${fx-7}" y="61" width="5.5" height="4" rx="1.5" fill="${cor}" opacity=".92"/>
-    <rect x="${fx+1.5}" y="61" width="5.5" height="4" rx="1.5" fill="${cor}" opacity=".92"/>
-    <!-- Obliques (Core) -->
-    <path d="M${fx-18},46 Q${fx-21},55 ${fx-19},65 Q${fx-16},67 ${fx-13},65 Q${fx-11},57 ${fx-12},46 Z" fill="${cor}" opacity=".82"/>
-    <path d="M${fx+18},46 Q${fx+21},55 ${fx+19},65 Q${fx+16},67 ${fx+13},65 Q${fx+11},57 ${fx+12},46 Z" fill="${cor}" opacity=".82"/>
-    <!-- Quads – 2 shapes per leg (Inferior) -->
-    <path d="M${fx-22},82 Q${fx-22},102 ${fx-20},122 Q${fx-17},127 ${fx-13},125 Q${fx-11},115 ${fx-12},82 Z" fill="${inf}" opacity=".92"/>
-    <path d="M${fx-12},82 Q${fx-11},115 ${fx-13},125 Q${fx-10},128 ${fx-7},125 Q${fx-6},110 ${fx-7},82 Z" fill="${inf}" opacity=".88"/>
-    <path d="M${fx+7},82 Q${fx+6},110 ${fx+7},125 Q${fx+10},128 ${fx+13},125 Q${fx+11},115 ${fx+12},82 Z" fill="${inf}" opacity=".88"/>
-    <path d="M${fx+12},82 Q${fx+11},115 ${fx+13},125 Q${fx+17},127 ${fx+20},122 Q${fx+22},102 ${fx+22},82 Z" fill="${inf}" opacity=".92"/>
-    <!-- Front calves (Inferior) -->
-    <ellipse cx="${fx-14}" cy="146" rx="5" ry="9" fill="${inf}" opacity=".88"/>
-    <ellipse cx="${fx+14}" cy="146" rx="5" ry="9" fill="${inf}" opacity=".88"/>
+    <path d="M${fx-30},59 Q${fx-32},70 ${fx-30},79 Q${fx-28},82 ${fx-24},80 L${fx-23},61 Z" fill="${fore}" opacity=".9"/>
+    <path d="M${fx+30},59 Q${fx+32},70 ${fx+30},79 Q${fx+28},82 ${fx+24},80 L${fx+23},61 Z" fill="${fore}" opacity=".9"/>
+    <!-- Abs – 6 blocks -->
+    <rect x="${fx-7}" y="47" width="5.5" height="5" rx="1.5" fill="${ab}" opacity=".92"/>
+    <rect x="${fx+1.5}" y="47" width="5.5" height="5" rx="1.5" fill="${ab}" opacity=".92"/>
+    <rect x="${fx-7}" y="54" width="5.5" height="5" rx="1.5" fill="${ab}" opacity=".92"/>
+    <rect x="${fx+1.5}" y="54" width="5.5" height="5" rx="1.5" fill="${ab}" opacity=".92"/>
+    <rect x="${fx-7}" y="61" width="5.5" height="4" rx="1.5" fill="${ab}" opacity=".92"/>
+    <rect x="${fx+1.5}" y="61" width="5.5" height="4" rx="1.5" fill="${ab}" opacity=".92"/>
+    <!-- Obliques -->
+    <path d="M${fx-18},46 Q${fx-21},55 ${fx-19},65 Q${fx-16},67 ${fx-13},65 Q${fx-11},57 ${fx-12},46 Z" fill="${obl}" opacity=".82"/>
+    <path d="M${fx+18},46 Q${fx+21},55 ${fx+19},65 Q${fx+16},67 ${fx+13},65 Q${fx+11},57 ${fx+12},46 Z" fill="${obl}" opacity=".82"/>
+    <!-- Quads – 2 shapes per leg -->
+    <path d="M${fx-22},82 Q${fx-22},102 ${fx-20},122 Q${fx-17},127 ${fx-13},125 Q${fx-11},115 ${fx-12},82 Z" fill="${qua}" opacity=".92"/>
+    <path d="M${fx-12},82 Q${fx-11},115 ${fx-13},125 Q${fx-10},128 ${fx-7},125 Q${fx-6},110 ${fx-7},82 Z" fill="${qua}" opacity=".88"/>
+    <path d="M${fx+7},82 Q${fx+6},110 ${fx+7},125 Q${fx+10},128 ${fx+13},125 Q${fx+11},115 ${fx+12},82 Z" fill="${qua}" opacity=".88"/>
+    <path d="M${fx+12},82 Q${fx+11},115 ${fx+13},125 Q${fx+17},127 ${fx+20},122 Q${fx+22},102 ${fx+22},82 Z" fill="${qua}" opacity=".92"/>
+    <!-- Front calves -->
+    <ellipse cx="${fx-14}" cy="146" rx="5" ry="9" fill="${cal}" opacity=".88"/>
+    <ellipse cx="${fx+14}" cy="146" rx="5" ry="9" fill="${cal}" opacity=".88"/>
 
     <!-- divider -->
     <line x1="61" y1="4" x2="61" y2="174" stroke="#1c2128" stroke-width="1.5"/>
@@ -2925,34 +3014,34 @@ function drawBodyDiagram(workedCats){
     <rect x="${bx+6}" y="166" width="16" height="8" rx="3" fill="${sk}"/>
 
     <!-- ══ BACK MUSCLES ══ -->
-    <!-- Traps (Superior) -->
-    <path d="M${bx-12},22 Q${bx},19 ${bx+12},22 Q${bx+10},30 ${bx},34 Q${bx-10},30 ${bx-12},22 Z" fill="${sup}" opacity=".92"/>
-    <!-- Rear deltoids (Superior) -->
-    <ellipse cx="${bx-21}" cy="26" rx="6" ry="4" transform="rotate(10,${bx-21},26)" fill="${sup}" opacity=".9"/>
-    <ellipse cx="${bx+21}" cy="26" rx="6" ry="4" transform="rotate(-10,${bx+21},26)" fill="${sup}" opacity=".9"/>
-    <!-- Lats (Superior) -->
-    <path d="M${bx-22},30 Q${bx-24},42 ${bx-21},56 Q${bx-18},61 ${bx-13},59 Q${bx-14},46 ${bx-18},32 Z" fill="${sup}" opacity=".86"/>
-    <path d="M${bx+22},30 Q${bx+24},42 ${bx+21},56 Q${bx+18},61 ${bx+13},59 Q${bx+14},46 ${bx+18},32 Z" fill="${sup}" opacity=".86"/>
-    <!-- Triceps (Superior) -->
-    <path d="M${bx-29},30 Q${bx-32},42 ${bx-30},56 Q${bx-28},60 ${bx-24},58 Q${bx-23},44 ${bx-24},30 Z" fill="${sup}" opacity=".88"/>
-    <path d="M${bx+29},30 Q${bx+32},42 ${bx+30},56 Q${bx+28},60 ${bx+24},58 Q${bx+23},44 ${bx+24},30 Z" fill="${sup}" opacity=".88"/>
+    <!-- Traps -->
+    <path d="M${bx-12},22 Q${bx},19 ${bx+12},22 Q${bx+10},30 ${bx},34 Q${bx-10},30 ${bx-12},22 Z" fill="${tra}" opacity=".92"/>
+    <!-- Rear deltoids -->
+    <ellipse cx="${bx-21}" cy="26" rx="6" ry="4" transform="rotate(10,${bx-21},26)" fill="${del}" opacity=".9"/>
+    <ellipse cx="${bx+21}" cy="26" rx="6" ry="4" transform="rotate(-10,${bx+21},26)" fill="${del}" opacity=".9"/>
+    <!-- Lats -->
+    <path d="M${bx-22},30 Q${bx-24},42 ${bx-21},56 Q${bx-18},61 ${bx-13},59 Q${bx-14},46 ${bx-18},32 Z" fill="${lat}" opacity=".86"/>
+    <path d="M${bx+22},30 Q${bx+24},42 ${bx+21},56 Q${bx+18},61 ${bx+13},59 Q${bx+14},46 ${bx+18},32 Z" fill="${lat}" opacity=".86"/>
+    <!-- Triceps -->
+    <path d="M${bx-29},30 Q${bx-32},42 ${bx-30},56 Q${bx-28},60 ${bx-24},58 Q${bx-23},44 ${bx-24},30 Z" fill="${tri}" opacity=".88"/>
+    <path d="M${bx+29},30 Q${bx+32},42 ${bx+30},56 Q${bx+28},60 ${bx+24},58 Q${bx+23},44 ${bx+24},30 Z" fill="${tri}" opacity=".88"/>
     <!-- Forearms back (Wrist) -->
-    <path d="M${bx-30},59 Q${bx-32},70 ${bx-30},79 Q${bx-28},82 ${bx-24},80 L${bx-23},61 Z" fill="${wri}" opacity=".9"/>
-    <path d="M${bx+30},59 Q${bx+32},70 ${bx+30},79 Q${bx+28},82 ${bx+24},80 L${bx+23},61 Z" fill="${wri}" opacity=".9"/>
-    <!-- Lower back (Core) -->
-    <rect x="${bx-8}" y="60" width="6" height="14" rx="2" fill="${cor}" opacity=".9"/>
-    <rect x="${bx+2}" y="60" width="6" height="14" rx="2" fill="${cor}" opacity=".9"/>
-    <!-- Glutes (Inferior) -->
-    <path d="M${bx-22},72 Q${bx-24},82 ${bx-20},90 Q${bx-15},95 ${bx-8},93 Q${bx-4},88 ${bx-5},78 Q${bx-7},72 ${bx-22},72 Z" fill="${inf}" opacity=".92"/>
-    <path d="M${bx+22},72 Q${bx+24},82 ${bx+20},90 Q${bx+15},95 ${bx+8},93 Q${bx+4},88 ${bx+5},78 Q${bx+7},72 ${bx+22},72 Z" fill="${inf}" opacity=".92"/>
-    <!-- Hamstrings (Inferior) -->
-    <path d="M${bx-22},94 Q${bx-22},114 ${bx-20},126 Q${bx-17},130 ${bx-13},128 Q${bx-11},118 ${bx-12},94 Z" fill="${inf}" opacity=".92"/>
-    <path d="M${bx-12},94 Q${bx-11},118 ${bx-13},128 Q${bx-10},131 ${bx-7},128 Q${bx-6},114 ${bx-7},94 Z" fill="${inf}" opacity=".86"/>
-    <path d="M${bx+7},94 Q${bx+6},114 ${bx+7},128 Q${bx+10},131 ${bx+13},128 Q${bx+11},118 ${bx+12},94 Z" fill="${inf}" opacity=".86"/>
-    <path d="M${bx+12},94 Q${bx+11},118 ${bx+13},128 Q${bx+17},130 ${bx+20},126 Q${bx+22},114 ${bx+22},94 Z" fill="${inf}" opacity=".92"/>
-    <!-- Calves back (Inferior) -->
-    <path d="M${bx-19},133 Q${bx-22},145 ${bx-19},160 Q${bx-16},164 ${bx-12},162 Q${bx-9},157 ${bx-10},133 Z" fill="${inf}" opacity=".9"/>
-    <path d="M${bx+10},133 Q${bx+9},157 ${bx+12},162 Q${bx+16},164 ${bx+19},160 Q${bx+22},145 ${bx+19},133 Z" fill="${inf}" opacity=".9"/>
+    <path d="M${bx-30},59 Q${bx-32},70 ${bx-30},79 Q${bx-28},82 ${bx-24},80 L${bx-23},61 Z" fill="${fore}" opacity=".9"/>
+    <path d="M${bx+30},59 Q${bx+32},70 ${bx+30},79 Q${bx+28},82 ${bx+24},80 L${bx+23},61 Z" fill="${fore}" opacity=".9"/>
+    <!-- Lower back -->
+    <rect x="${bx-8}" y="60" width="6" height="14" rx="2" fill="${lob}" opacity=".9"/>
+    <rect x="${bx+2}" y="60" width="6" height="14" rx="2" fill="${lob}" opacity=".9"/>
+    <!-- Glutes -->
+    <path d="M${bx-22},72 Q${bx-24},82 ${bx-20},90 Q${bx-15},95 ${bx-8},93 Q${bx-4},88 ${bx-5},78 Q${bx-7},72 ${bx-22},72 Z" fill="${glu}" opacity=".92"/>
+    <path d="M${bx+22},72 Q${bx+24},82 ${bx+20},90 Q${bx+15},95 ${bx+8},93 Q${bx+4},88 ${bx+5},78 Q${bx+7},72 ${bx+22},72 Z" fill="${glu}" opacity=".92"/>
+    <!-- Hamstrings -->
+    <path d="M${bx-22},94 Q${bx-22},114 ${bx-20},126 Q${bx-17},130 ${bx-13},128 Q${bx-11},118 ${bx-12},94 Z" fill="${ham}" opacity=".92"/>
+    <path d="M${bx-12},94 Q${bx-11},118 ${bx-13},128 Q${bx-10},131 ${bx-7},128 Q${bx-6},114 ${bx-7},94 Z" fill="${ham}" opacity=".86"/>
+    <path d="M${bx+7},94 Q${bx+6},114 ${bx+7},128 Q${bx+10},131 ${bx+13},128 Q${bx+11},118 ${bx+12},94 Z" fill="${ham}" opacity=".86"/>
+    <path d="M${bx+12},94 Q${bx+11},118 ${bx+13},128 Q${bx+17},130 ${bx+20},126 Q${bx+22},114 ${bx+22},94 Z" fill="${ham}" opacity=".92"/>
+    <!-- Calves back -->
+    <path d="M${bx-19},133 Q${bx-22},145 ${bx-19},160 Q${bx-16},164 ${bx-12},162 Q${bx-9},157 ${bx-10},133 Z" fill="${cal}" opacity=".9"/>
+    <path d="M${bx+10},133 Q${bx+9},157 ${bx+12},162 Q${bx+16},164 ${bx+19},160 Q${bx+22},145 ${bx+19},133 Z" fill="${cal}" opacity=".9"/>
   </svg>
   <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px">${legend}</div>
   </div>`;
@@ -2987,7 +3076,6 @@ function showVolumeSummary(session){
   const totalVol=cats.reduce((s,c)=>s+vol[c],0);
   const bw=calcBWByCat(session.exercises);
   const bwCats=Object.keys(bw);
-  const workedCats=new Set(session.exercises.map(e=>e.cat));
   const durStr=session.durationMins?(()=>{const h=Math.floor(session.durationMins/60),m=session.durationMins%60;return `${h>0?h+'h ':''}${m}min`;})():'';
   let html=`<div class="modal-header"><div class="modal-title">✅ Session saved!</div><button class="modal-close" aria-label="Close" onclick="closeModal('modal-session-detail')">✕</button></div>`;
   if(durStr||session.bodyWeight){
@@ -3035,7 +3123,7 @@ function showVolumeSummary(session){
     }).join('');
   }
   html+=`<div style="display:flex;flex-direction:column;align-items:center;gap:12px">
-    ${drawBodyDiagram(workedCats)}
+    ${drawBodyDiagram(session.exercises)}
     <div style="width:100%">${volHtml}</div>
   </div>`;
   document.getElementById('session-detail-content').innerHTML=html+'<div style="height:8px"></div>';
@@ -3190,7 +3278,6 @@ function showSessionDetail(type,id){
         oninput="autoColonTime(this)" onchange="updateSessionTimes('${s.id}',document.getElementById('detail-start').value,this.value)">
       <span id="detail-dur" style="font-size:12px;color:var(--gym);font-weight:600">${durStr}</span>
     </div>`;
-    const workedCats=new Set(s.exercises.map(e=>e.cat));
     const exListHtml=s.exercises.map((e,i)=>{
       let metaHtml='';
       if(e.type==='cardio'){
@@ -3215,7 +3302,7 @@ function showSessionDetail(type,id){
       </div></div>`;
     }).join('');
     html+=`<div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:8px">
-      ${drawBodyDiagram(workedCats)}
+      ${drawBodyDiagram(s.exercises)}
       <div style="width:100%">${exListHtml}</div>
     </div>`;
   } else {
