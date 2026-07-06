@@ -1,5 +1,7 @@
 # Tennis-Tracker-Hub
 
+<!-- redeploy trigger: 2026-07-06, working around a stuck GitHub Pages deployment queue -->
+
 ## Project Overview
 Monorepo combining the Garmin tennis tracker app (MatchMind) and the Training Hub web dashboard, connected via Supabase. The goal is to keep developing both apps independently while integrating them through Supabase: the Garmin app records match data on-watch and syncs it to Supabase; the Training Hub web app reads that data and displays tennis stats alongside all other training data.
 
