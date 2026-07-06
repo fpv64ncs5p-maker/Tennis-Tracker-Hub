@@ -2327,8 +2327,15 @@ function saveSessionAsTemplate(sessionId){
     if(e.cat&&e.cat.startsWith('Inferior'))return'Inferior';
     return e.cat;
   }))].join(' + ');
-  const d=new Date(s.date);
-  const label=`${areas} · ${d.toLocaleDateString('en',{month:'short',day:'numeric'})}`;
+  // suffix: session duration (more useful when picking a template); date as fallback
+  let suffix;
+  if(s.durationMins){
+    const h=Math.floor(s.durationMins/60),m=s.durationMins%60;
+    suffix=`${h>0?h+'h ':''}${m}min`;
+  }else{
+    suffix=new Date(s.date).toLocaleDateString('en',{month:'short',day:'numeric'});
+  }
+  const label=`${areas} · ${suffix}`;
   const t={id:Date.now(),name:label,exercises:s.exercises};
   DB.saveTemplate(t);
   toast('⭐ Saved as template!');
@@ -2344,6 +2351,7 @@ function renderTemplates(){
     <div style="display:flex;flex-direction:column;gap:6px">
       ${ts.map(t=>`<div style="display:flex;align-items:center;gap:6px">
         <button class="btn btn-ghost" style="flex:1;text-align:left;font-size:13px;padding:8px 12px" onclick="loadTemplate(${t.id})">⭐ ${esc(t.name)}</button>
+        <button class="btn btn-ghost" style="padding:7px 10px;font-size:13px" onclick="renameTemplate(${t.id})" aria-label="Rename template">✏️</button>
         <button class="btn btn-ghost" style="padding:7px 12px;color:var(--muted);font-size:14px" onclick="confirmDeleteTemplate(${t.id})">✕</button>
       </div>`).join('')}
     </div>
@@ -2363,6 +2371,18 @@ function loadTemplate(id){
   toast(`⭐ "${t.name}" loaded — add more exercises below`);
 }
 
+function renameTemplate(id){
+  const t=DB.gymTemplates().find(x=>x.id===id);
+  if(!t)return;
+  showTextModal('Rename Template',t.name,'Save Name',name=>{
+    const a=DB.gymTemplates();
+    const x=a.find(y=>y.id===id);
+    if(x)x.name=name;
+    DB.set('gym_templates',a);
+    renderTemplates();
+    toast('✏️ Template renamed');
+  });
+}
 function confirmDeleteTemplate(id){
   const t=DB.gymTemplates().find(x=>x.id===id);
   if(!t)return;
