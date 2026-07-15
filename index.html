@@ -7674,8 +7674,13 @@ function renderHomeMotivation(){
     const sessDelta=getDelta(tennis.prev.sessions,tennis.this.sessions);
     const matchDelta=getDelta(tennis.prev.matches,tennis.this.matches);
     const winDelta=tennis.this.winPct!=null&&tennis.prev.winPct!=null?getDelta(tennis.prev.winPct,tennis.this.winPct):null;
-    const errDelta=tennis.this.avgErr!=null&&tennis.prev.avgErr!=null
-      ?getDelta(tennis.this.avgErr,tennis.prev.avgErr):null; // fewer = better, dir already correct (lower = dn = bad, we flip display)
+    // Prefer per-100-points error rate (length-independent); fall back to per-match avg for old data
+    const useRate=tennis.this.errRate!=null;
+    const errThis=useRate?tennis.this.errRate:tennis.this.avgErr;
+    const errPrev=useRate?tennis.prev.errRate:tennis.prev.avgErr;
+    const errLabel=useRate?'Errors / 100 pts':'Avg errors';
+    const errDelta=errThis!=null&&errPrev!=null
+      ?getDelta(errThis,errPrev):null; // fewer = better, dir already correct (lower = dn = bad, we flip display)
     tennisHtml+=`<div class="motivation-sport-title">🎾 Tennis <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">last 4 weeks vs prior 4</span></div>
     <div class="motivation-metrics">
       <div class="motivation-metric">
@@ -7698,9 +7703,9 @@ function renderHomeMotivation(){
         <span class="motivation-metric-label">Win rate</span>
         <span class="motivation-metric-value">${tennis.this.winPct}% ${winDelta?`<span class="motivation-delta ${winDelta.dir}">${winDelta.text}</span>`:''}</span>
       </div>`:''}
-      ${tennis.this.avgErr!=null?`<div class="motivation-metric">
-        <span class="motivation-metric-label">Avg errors</span>
-        <span class="motivation-metric-value">${tennis.this.avgErr} ${errDelta?`<span class="motivation-delta ${errDelta.dir==='dn'?'up':'dn'}">${errDelta.text}</span>`:''}</span>
+      ${errThis!=null?`<div class="motivation-metric">
+        <span class="motivation-metric-label">${errLabel}</span>
+        <span class="motivation-metric-value">${errThis} ${errDelta?`<span class="motivation-delta ${errDelta.dir==='dn'?'up':'dn'}">${errDelta.text}</span>`:''}</span>
       </div>`:''}
     </div>`;
   }else{
@@ -7807,8 +7812,8 @@ function getGymTrends(){
 function getTennisTrends(){
   const{thisStart,thisEnd,prevStart,prevEnd}=_rollingWindow();
 
-  let thisData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,fin:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
-  let prevData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,fin:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
+  let thisData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,fin:0,won:0,errors:0,errCount:0,df:0,dfCount:0,eNum:0,ePts:0};
+  let prevData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,fin:0,won:0,errors:0,errCount:0,df:0,dfCount:0,eNum:0,ePts:0};
 
   // Count tennis sessions from the planner (primary source)
   const planData=DB.planData();
@@ -7837,7 +7842,10 @@ function getTennisTrends(){
     t.matches++;
     if(m.result==='won'||m.result==='lost')t.fin++;
     if(m.result==='won')t.won++;
-    if(m.unforced_errors!=null){t.errors+=m.unforced_errors;t.errCount++;}
+    if(m.unforced_errors!=null){t.errors+=m.unforced_errors;t.errCount++;
+      const p=(m.service_points_played!=null&&m.return_points_played!=null)?m.service_points_played+m.return_points_played:((m.points_won!=null&&m.points_lost!=null)?m.points_won+m.points_lost:null);
+      if(p>0){t.eNum+=m.unforced_errors;t.ePts+=p;}
+    }
     if(m.double_faults!=null){t.df+=m.double_faults;t.dfCount++;}
   });
 
@@ -7846,12 +7854,13 @@ function getTennisTrends(){
   const winPct=d=>d.fin?Math.round(d.won/d.fin*100):null;
   const avgErr=d=>d.errCount?Math.round(d.errors/d.errCount):null;
   const avgDf=d=>d.dfCount?Math.round(d.df/d.dfCount):null;
+  const errRate=d=>d.ePts?Math.round(d.eNum/d.ePts*1000)/10:null;
   const fmtTime=m=>m>=60?`${Math.floor(m/60)}h${m%60?` ${m%60}m`:''}`:m?`${m}m`:null;
   const avgRpe=d=>d.rpeCount?Math.round(d.rpeSum/d.rpeCount*10)/10:null;
 
   return{
-    this:{sessions:thisData.sessions,time:fmtTime(thisData.mins),avgRpe:avgRpe(thisData),matches:thisData.matches,winPct:winPct(thisData),avgErr:avgErr(thisData),avgDf:avgDf(thisData)},
-    prev:{sessions:prevData.sessions,time:fmtTime(prevData.mins),avgRpe:avgRpe(prevData),matches:prevData.matches,winPct:winPct(prevData),avgErr:avgErr(prevData),avgDf:avgDf(prevData)},
+    this:{sessions:thisData.sessions,time:fmtTime(thisData.mins),avgRpe:avgRpe(thisData),matches:thisData.matches,winPct:winPct(thisData),avgErr:avgErr(thisData),avgDf:avgDf(thisData),errRate:errRate(thisData)},
+    prev:{sessions:prevData.sessions,time:fmtTime(prevData.mins),avgRpe:avgRpe(prevData),matches:prevData.matches,winPct:winPct(prevData),avgErr:avgErr(prevData),avgDf:avgDf(prevData),errRate:errRate(prevData)},
   };
 }
 
@@ -8345,6 +8354,12 @@ function _renderTennisStats(container,matches){
   const withStats=matches.filter(m=>m.unforced_errors!=null);
   const avgErr=withStats.length?Math.round(withStats.reduce((s,m)=>s+(m.unforced_errors||0),0)/withStats.length):null;
   const avgDf=withStats.length?Math.round(withStats.reduce((s,m)=>s+(m.double_faults||0),0)/withStats.length):null;
+  // Per-point rates (length-independent — fair comparison across 1-set, Bo3 and unfinished matches)
+  const _ptsOf=m=>(m.service_points_played!=null&&m.return_points_played!=null)?m.service_points_played+m.return_points_played:((m.points_won!=null&&m.points_lost!=null)?m.points_won+m.points_lost:null);
+  const errBase=matches.filter(m=>m.unforced_errors!=null&&_ptsOf(m)>0);
+  const errRate=errBase.length?Math.round(errBase.reduce((s,m)=>s+m.unforced_errors,0)/errBase.reduce((s,m)=>s+_ptsOf(m),0)*1000)/10:null;
+  const dfBase=matches.filter(m=>m.double_faults!=null&&m.service_points_played>0);
+  const dfRate=dfBase.length?Math.round(dfBase.reduce((s,m)=>s+m.double_faults,0)/dfBase.reduce((s,m)=>s+m.service_points_played,0)*1000)/10:null;
   const withSrv=matches.filter(m=>m.service_points_won!=null&&m.service_points_played>0);
   const avgSrvPct=withSrv.length?Math.round(withSrv.reduce((s,m)=>s+(m.service_points_won/m.service_points_played*100),0)/withSrv.length):null;
   const withRet=matches.filter(m=>m.return_points_won!=null&&m.return_points_played>0);
@@ -8370,9 +8385,9 @@ function _renderTennisStats(container,matches){
       ${train.length?row('Training W/L', `${trainWin} / ${train.length-trainWin}`):''}
     </div>
     ${withStats.length?`<div class="card" style="margin-bottom:10px">
-      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin-bottom:8px">AVERAGE PER MATCH</div>
-      ${avgErr!=null?row('Unforced errors', avgErr, `(${withStats.length} matches)`):''}
-      ${avgDf!=null?row('Double faults', avgDf):''}
+      <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin-bottom:8px">AVERAGES</div>
+      ${errRate!=null?row('Unforced errors', errRate+' / 100 pts', avgErr!=null?`· avg ${avgErr}/match`:''):(avgErr!=null?row('Unforced errors', avgErr, `(${withStats.length} matches)`):'')}
+      ${dfRate!=null?row('Double faults', dfRate+' / 100 srv pts', avgDf!=null?`· avg ${avgDf}/match`:''):(avgDf!=null?row('Double faults', avgDf):'')}
       ${avgSrvPct!=null?row('Serve points won', avgSrvPct+'%'):''}
       ${avgRetPct!=null?row('Return points won', avgRetPct+'%'):''}
     </div>`:''}`;
