@@ -7807,8 +7807,8 @@ function getGymTrends(){
 function getTennisTrends(){
   const{thisStart,thisEnd,prevStart,prevEnd}=_rollingWindow();
 
-  let thisData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
-  let prevData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
+  let thisData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,fin:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
+  let prevData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,fin:0,won:0,errors:0,errCount:0,df:0,dfCount:0};
 
   // Count tennis sessions from the planner (primary source)
   const planData=DB.planData();
@@ -7835,6 +7835,7 @@ function getTennisTrends(){
     if(!inThis&&!inPrev)return;
     const t=inThis?thisData:prevData;
     t.matches++;
+    if(m.result==='won'||m.result==='lost')t.fin++;
     if(m.result==='won')t.won++;
     if(m.unforced_errors!=null){t.errors+=m.unforced_errors;t.errCount++;}
     if(m.double_faults!=null){t.df+=m.double_faults;t.dfCount++;}
@@ -7842,7 +7843,7 @@ function getTennisTrends(){
 
   if(!thisData.sessions&&!thisData.matches&&!prevData.sessions&&!prevData.matches)return null;
 
-  const winPct=d=>d.matches?Math.round(d.won/d.matches*100):null;
+  const winPct=d=>d.fin?Math.round(d.won/d.fin*100):null;
   const avgErr=d=>d.errCount?Math.round(d.errors/d.errCount):null;
   const avgDf=d=>d.dfCount?Math.round(d.df/d.dfCount):null;
   const fmtTime=m=>m>=60?`${Math.floor(m/60)}h${m%60?` ${m%60}m`:''}`:m?`${m}m`:null;
@@ -8127,7 +8128,7 @@ async function _fetchSbMatches(){
       match_date:(row.match_date||'').slice(0,10),
       match_type:row.match_type||'singles',
       format:row.format||'best_of_3',
-      result:row.result||'lost',
+      result:row.result||'abandoned',
       final_score:row.final_score||'',
       duration_min:row.duration_sec?Math.round(row.duration_sec/60):null,
       opponent_name:row.opponent_name||null,
@@ -8210,10 +8211,11 @@ function renderTennis(){
   const sub     =document.getElementById('tennis-subheader');
 
   const total  =matches.length;
-  const won    =matches.filter(m=>m.result==='won').length;
+  const finished=matches.filter(m=>m.result==='won'||m.result==='lost');
+  const won    =finished.filter(m=>m.result==='won').length;
   const singles=matches.filter(m=>m.match_type==='singles').length;
   const doubles=matches.filter(m=>m.match_type==='doubles').length;
-  const winPct =total>0?Math.round(won/total*100):0;
+  const winPct =finished.length>0?Math.round(won/finished.length*100):0;
 
   sub.textContent=total>0?`${total} match${total===1?'':'es'} · ${won} won`:'No matches yet';
 
@@ -8233,7 +8235,7 @@ function renderTennis(){
   // recent form dots
   if(total>0){
     formDiv.style.display='block';
-    formDots.innerHTML=matches.slice(0,10).map(m=>{
+    formDots.innerHTML=finished.slice(0,10).map(m=>{
       const w=m.result==='won';
       return `<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;font-size:11px;font-weight:800;background:${w?'var(--tennis-dim)':'#fce7e7'};color:${w?'var(--tennis)':'var(--red)'};border:2px solid ${w?'var(--tennis)':'var(--red)'}">${w?'W':'L'}</span>`;
     }).join('');
@@ -8264,6 +8266,8 @@ function renderTennis(){
     const dateStr=m.match_date||'';
     const dateDisp=dateStr?new Date(dateStr+'T12:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}):'--';
     const isWon=m.result==='won';
+    const isUnf=m.result!=='won'&&m.result!=='lost';
+    const [bTxt,bCol,bBg]=isUnf?['UNFINISHED','var(--muted)','var(--surface2)']:isWon?['WIN','var(--tennis)','var(--tennis-dim)']:['LOSS','var(--red)','#fce7e7'];
     const isWatch=m._source==='watch';
     const score=esc(m.final_score||'--');
     const fmt=fmtLabel[m.format]||m.format||'';
@@ -8295,7 +8299,7 @@ function renderTennis(){
 
     const notesRow=m.notes?`<div style="margin-top:6px;font-size:12px;color:var(--muted);font-style:italic">${esc(m.notes)}</div>`:'';
 
-    return `<div class="card" onclick="openMatchDetail('${m.id}')" style="margin-bottom:10px;padding:12px 14px;border-left:4px solid ${isWon?'var(--tennis)':'var(--red)'};cursor:pointer;${m._hidden?'opacity:.55':''}">
+    return `<div class="card" onclick="openMatchDetail('${m.id}')" style="margin-bottom:10px;padding:12px 14px;border-left:4px solid ${isUnf?'var(--muted)':isWon?'var(--tennis)':'var(--red)'};cursor:pointer;${m._hidden?'opacity:.55':''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <div>
           <span style="font-weight:700;font-size:15px">${dateDisp}</span>
@@ -8305,7 +8309,7 @@ function renderTennis(){
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           <span title="${isWatch?'Synced from watch':'Manually logged'}" style="font-size:12px;color:var(--muted)">${isWatch?'⌚':'📝'}</span>
-          <span style="font-size:13px;font-weight:800;color:${isWon?'var(--tennis)':'var(--red)'};background:${isWon?'var(--tennis-dim)':'#fce7e7'};padding:3px 10px;border-radius:20px">${isWon?'WIN':'LOSS'}</span>
+          <span style="font-size:13px;font-weight:800;color:${bCol};background:${bBg};padding:3px 10px;border-radius:20px">${bTxt}</span>
           ${actBtns}
         </div>
       </div>
@@ -8326,14 +8330,16 @@ function _renderTennisStats(container,matches){
     container.innerHTML='<div class="card" style="text-align:center;padding:24px;color:var(--muted)">No data yet.</div>';
     return;
   }
-  const won=matches.filter(m=>m.result==='won').length;
-  const lost=matches.length-won;
-  const singles=matches.filter(m=>m.match_type==='singles');
-  const doubles=matches.filter(m=>m.match_type==='doubles');
+  const finished=matches.filter(m=>m.result==='won'||m.result==='lost');
+  const unfinished=matches.length-finished.length;
+  const won=finished.filter(m=>m.result==='won').length;
+  const lost=finished.length-won;
+  const singles=finished.filter(m=>m.match_type==='singles');
+  const doubles=finished.filter(m=>m.match_type==='doubles');
   const sWin=singles.filter(m=>m.result==='won').length;
   const dWin=doubles.filter(m=>m.result==='won').length;
-  const comp=matches.filter(m=>m.category==='competition');
-  const train=matches.filter(m=>m.category==='training');
+  const comp=finished.filter(m=>m.category==='competition');
+  const train=finished.filter(m=>m.category==='training');
   const compWin=comp.filter(m=>m.result==='won').length;
   const trainWin=train.filter(m=>m.result==='won').length;
   const withStats=matches.filter(m=>m.unforced_errors!=null);
@@ -8356,7 +8362,8 @@ function _renderTennisStats(container,matches){
       <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin-bottom:8px">WIN/LOSS</div>
       ${row('Total matches', matches.length)}
       ${row('Wins / Losses', `${won} / ${lost}`)}
-      ${row('Win rate', Math.round(won/matches.length*100)+'%')}
+      ${unfinished?row('Unfinished', unfinished):''}
+      ${row('Win rate', finished.length?Math.round(won/finished.length*100)+'%':'--')}
       ${singles.length?row('Singles W/L', `${sWin} / ${singles.length-sWin}`):''}
       ${doubles.length?row('Doubles W/L', `${dWin} / ${doubles.length-dWin}`):''}
       ${comp.length?row('Competition W/L', `${compWin} / ${comp.length-compWin}`):''}
@@ -8541,7 +8548,7 @@ function openWatchEdit(id){
   _twCat=ov.category||null;
   const isDoubles=m.match_type==='doubles';
   const typeDisp=isDoubles?'Doubles':'Singles';
-  const resDisp=m.result==='won'?'Win':(m.result==='lost'?'Loss':'—');
+  const resDisp=m.result==='won'?'Win':(m.result==='lost'?'Loss':'Unfinished');
   document.getElementById('tw-summary').innerHTML=
     `<strong>${esc(m.match_date||'')}</strong> · ${esc(m.final_score||'--')} · ${resDisp} · ${typeDisp}`;
   document.getElementById('tw-partner').value=ov.partner||'';
@@ -8632,6 +8639,8 @@ function openMatchDetail(id){
   if(!m) return;
   const isWatch=m._source==='watch';
   const isWon=m.result==='won';
+  const isUnf=m.result!=='won'&&m.result!=='lost';
+  const [bTxt,bCol,bBg]=isUnf?['UNFINISHED','var(--muted)','var(--surface2)']:isWon?['WIN','var(--tennis)','var(--tennis-dim)']:['LOSS','var(--red)','#fce7e7'];
   const dateDisp=m.match_date?new Date(m.match_date+'T12:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'--';
   const typeLabel={singles:'Singles',doubles:'Doubles'};
   const fmtLabel={'best_of_3':'Best of 3','best_of_3_st':'Best of 3+ST','doubles_compact':'Best of 3+ST','single_set':'1 Set','super_tb':'Super TB','tiebreak':'Tiebreak'};
@@ -8673,7 +8682,7 @@ function openMatchDetail(id){
   document.getElementById('tennis-detail-body').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
       <div style="font-weight:800;font-size:17px">${dateDisp}</div>
-      <span style="font-size:13px;font-weight:800;color:${isWon?'var(--tennis)':'var(--red)'};background:${isWon?'var(--tennis-dim)':'#fce7e7'};padding:3px 12px;border-radius:20px">${isWon?'WIN':'LOSS'}</span>
+      <span style="font-size:13px;font-weight:800;color:${bCol};background:${bBg};padding:3px 12px;border-radius:20px">${bTxt}</span>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px">${typeLabel[m.match_type]||m.match_type||''}${(m.category&&catLabel[m.category])?' · '+catLabel[m.category]:''}${(m.format&&(fmtLabel[m.format]||m.format))?' · '+(fmtLabel[m.format]||m.format):''} · ${isWatch?'⌚ watch':'📝 manual'}</div>
     <div style="font-size:22px;font-weight:800;letter-spacing:.02em">${esc(m.final_score||'--')}${m.duration_min?`<span style="font-size:13px;color:var(--muted);font-weight:400"> · ${m.duration_min}m</span>`:''}</div>
