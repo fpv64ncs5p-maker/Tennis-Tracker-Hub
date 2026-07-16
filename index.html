@@ -202,7 +202,7 @@ select option{background:var(--surface2)}
 .phase-chevron.open{transform:rotate(180deg)}
 .phase-body{display:none;margin-top:12px}
 .phase-body.open{display:block}
-.rehab-ex-row{display:grid;grid-template-columns:1fr 40px 40px 60px 60px;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.rehab-ex-row{display:grid;grid-template-columns:1fr 30px 30px 96px 44px;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
 .rehab-ex-row:last-child{border-bottom:none}
 .rehab-ex-name{font-weight:700}
 .rehab-session-log{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
@@ -5282,8 +5282,8 @@ function renderRehab(){
           ${phaseOverride?`<button onclick="saveRehabPhaseStart(${pi},'')" style="font-size:12px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);cursor:pointer">Reset</button>`:''}
           <span style="font-size:11px;color:var(--muted2);font-style:italic">${phaseOverride?'Custom date':'Uses program start'}${!programStart&&!phaseOverride?' · set above':''}</span>
         </div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;display:grid;grid-template-columns:1fr 40px 40px 72px 60px;gap:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">
-          <span>Exercise</span><span>Sets</span><span>Reps</span><span>Weight</span><span>Intensity</span>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;display:grid;grid-template-columns:1fr 30px 30px 96px 44px;gap:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">
+          <span>Exercise</span><span>Sets</span><span>Reps</span><span>Weight</span><span>Int</span>
         </div>
         ${p.exercises.map((e,ei)=>{
           const isBodyweight=e.weight==='bw';
@@ -5292,10 +5292,11 @@ function renderRehab(){
           return `<div class="rehab-ex-row">
             <span class="rehab-ex-name">${e.name}</span>
             <span>${e.sets}</span><span>${e.reps}</span>
-            <span style="display:flex;align-items:center;gap:3px">
+            <span style="display:flex;align-items:center;gap:3px;min-width:0">
               ${isBodyweight?`<span class="text-xxs-muted">bw+</span>`:''}
-              <input type="number" inputmode="decimal" min="0" step="0.5" value="${savedW}"
-                style="width:52px;font-size:13px;padding:2px 4px;text-align:right"
+              <input type="text" inputmode="decimal" value="${savedW}"
+                style="flex:1;width:100%;min-width:0;font-size:15px;font-weight:700;padding:6px 6px;text-align:right"
+                onfocus="this.select()"
                 onchange="saveRehabWeight(${pi},${ei},this.value)">
             </span>
             <span style="color:var(--yellow)">${e.intensity}</span>
@@ -5328,7 +5329,7 @@ function rehabLogFormHTML(p,pi,editSess,prefW){
       </div>
       ${e.weight==='bw'?'<span class="text-xxs-muted">bw+</span>':''}
       <input type="text" inputmode="decimal" id="rlw-${ei}" value="${prefW(ei)}"
-        style="width:56px;font-size:13px;padding:4px;text-align:right"><span class="text-xxs-muted">kg</span>
+        style="width:64px;font-size:15px;font-weight:700;padding:6px;text-align:right" onfocus="this.select()"><span class="text-xxs-muted">kg</span>
     </div>`).join('')}
     <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
       <label style="font-size:12px;font-weight:700">RPE</label>
@@ -5475,7 +5476,7 @@ function saveRehabWeight(pi,ei,val){
   const data=DB.rehabData();
   if(!data.weights)data.weights={};
   if(!data.weights[pi])data.weights[pi]={};
-  data.weights[pi][ei]=parseFloat(val)||0;
+  data.weights[pi][ei]=parseFloat(_normalizeKgInput(val))||0;
   DB.saveRehab(data);
 }
 
