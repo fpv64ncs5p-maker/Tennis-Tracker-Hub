@@ -1867,85 +1867,75 @@ function suggestWeight(exName, intensity){
   return ref.w;
 }
 
-// ── Assessment-driven weight suggestion ─────────────────────────────────────
+// ── Weight suggestion: LATEST DATA WINS (2026-07-17) ───────────────────────
 // Returns {weight, orm, source, label, stale}
 //   source = 'assessment' | 'session' | 'ref'
 //   orm    = estimated 1RM in kg (null if unavailable)
 //
-// Priority:
-//   1. Latest gym assessment  → Epley 1RM from assessed best set
-//   2. Latest logged session  → intensity%-based 1RM (weight ÷ effort%)
-//                               OR Epley from reps if no intensity stored
-//   3. Seeded WEIGHT_REF      → raw reference weight
+// Priority: the most RECENT data point for this exercise —
+//   latest logged session (Epley from weight×reps) vs latest assessment,
+//   whichever has the newer date. So adjusting a weight in a session
+//   (up OR down) drives the next session's suggestion.
+// The all-time best 1RM (gym_orm_cache) no longer drives suggestions;
+// it's shown in the label as a PR reference only.
+// Fallback: suggestWeight() (phase sessions → all-time → WEIGHT_REF).
 function suggestWeightFull(exName, intensity){
   // Helper: round to nearest 0.25 kg
   const r4 = v => Math.round(v * 4) / 4;
 
-  // 0. ORM cache — best ever Epley 1RM from logged sessions (auto-updated on save)
-  const ormCache = DB.ormCache();
-  if(ormCache[exName]){
-    const c = ormCache[exName];
-    const working = r4(c.orm * (intensity / 100));
-    return {
-      weight: working,
-      orm: c.orm,
-      source: 'cache',
-      label: `💪 Best logged ${c.date} · est. 1RM ${c.orm} kg`,
-      stale: false
-    };
-  }
+  // PR reference (best-ever Epley 1RM, still updated on save) — label only
+  const pr = DB.ormCache()[exName] || null;
+  const prNote = pr ? ` · PR 1RM ${pr.orm} kg (${pr.date})` : '';
 
-  // 1. Latest assessment (Epley)
-  const assessments = DB.gymAssessments();
-  if(assessments.length){
-    const latest = assessments[0];
-    const entry = (latest.exercises||[]).find(e=>e.name===exName && e.type==='strength');
-    if(entry){
-      // new format: orm stored directly; legacy: compute from weight×reps
-      let orm=null;
-      if(entry.orm) orm=parseFloat(entry.orm);
-      else if(entry.weight&&entry.reps){const w=parseFloat(entry.weight),r=parseFloat(entry.reps);if(!isNaN(w)&&!isNaN(r)&&w>0&&r>0)orm=w*(1+r/30);}
-      if(orm&&!isNaN(orm)&&orm>0){
-        const working = r4(orm * (intensity / 100));
-        const weeksDiff = (Date.now() - new Date(latest.date + 'T12:00:00')) / (1000*60*60*24*7);
-        return {
-          weight: working,
-          orm: Math.round(orm * 10) / 10,
-          source: 'assessment',
-          label: `📋 Assessment ${latest.date} · est. 1RM ${Math.round(orm*10)/10} kg`,
-          stale: weeksDiff > 4
-        };
-      }
-    }
-  }
-
-  // 2. Most recent logged session entry for this exercise
+  // Most recent logged session entry with weight+reps (by session date)
+  let sess = null;
   for(const s of DB.gymSessions()){
+    if(sess && (s.date||'') <= sess.date) continue;
     for(const e of (s.exercises||[])){
       if(e.name !== exName) continue;
       const w = parseFloat(e.weight);
-      if(!w || isNaN(w) || w <= 0) continue;
       const reps = parseFloat(e.reps);
-      let orm = null, method = '';
-      if(!isNaN(reps) && reps > 0){
-        // Always use Epley from actual weight+reps (ignore stored intensity %)
-        orm    = w * (1 + reps / 30);
-        method = `${reps} reps (Epley)`;
-      }
-      if(orm){
-        const working = r4(orm * (intensity / 100));
-        return {
-          weight: working,
-          orm: Math.round(orm * 10) / 10,
-          source: 'session',
-          label: `📊 ${s.date} · est. 1RM ${Math.round(orm*10)/10} kg (from ${method})`,
-          stale: false
-        };
-      }
+      if(!w || isNaN(w) || w <= 0 || isNaN(reps) || reps <= 0) continue;
+      sess = { orm: w*(1+reps/30), date: s.date||'', method: `${reps} reps (Epley)` };
+      break;
     }
   }
 
-  // 3. Seeded WEIGHT_REF fallback
+  // Most recent assessment containing this exercise (by assessment date)
+  let assess = null;
+  for(const a of DB.gymAssessments()){
+    if(assess && (a.date||'') <= assess.date) continue;
+    const entry = (a.exercises||[]).find(e=>e.name===exName && e.type==='strength');
+    if(!entry) continue;
+    // new format: orm stored directly; legacy: compute from weight×reps
+    let orm=null;
+    if(entry.orm) orm=parseFloat(entry.orm);
+    else if(entry.weight&&entry.reps){const w=parseFloat(entry.weight),r=parseFloat(entry.reps);if(!isNaN(w)&&!isNaN(r)&&w>0&&r>0)orm=w*(1+r/30);}
+    if(orm&&!isNaN(orm)&&orm>0) assess = { orm, date: a.date||'' };
+  }
+
+  // Newest wins (tie → session, it reflects actual training)
+  let pick=null, source=null;
+  if(sess && assess){ if(assess.date > sess.date){pick=assess;source='assessment';} else {pick=sess;source='session';} }
+  else if(sess){ pick=sess; source='session'; }
+  else if(assess){ pick=assess; source='assessment'; }
+
+  if(pick){
+    const orm = Math.round(pick.orm*10)/10;
+    const working = r4(pick.orm * (intensity/100));
+    const weeksDiff = pick.date ? (Date.now() - new Date(pick.date+'T12:00:00')) / (1000*60*60*24*7) : 0;
+    return {
+      weight: working,
+      orm,
+      source,
+      label: (source==='assessment'
+        ? `📋 Assessment ${pick.date} · est. 1RM ${orm} kg`
+        : `📊 Last logged ${pick.date} · est. 1RM ${orm} kg (from ${pick.method})`) + prNote,
+      stale: source==='assessment' && weeksDiff > 4
+    };
+  }
+
+  // Fallback: seeded WEIGHT_REF via suggestWeight
   const w = suggestWeight(exName, intensity);
   return { weight: w, orm: null, source: w !== null ? 'ref' : null, label: null, stale: false };
 }
