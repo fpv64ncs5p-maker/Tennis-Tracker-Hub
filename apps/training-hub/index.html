@@ -87,6 +87,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-
 label{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
 input,select,textarea{width:100%;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 11px;color:var(--text);font-size:14px;outline:none;transition:border-color .15s}
 input:focus,select:focus,textarea:focus{border-color:var(--climb)}
+/* Numbers legibility (2026-07-17): all numeric inputs bigger + bold; 16px also prevents iOS focus auto-zoom */
+input[type=number],input[inputmode=decimal],input[inputmode=numeric]{font-size:16px!important;font-weight:700!important}
 input[type=range]{padding:4px 0;accent-color:var(--gym)}
 select option{background:var(--surface2)}
 .auto-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--yellow);background:rgba(180,83,9,.10);border:1px solid rgba(180,83,9,.22);border-radius:5px;padding:2px 7px;font-weight:700}
@@ -101,7 +103,7 @@ select option{background:var(--surface2)}
 .ex-row{display:flex;align-items:flex-start;gap:10px;padding:13px;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border);margin-bottom:8px}
 .ex-row-info{flex:1;min-width:0}
 .ex-row-name{font-weight:700;font-size:14px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ex-row-meta{font-size:12px;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap}
+.ex-row-meta{font-size:14px;font-weight:600;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap}
 .ex-row-meta span{display:flex;align-items:center;gap:3px}
 .meta-pill{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700}
 .meta-pill.weight{background:rgba(21,128,61,.15);color:var(--gym);border:1px solid rgba(21,128,61,.22)}
@@ -202,7 +204,7 @@ select option{background:var(--surface2)}
 .phase-chevron.open{transform:rotate(180deg)}
 .phase-body{display:none;margin-top:12px}
 .phase-body.open{display:block}
-.rehab-ex-row{display:grid;grid-template-columns:1fr 30px 30px 96px 44px;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.rehab-ex-row{display:grid;grid-template-columns:1fr 30px 30px 96px 44px;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px}
 .rehab-ex-row:last-child{border-bottom:none}
 .rehab-ex-name{font-weight:700}
 .rehab-session-log{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
@@ -211,7 +213,7 @@ select option{background:var(--surface2)}
 .rehab-ex-done{width:26px;height:26px;border-radius:50%;border:2px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;cursor:pointer;color:transparent;transition:all .15s;flex-shrink:0}
 .rehab-ex-done.done{border-color:var(--rehab);background:var(--rehab-dim);color:var(--rehab)}
 .rehab-log-form{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-top:10px}
-.rehab-log-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
+.rehab-log-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px}
 .rehab-log-row:last-of-type{border-bottom:none}
 .rehab-sess-row{display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
 .rehab-sess-row:last-child{border-bottom:none}
@@ -351,7 +353,7 @@ select option{background:var(--surface2)}
 .flex-gap4{display:flex;gap:4px;align-items:center}
 .flex-wrap-gap4{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
 .flex-gap8-mt12{display:flex;gap:8px;margin-top:12px}
-.meta-chip{font-size:11px;background:#eef0f6;padding:2px 7px;border-radius:10px;color:var(--text);font-weight:600}
+.meta-chip{font-size:13px;background:#eef0f6;padding:2px 8px;border-radius:10px;color:var(--text);font-weight:600}
 .input-sm{font-size:13px;width:100%}
 
 /* Accessibility: focus-visible */
