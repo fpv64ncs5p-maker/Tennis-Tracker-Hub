@@ -7728,27 +7728,25 @@ function renderHomeWeekCalendar(){
   const todayStr=today();
   const mondayStr=getMonday(todayStr);
   const plan=DB.planData()[mondayStr];
-
-  if(!plan){
-    document.getElementById('home-week-calendar').innerHTML='';
-    document.getElementById('home-active-days').innerHTML='<span class="active-days-label">Active: 0/7 days</span>';
-    return;
-  }
+  // Logged rehab sessions (v2) — shown as done 🦵 even if not planned
+  const rehabDates=new Set((DB.rehabData().sessions||[]).map(s=>s.date));
 
   const trainingIcons={'gym':'💪','climb':'🧗','tennis':'🎾','golf':'⛳','rehab':'🦵','active':'🏃','rest':'😴'};
   const countedSports=['gym','climb','tennis','golf'];
+  const dayNames=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   let activeDays=0;
   let html='';
 
-  plan.forEach((dayData,idx)=>{
-    const dayNames=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-    const isToday=dayData.date===todayStr;
+  for(let idx=0;idx<7;idx++){
+    const dayData=plan?plan[idx]:null;
+    const date=(dayData&&dayData.date)||addDays(mondayStr,idx);
+    const isToday=date===todayStr;
     const sessionIcons=[];
     let hasCountedSport=false;
 
-    if(dayData.work) sessionIcons.push('💼');
+    if(dayData&&dayData.work) sessionIcons.push('💼');
 
-    if(dayData.sessions&&dayData.sessions.length>0){
+    if(dayData&&dayData.sessions&&dayData.sessions.length>0){
       dayData.sessions.forEach(s=>{
         if(trainingIcons[s.trainingType]){
           sessionIcons.push(trainingIcons[s.trainingType]);
@@ -7759,16 +7757,19 @@ function renderHomeWeekCalendar(){
       });
     }
 
+    // Overlay logged rehab session (dedupe against a planned rehab icon)
+    if(rehabDates.has(date)&&!sessionIcons.includes('🦵'))sessionIcons.push('🦵');
+
     if(hasCountedSport) activeDays++;
 
-    const dateObj=new Date(dayData.date);
+    const dateObj=new Date(date);
     const dateNum=dateObj.getDate();
     html+=`<div class="home-cal-day ${isToday?'today':''}">
       <div class="home-cal-day-label">${dayNames[idx]}</div>
       <div class="home-cal-day-date">${dateNum}</div>
       <div class="week-icons">${sessionIcons.join('')}</div>
     </div>`;
-  });
+  }
 
   document.getElementById('home-week-calendar').innerHTML=html;
   document.getElementById('home-active-days').innerHTML=`
