@@ -208,6 +208,15 @@ select option{background:var(--surface2)}
 .rehab-session-log{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
 .session-bubble{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;border:2px solid var(--border);background:var(--surface2);color:var(--muted);cursor:pointer;transition:all .15s}
 .session-bubble.done{border-color:var(--rehab);background:var(--rehab-dim);color:var(--rehab)}
+.rehab-ex-done{width:26px;height:26px;border-radius:50%;border:2px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;cursor:pointer;color:transparent;transition:all .15s;flex-shrink:0}
+.rehab-ex-done.done{border-color:var(--rehab);background:var(--rehab-dim);color:var(--rehab)}
+.rehab-log-form{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-top:10px}
+.rehab-log-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
+.rehab-log-row:last-of-type{border-bottom:none}
+.rehab-sess-row{display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.rehab-sess-row:last-child{border-bottom:none}
+.rehab-week-dot{width:14px;height:14px;border-radius:50%;background:var(--rehab);display:inline-block}
+.rehab-week-dot.empty{background:none;border:2px dashed var(--border)}
 
 /* ── Weekly planner ── */
 .week-day{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.05)}
@@ -5178,13 +5187,42 @@ function fmtRehabDate(dt){
   return dt.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
 }
 
+// ── Rehab v2: dated session log ─────────────────
+// rehab_data = {_v:2, archive:<old round or null>, startDate, phaseStarts:{}, weights:{}, sessions:[{id,date,phase,done:{ei:bool},weights:{ei:kg},rpe}]}
+let _rehabLog=null; // open log form: {pi, editId, done:{}, date}
+
+function _rehabMigrate(){
+  const data=DB.rehabData();
+  if(data._v===2)return data;
+  const oldKeys=['startDate','phaseStarts','weights','phase_0','phase_1','phase_2','phase_3','phase_4'];
+  const hasOld=oldKeys.some(k=>data[k]!==undefined);
+  const nd={_v:2,archive:hasOld?{...data,archivedAt:today()}:null,startDate:'',phaseStarts:{},weights:{},sessions:[]};
+  DB.saveRehab(nd);
+  return nd;
+}
+
+function _rehabKeepOpen(pi){
+  requestAnimationFrame(()=>{
+    const b=document.getElementById('phase-body-'+pi);if(b)b.classList.add('open');
+    const c=document.getElementById('chev-'+pi);if(c)c.classList.add('open');
+  });
+}
+
 function renderRehab(){
   const el=document.getElementById('rehab-phases');
   const sc=document.getElementById('rehab-start-card');
-  const data=DB.rehabData();
+  const data=_rehabMigrate();
   const programStart=data.startDate||'';
+  const sessions=data.sessions||[];
 
-  // Start date card
+  // Weekly tracker (Monday-based weeks)
+  const wkNow=getMonday(today());
+  const thisWeek=sessions.filter(s=>s.date&&getMonday(s.date)===wkNow);
+  const lastMon=new Date(wkNow+'T12:00:00');lastMon.setDate(lastMon.getDate()-7);
+  const wkLast=lastMon.toISOString().split('T')[0];
+  const lastWeek=sessions.filter(s=>s.date&&getMonday(s.date)===wkLast);
+  const goalDots=Math.max(3,thisWeek.length);
+
   sc.innerHTML=`<div class="card" style="margin-bottom:12px">
     <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Program Start Date</div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -5194,13 +5232,20 @@ function renderRehab(){
       ${programStart?`<span class="text-xs-muted">Phase dates auto-calculated from this date</span>`
         :`<span style="font-size:12px;color:var(--muted2);font-style:italic">Set to auto-calculate all phase dates</span>`}
     </div>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">This Week</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      ${Array.from({length:goalDots},(_,i)=>`<span class="rehab-week-dot ${i<thisWeek.length?'':'empty'}"></span>`).join('')}
+      <span style="font-size:15px;font-weight:800;margin-left:2px">${thisWeek.length} session${thisWeek.length===1?'':'s'}</span>
+      <span class="text-xs-muted">· goal 2–3×/week · last week: ${lastWeek.length}</span>
+    </div>
   </div>`;
 
   el.innerHTML=REHAB_PHASES.map((p,pi)=>{
-    const phaseKey='phase_'+pi;
-    const sessions=data[phaseKey]||{s1:false,s2:false,s3:false,rpe:''};
     const phaseOverride=(data.phaseStarts||{})[pi]||'';
     const weights=(data.weights||{})[pi]||{};
+    const phSessions=sessions.filter(s=>s.phase===pi).slice().sort((a,b)=>((b.date||'').localeCompare(a.date||''))||(b.id-a.id));
 
     // Date display
     let dateStr=p.dates;
@@ -5209,10 +5254,20 @@ function renderRehab(){
       dateStr=fmtRehabDate(range.start)+' – '+fmtRehabDate(range.end);
     }
 
+    const formOpen=_rehabLog&&_rehabLog.pi===pi;
+    const editSess=formOpen&&_rehabLog.editId?phSessions.find(s=>String(s.id)===String(_rehabLog.editId)):null;
+    // Weight prefill: editing session → last logged session → phase default → protocol default
+    const prefW=ei=>{
+      if(editSess&&editSess.weights&&editSess.weights[ei]!==undefined)return editSess.weights[ei];
+      if(!editSess&&phSessions.length&&phSessions[0].weights&&phSessions[0].weights[ei]!==undefined)return phSessions[0].weights[ei];
+      if(weights[ei]!==undefined)return weights[ei];
+      const e=p.exercises[ei];return e.weight==='bw'?0:e.weight;
+    };
+
     return `<div class="card">
       <div class="phase-header" onclick="togglePhase(${pi})">
         <div>
-          <div class="phase-title">${p.phase}</div>
+          <div class="phase-title">${p.phase}${phSessions.length?` <span style="font-size:12px;font-weight:700;color:var(--rehab);background:var(--rehab-dim);border-radius:10px;padding:1px 8px;vertical-align:middle">${phSessions.length} ✓</span>`:''}</div>
           <div class="phase-dates">${dateStr} · ${p.freq}${p.note?' · '+p.note:''}</div>
         </div>
         <span class="phase-chevron" id="chev-${pi}">▾</span>
@@ -5247,22 +5302,152 @@ function renderRehab(){
           </div>`;
         }).join('')}
         <div class="divider" style="margin:12px 0 10px"></div>
-        <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">SESSIONS DONE</div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          ${['s1','s2','s3'].map((k,i)=>`
-          <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-            <div class="session-bubble ${sessions[k]?'done':''}" onclick="toggleRehabSession(${pi},'${k}')">${i+1}</div>
-            <span class="text-xxs-muted">S${i+1}</span>
-          </div>`).join('')}
-          <div style="margin-left:8px">
-            <label style="font-size:11px">RPE</label>
-            <input type="number" inputmode="decimal" min="1" max="10" placeholder="1–10" value="${sessions.rpe||''}"
-              style="width:60px;margin:0" onchange="saveRehabRPE(${pi},this.value)">
-          </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px">
+          <div style="font-size:12px;font-weight:600;color:var(--muted)">SESSIONS${phSessions.length?' · '+phSessions.length:''}</div>
+          ${formOpen?'':`<button class="btn-rehab" style="font-size:13px;padding:6px 12px;border:none;border-radius:var(--radius-sm);font-weight:700;cursor:pointer" onclick="openRehabLog(${pi})">➕ Log session</button>`}
         </div>
+        ${formOpen?rehabLogFormHTML(p,pi,editSess,prefW):''}
+        ${phSessions.map(s=>rehabSessRowHTML(p,pi,s)).join('')||(formOpen?'':`<div class="text-xs-muted" style="padding:4px 0">No sessions logged yet</div>`)}
       </div>
     </div>`;
+  }).join('')+renderRehabArchive(data.archive);
+}
+
+function rehabLogFormHTML(p,pi,editSess,prefW){
+  const st=_rehabLog;
+  return `<div class="rehab-log-form">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+      <label style="font-size:12px;font-weight:700">Date</label>
+      <input type="date" id="rl-date" value="${st.date}" style="font-size:13px;flex:1;min-width:130px">
+    </div>
+    ${p.exercises.map((e,ei)=>`<div class="rehab-log-row">
+      <div class="rehab-ex-done ${st.done[ei]?'done':''}" onclick="toggleRehabExDone(${ei},this)">✓</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700">${e.name}</div>
+        <div class="text-xxs-muted">${e.sets}×${e.reps} · ${e.intensity}</div>
+      </div>
+      ${e.weight==='bw'?'<span class="text-xxs-muted">bw+</span>':''}
+      <input type="text" inputmode="decimal" id="rlw-${ei}" value="${prefW(ei)}"
+        style="width:56px;font-size:13px;padding:4px;text-align:right"><span class="text-xxs-muted">kg</span>
+    </div>`).join('')}
+    <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <label style="font-size:12px;font-weight:700">RPE</label>
+      <input type="text" inputmode="decimal" id="rl-rpe" placeholder="1–10" value="${editSess?(editSess.rpe||''):''}" style="width:56px;font-size:13px;padding:4px">
+      <div style="flex:1"></div>
+      <button onclick="cancelRehabLog(${pi})" style="font-size:13px;padding:7px 12px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);cursor:pointer">Cancel</button>
+      <button class="btn-rehab" style="font-size:13px;padding:7px 14px;border:none;border-radius:var(--radius-sm);font-weight:700;cursor:pointer" onclick="saveRehabLogSession(${pi})">${editSess?'Update':'Save session'}</button>
+    </div>
+  </div>`;
+}
+
+function rehabSessRowHTML(p,pi,s){
+  const doneCnt=p.exercises.filter((e,ei)=>s.done&&s.done[ei]).length;
+  const dt=s.date?fmtRehabDate(new Date(s.date+'T12:00:00')):'—';
+  const chips=p.exercises.map((e,ei)=>{
+    const w=s.weights&&s.weights[ei]!==undefined?s.weights[ei]:'–';
+    const short=esc(e.name.split('(')[0].trim());
+    return `<span style="white-space:nowrap">${s.done&&s.done[ei]?'✅':'⬜'} ${short} ${e.weight==='bw'?'bw+':''}${w}kg</span>`;
+  }).join(' · ');
+  return `<div class="rehab-sess-row">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:800">${dt} <span style="font-weight:600;color:var(--muted)">· ${doneCnt}/${p.exercises.length} done${s.rpe?' · RPE '+esc(String(s.rpe)):''}</span></div>
+      <div class="text-xxs-muted" style="margin-top:2px">${chips}</div>
+    </div>
+    <button onclick="openRehabLog(${pi},'${s.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px" aria-label="Edit session">✏️</button>
+    <button onclick="deleteRehabSession(${pi},'${s.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px" aria-label="Delete session">🗑</button>
+  </div>`;
+}
+
+function renderRehabArchive(a){
+  if(!a)return'';
+  const lines=REHAB_PHASES.map((p,pi)=>{
+    const s=a['phase_'+pi]||{};
+    const cnt=['s1','s2','s3'].filter(k=>s[k]).length;
+    const w=(a.weights||{})[pi]||{};
+    const wstr=p.exercises.map((e,ei)=>{
+      const v=w[ei]!==undefined?w[ei]:(e.weight==='bw'?0:e.weight);
+      return esc(e.name.split('(')[0].trim())+' '+(e.weight==='bw'?'bw+':'')+v+'kg';
+    }).join(' · ');
+    return `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <b>${p.phase}</b> <span style="color:var(--muted)">— ${cnt}/3 sessions${s.rpe?' · RPE '+esc(String(s.rpe)):''}</span>
+      <div class="text-xxs-muted" style="margin-top:2px">${wstr}</div>
+    </div>`;
   }).join('');
+  return `<div class="card" style="opacity:.85">
+    <div class="phase-header" onclick="togglePhase('arch')">
+      <div>
+        <div class="phase-title">📦 Previous program</div>
+        <div class="phase-dates">${a.startDate?'Started '+fmtRehabDate(new Date(a.startDate+'T12:00:00'))+' · ':''}archived ${a.archivedAt?fmtRehabDate(new Date(a.archivedAt+'T12:00:00')):''} · read-only</div>
+      </div>
+      <span class="phase-chevron" id="chev-arch">▾</span>
+    </div>
+    <div class="phase-body" id="phase-body-arch">
+      <div class="divider" style="margin:10px 0 6px"></div>
+      ${lines}
+    </div>
+  </div>`;
+}
+
+function openRehabLog(pi,editId){
+  const data=_rehabMigrate();
+  let done={},date=today();
+  if(editId){
+    const s=(data.sessions||[]).find(x=>String(x.id)===String(editId));
+    if(s){done={...(s.done||{})};date=s.date||today();}
+  }
+  _rehabLog={pi,editId:editId||null,done,date};
+  renderRehab();
+  _rehabKeepOpen(pi);
+}
+
+function toggleRehabExDone(ei,el){
+  if(!_rehabLog)return;
+  _rehabLog.done[ei]=!_rehabLog.done[ei];
+  el.classList.toggle('done',!!_rehabLog.done[ei]);
+}
+
+function cancelRehabLog(pi){
+  _rehabLog=null;
+  renderRehab();
+  _rehabKeepOpen(pi);
+}
+
+function saveRehabLogSession(pi){
+  const st=_rehabLog;if(!st||st.pi!==pi)return;
+  const data=_rehabMigrate();
+  const p=REHAB_PHASES[pi];
+  const date=(document.getElementById('rl-date')||{}).value||today();
+  const weights={};
+  p.exercises.forEach((e,ei)=>{
+    const inp=document.getElementById('rlw-'+ei);
+    weights[ei]=parseFloat(_normalizeKgInput(inp?inp.value:''))||0;
+  });
+  const rpe=_normalizeKgInput((document.getElementById('rl-rpe')||{}).value||'');
+  if(!data.sessions)data.sessions=[];
+  if(st.editId){
+    const s=data.sessions.find(x=>String(x.id)===String(st.editId));
+    if(s){s.date=date;s.done={...st.done};s.weights=weights;s.rpe=rpe;}
+  }else{
+    data.sessions.unshift({id:Date.now(),date,phase:pi,done:{...st.done},weights,rpe});
+  }
+  _rehabLog=null;
+  DB.saveRehab(data);
+  renderRehab();
+  _rehabKeepOpen(pi);
+  toast(st.editId?'Session updated':'Rehab session logged 💪');
+}
+
+function deleteRehabSession(pi,id){
+  const data=_rehabMigrate();
+  const s=(data.sessions||[]).find(x=>String(x.id)===String(id));
+  if(!s)return;
+  if(!confirm('Delete this rehab session?'))return;
+  const snapshot=JSON.parse(JSON.stringify(data));
+  data.sessions=data.sessions.filter(x=>String(x.id)!==String(id));
+  DB.saveRehab(data);
+  renderRehab();
+  _rehabKeepOpen(pi);
+  pushUndo('Session deleted',()=>{DB.saveRehab(snapshot);renderRehab();_rehabKeepOpen(pi);});
 }
 
 function saveRehabStartDate(val){
@@ -5301,22 +5486,6 @@ function togglePhase(pi){
   chev.classList.toggle('open');
 }
 
-function toggleRehabSession(pi,key){
-  const data=DB.rehabData();
-  const phaseKey='phase_'+pi;
-  if(!data[phaseKey])data[phaseKey]={s1:false,s2:false,s3:false,rpe:''};
-  data[phaseKey][key]=!data[phaseKey][key];
-  DB.saveRehab(data);
-  renderRehab();
-}
-
-function saveRehabRPE(pi,val){
-  const data=DB.rehabData();
-  const phaseKey='phase_'+pi;
-  if(!data[phaseKey])data[phaseKey]={s1:false,s2:false,s3:false,rpe:''};
-  data[phaseKey].rpe=val;
-  DB.saveRehab(data);
-}
 
 // ══════════════════════════════════════════════════
 //  PLANNER TAB
