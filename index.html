@@ -5208,10 +5208,21 @@ function _rehabKeepOpen(pi){
   });
 }
 
+function _rehabSaveDraft(){
+  if(_rehabLog)localStorage.setItem('_rehab_log_draft',JSON.stringify(_rehabLog));
+  else localStorage.removeItem('_rehab_log_draft');
+}
+function _rehabLogField(k,v){if(!_rehabLog)return;_rehabLog[k]=v;_rehabSaveDraft();}
+function _rehabLogW(ei,v){if(!_rehabLog)return;if(!_rehabLog.weights)_rehabLog.weights={};_rehabLog.weights[ei]=v;_rehabSaveDraft();}
+
 function renderRehab(){
   const el=document.getElementById('rehab-phases');
   const sc=document.getElementById('rehab-start-card');
   const data=_rehabMigrate();
+  // Restore in-progress log form (survives tab switches + page reloads)
+  if(!_rehabLog){
+    try{const d=JSON.parse(localStorage.getItem('_rehab_log_draft'));if(d&&typeof d.pi==='number')_rehabLog=d;}catch(e){}
+  }
   const programStart=data.startDate||'';
   const sessions=data.sessions||[];
 
@@ -5312,6 +5323,7 @@ function renderRehab(){
       </div>
     </div>`;
   }).join('')+renderRehabArchive(data.archive);
+  if(_rehabLog)_rehabKeepOpen(_rehabLog.pi);
 }
 
 function rehabLogFormHTML(p,pi,editSess,prefW){
@@ -5319,7 +5331,7 @@ function rehabLogFormHTML(p,pi,editSess,prefW){
   return `<div class="rehab-log-form">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
       <label style="font-size:12px;font-weight:700">Date</label>
-      <input type="date" id="rl-date" value="${st.date}" style="font-size:13px;flex:1;min-width:130px">
+      <input type="date" id="rl-date" value="${st.date}" style="font-size:13px;flex:1;min-width:130px" onchange="_rehabLogField('date',this.value)">
     </div>
     ${p.exercises.map((e,ei)=>`<div class="rehab-log-row">
       <div class="rehab-ex-done ${st.done[ei]?'done':''}" onclick="toggleRehabExDone(${ei},this)">✓</div>
@@ -5328,12 +5340,12 @@ function rehabLogFormHTML(p,pi,editSess,prefW){
         <div class="text-xxs-muted">${e.sets}×${e.reps} · ${e.intensity}</div>
       </div>
       ${e.weight==='bw'?'<span class="text-xxs-muted">bw+</span>':''}
-      <input type="text" inputmode="decimal" id="rlw-${ei}" value="${prefW(ei)}"
-        style="width:64px;font-size:15px;font-weight:700;padding:6px;text-align:right" onfocus="this.select()"><span class="text-xxs-muted">kg</span>
+      <input type="text" inputmode="decimal" id="rlw-${ei}" value="${esc(String(st.weights&&st.weights[ei]!==undefined?st.weights[ei]:prefW(ei)))}"
+        style="width:64px;font-size:15px;font-weight:700;padding:6px;text-align:right" onfocus="this.select()" oninput="_rehabLogW(${ei},this.value)"><span class="text-xxs-muted">kg</span>
     </div>`).join('')}
     <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
       <label style="font-size:12px;font-weight:700">RPE</label>
-      <input type="text" inputmode="decimal" id="rl-rpe" placeholder="1–10" value="${editSess?(editSess.rpe||''):''}" style="width:56px;font-size:13px;padding:4px">
+      <input type="text" inputmode="decimal" id="rl-rpe" placeholder="1–10" value="${esc(String(st.rpe!==undefined?st.rpe:(editSess?(editSess.rpe||''):'')))}" style="width:56px;font-size:13px;padding:4px" oninput="_rehabLogField('rpe',this.value)">
       <div style="flex:1"></div>
       <button onclick="cancelRehabLog(${pi})" style="font-size:13px;padding:7px 12px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);cursor:pointer">Cancel</button>
       <button class="btn-rehab" style="font-size:13px;padding:7px 14px;border:none;border-radius:var(--radius-sm);font-weight:700;cursor:pointer" onclick="saveRehabLogSession(${pi})">${editSess?'Update':'Save session'}</button>
@@ -5396,7 +5408,8 @@ function openRehabLog(pi,editId){
     const s=(data.sessions||[]).find(x=>String(x.id)===String(editId));
     if(s){done={...(s.done||{})};date=s.date||today();}
   }
-  _rehabLog={pi,editId:editId||null,done,date};
+  _rehabLog={pi,editId:editId||null,done,date,weights:{}};
+  _rehabSaveDraft();
   renderRehab();
   _rehabKeepOpen(pi);
 }
@@ -5405,10 +5418,12 @@ function toggleRehabExDone(ei,el){
   if(!_rehabLog)return;
   _rehabLog.done[ei]=!_rehabLog.done[ei];
   el.classList.toggle('done',!!_rehabLog.done[ei]);
+  _rehabSaveDraft();
 }
 
 function cancelRehabLog(pi){
   _rehabLog=null;
+  _rehabSaveDraft();
   renderRehab();
   _rehabKeepOpen(pi);
 }
@@ -5432,6 +5447,7 @@ function saveRehabLogSession(pi){
     data.sessions.unshift({id:Date.now(),date,phase:pi,done:{...st.done},weights,rpe});
   }
   _rehabLog=null;
+  _rehabSaveDraft();
   DB.saveRehab(data);
   renderRehab();
   _rehabKeepOpen(pi);
