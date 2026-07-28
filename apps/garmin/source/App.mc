@@ -77,6 +77,11 @@ class TennisApp extends App.AppBase {
             engine.restore(state);
             _startupSync = new SupabaseSync();
             _startupSync.setSlot(slot);
+            // v1.5.1: use the match-end time stamped when this payload
+            // was queued, so a delayed sync keeps the date it was
+            // actually played. null for pre-1.5.1 payloads → falls back
+            // to "now" inside buildPayload (old behaviour).
+            _startupSync.setDate(MatchPersistence.slotDate(state));
             _startupSync.uploadMatch(engine, null);
         } catch (ex instanceof Lang.Exception) {
             // Corrupted or stale payload — drop this slot so it

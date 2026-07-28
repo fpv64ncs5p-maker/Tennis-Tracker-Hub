@@ -17,6 +17,8 @@
 // ============================================================
 
 using Toybox.Application.Storage as Storage;
+using Toybox.Time;
+using Toybox.Time.Gregorian;
 
 // MatchPersistence uses only static (module-level) functions.
 // No instance needed — call as MatchPersistence.saveState(engine) etc.
@@ -85,10 +87,23 @@ module MatchPersistence {
         return "supabase_q_" + i.toString();
     }
 
+    // v1.5.1: key holding the UTC timestamp of the MOMENT THE MATCH
+    // ENDED, stamped when the payload is queued. Without it a retried
+    // upload was timestamped with the retry time, so a match that
+    // failed to sync on court arrived in Supabase dated the day it
+    // finally went through (2026-07-27 match landed as 2026-07-28).
+    const QUEUE_DATE_KEY = "mDate";
+
     // Saves a payload into the first free slot; returns the slot index.
     // If all 5 slots are full, overwrites the NEWEST slot (the oldest
     // pending matches are preserved).
     function queueSupabasePayload(state) {
+        // v1.5.1: stamp the real match-end time onto the payload so a
+        // delayed retry keeps the correct date. Only String/Number
+        // primitives — CIQ Storage cannot serialize anything richer.
+        if (state != null && !state.hasKey(QUEUE_DATE_KEY)) {
+            state[QUEUE_DATE_KEY] = nowUtcIso();
+        }
         for (var i = 0; i < SUPABASE_QUEUE_SIZE; i++) {
             if (Storage.getValue(queueKey(i)) == null) {
                 Storage.setValue(queueKey(i), state);
@@ -97,6 +112,35 @@ module MatchPersistence {
         }
         Storage.setValue(queueKey(SUPABASE_QUEUE_SIZE - 1), state);
         return SUPABASE_QUEUE_SIZE - 1;
+    }
+
+    // v1.5.1: ISO 8601 UTC timestamp, e.g. "2026-07-27T17:04:22Z".
+    // Mirrors SupabaseSync.formatTimestampUtc() — duplicated here
+    // because that one lives on a class, and this module must not
+    // depend on an instance of it.
+    function nowUtcIso() {
+        var info = Gregorian.utcInfo(Time.now(), Time.FORMAT_SHORT);
+        return info.year.toString() + "-" +
+               pad2(info.month) + "-" +
+               pad2(info.day) + "T" +
+               pad2(info.hour) + ":" +
+               pad2(info.min) + ":" +
+               pad2(info.sec) + "Z";
+    }
+
+    function pad2(n) {
+        if (n < 10) { return "0" + n.toString(); }
+        return n.toString();
+    }
+
+    // Returns the stamped match-end time for a queued payload, or null
+    // for payloads queued by v1.5.0 and earlier (caller falls back to
+    // "now", i.e. the old behaviour).
+    function slotDate(state) {
+        if (state != null && state.hasKey(QUEUE_DATE_KEY)) {
+            return state[QUEUE_DATE_KEY];
+        }
+        return null;
     }
 
     // Returns the index of the first occupied slot, or -1 if none.

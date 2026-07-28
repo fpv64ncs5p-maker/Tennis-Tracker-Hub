@@ -33,12 +33,23 @@ class SupabaseSync {
     // failed upload can never be overwritten by the next match.
     var _slot;
 
+    // v1.5.1: when this upload is a RETRY of an earlier match, the real
+    // match-end timestamp (stamped at queue time) is set here so the row
+    // gets the date it was played, not the date it finally uploaded.
+    // null = live upload → use "now" (unchanged behaviour).
+    var _dateOverride;
+
     function initialize() {
         _slot = -1;
+        _dateOverride = null;
     }
 
     function setSlot(i) {
         _slot = i;
+    }
+
+    function setDate(iso) {
+        _dateOverride = iso;
     }
 
     // ─────────────────────────────────────────────────────────
@@ -146,8 +157,12 @@ class SupabaseSync {
         // preventing makeWebRequest from firing. hr_avg/hr_max are
         // always null for now so we simply leave them out; Supabase
         // will store NULL via the column default.
+        // v1.5.1: a retried upload carries the timestamp of the moment
+        // the match ENDED; a live upload has no override and stamps now.
+        var matchDate = (_dateOverride != null) ? _dateOverride : formatTimestampUtc();
+
         var payload = {
-            "match_date"           => formatTimestampUtc(),
+            "match_date"           => matchDate,
             "match_type"           => engine.matchType,
             "format"               => formatPresetString(engine),
             "result"               => matchResult(engine),

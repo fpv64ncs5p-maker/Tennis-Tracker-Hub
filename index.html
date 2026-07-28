@@ -8071,6 +8071,10 @@ document.addEventListener('DOMContentLoaded',async ()=>{
   renderClimbTemplates();
   renderGymMacroContextBanner();
   renderHome();
+  // 2026-07-28: pull watch matches from Supabase on load (fire-and-forget) so
+  // Home's Tennis Momentum is populated without having to open the Tennis tab.
+  // Re-renders Home + Tennis itself when the rows arrive; silent no-op offline.
+  _fetchSbMatches();
   _restoreDraftClimb();
   _restoreGymDraft();
   // Migrate gym session exercises missing type field (from old template loads)
@@ -8302,8 +8306,13 @@ function toggleHiddenTennis(){_showHiddenTennis=!_showHiddenTennis;renderTennis(
 // ── Supabase matches cache ────────────────────────────────────────────────────
 let _sbMatches=[];
 let _sbFetched=false;
+// 2026-07-28: in-flight guard. The fetch is now kicked off at startup AND by
+// renderTennis(), so without this a fast tab-open could fire two requests.
+let _sbFetching=false;
 
 async function _fetchSbMatches(){
+  if(_sbFetching)return;
+  _sbFetching=true;
   try{
     const res=await fetch(
       `${_SB_URL}/rest/v1/matches?select=*&order=match_date.desc`,
@@ -8343,7 +8352,12 @@ async function _fetchSbMatches(){
     }));
     _sbFetched=true;
     renderTennis();
+    // 2026-07-28: Home's Tennis Momentum card reads _sbMatches too, so it must
+    // repaint once the rows land — otherwise a fresh page load always showed
+    // "No tennis data yet" until the Tennis tab had been opened at least once.
+    renderHome();
   }catch(e){/* silent fail — offline or network error */}
+  finally{_sbFetching=false;}
 }
 
 // ── Tennis tab mode ──────────────────────────────────────────────────────────
