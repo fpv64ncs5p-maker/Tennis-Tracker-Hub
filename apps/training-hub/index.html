@@ -9334,7 +9334,9 @@ const TS_FORMATS={
 
 function tsNewPlayer(){return{points:0,games:0,sets:0,winners:0,unforcedErrors:0,doubleFaults:0,
   servePtsPlayed:0,servePtsWon:0,returnPtsPlayed:0,returnPtsWon:0,
-  tiebreakPointsWon:0,tiebreakPointsLost:0,tiebreaksWon:0};}
+  tiebreakPointsWon:0,tiebreakPointsLost:0,tiebreaksWon:0,
+  // per-set counters — captured into setHistory on set end, then reset
+  setW:0,setE:0,setD:0,setSrvP:0,setSrvW:0};}
 
 function tsCreate(cfg){
   const f=TS_FORMATS[cfg.format]||TS_FORMATS.best_of_3;
@@ -9374,11 +9376,12 @@ function tsInput(e,side,type){
   const actor=side==='a'?e.a:e.b, other=side==='a'?e.b:e.a;
   const inTB=e.inTiebreak||e.inSuperTiebreak;
   if(type===TS_WON){
-    actor.winners++;
+    actor.winners++; actor.setW++;
     if(inTB){actor.tiebreakPointsWon++;other.tiebreakPointsLost++;}
     tsAward(e,actor,other);
   }else{
-    if(type===TS_ERR) actor.unforcedErrors++; else actor.doubleFaults++;
+    if(type===TS_ERR){ actor.unforcedErrors++; actor.setE++; }
+    else            { actor.doubleFaults++;  actor.setD++; }
     if(inTB){actor.tiebreakPointsLost++;other.tiebreakPointsWon++;}
     tsAward(e,other,actor);
   }
@@ -9388,8 +9391,8 @@ function tsInput(e,side,type){
 function tsRecordServe(e,winner){
   const server  =e.aServing?e.a:e.b;
   const receiver=e.aServing?e.b:e.a;
-  server.servePtsPlayed++; receiver.returnPtsPlayed++;
-  if(winner===server) server.servePtsWon++; else receiver.returnPtsWon++;
+  server.servePtsPlayed++; receiver.returnPtsPlayed++; server.setSrvP++;
+  if(winner===server){ server.servePtsWon++; server.setSrvW++; } else receiver.returnPtsWon++;
   if(e.inTiebreak||e.inSuperTiebreak){
     e.tbPointsPlayed++;
     if(e.tbPointsPlayed%2===1) e.aServing=!e.aServing;
@@ -9465,10 +9468,15 @@ function tsAddSet(e,winner){
     else if(winner===e.a){ ap=7; bp=6; } else { ap=6; bp=7; }
   }
   else { ap=e.a.games; bp=e.b.games; }
-  e.setHistory.push({a:ap,b:bp,tb});
+  // per-set stats snapshot (tsAddSet always runs before tsResetSet)
+  const snap=p=>({w:p.setW,e:p.setE,d:p.setD,srvP:p.setSrvP,srvW:p.setSrvW});
+  e.setHistory.push({a:ap,b:bp,tb,sa:snap(e.a),sb:snap(e.b)});
 }
 
-function tsResetSet(e){ e.a.games=0; e.a.points=0; e.b.games=0; e.b.points=0; }
+function tsResetSet(e){
+  e.a.games=0; e.a.points=0; e.b.games=0; e.b.points=0;
+  [e.a,e.b].forEach(p=>{p.setW=0;p.setE=0;p.setD=0;p.setSrvP=0;p.setSrvW=0;});
+}
 function tsCheckMatch(e,winner){ if(winner.sets>=e.setsToWin) e.matchOver=true; }
 
 // Deciding set becomes a super tiebreak BEFORE any point is played
@@ -9788,6 +9796,31 @@ function tsDeleteSheet(id){
 
 function tsPct(won,played){ return played>0?Math.round(won/played*100)+'%':'—'; }
 
+// Per-set breakdown. Sheets saved before per-set stats existed have no
+// .sa/.sb — those rows just show the games score.
+function tsWED(x){ return x?`${x.w}/${x.e}/${x.d}`:'—'; }
+function tsSetTableHtml(s){
+  const sets=s.setHistory||[];
+  if(!sets.length) return '';
+  const any=sets.some(st=>st.sa);
+  const rows=sets.map((st,i)=>`<tr>
+    <td style="padding:6px 4px;font-size:12px;color:var(--muted)">Set ${i+1}</td>
+    <td style="padding:6px 4px;font-size:14px;font-weight:800;text-align:center">${st.a}-${st.b}${st.tb?'<span style="font-size:11px;font-weight:600;color:var(--muted)">('+Math.min(st.tb.a,st.tb.b)+')</span>':''}</td>
+    ${any?`<td style="padding:6px 4px;font-size:13px;text-align:center">${tsWED(st.sa)}</td>
+           <td style="padding:6px 4px;font-size:13px;text-align:center">${tsWED(st.sb)}</td>`:''}
+  </tr>`).join('');
+  return `<div class="card">
+    <div style="font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.06em;margin-bottom:6px">SET BY SET</div>
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td></td><td style="text-align:center;font-size:11px;color:var(--muted);font-weight:700">SCORE</td>
+        ${any?`<td style="text-align:center;font-size:11px;font-weight:800">${esc(s.nameA)}</td>
+               <td style="text-align:center;font-size:11px;font-weight:800">${esc(s.nameB)}</td>`:''}</tr>
+      ${rows}
+    </table>
+    ${any?'<div style="font-size:11px;color:var(--muted);margin-top:6px">Winning shots / unforced errors / double faults</div>':''}
+  </div>`;
+}
+
 function tsRenderDetail(){
   const wrap=document.getElementById('ts-detail-body');
   const s=tsSheets().find(x=>x.id===_tsDetailId);
@@ -9813,6 +9846,7 @@ function tsRenderDetail(){
       <div style="font-size:26px;font-weight:800;letter-spacing:.04em;margin:10px 0 4px">${esc(s.scoreLine||'—')}</div>
       <div style="font-size:12px;color:var(--muted)">${esc(s.formatLabel||'')} · ${esc(s.matchType==='doubles'?'Doubles':'Singles')}${s.durationMin?' · '+s.durationMin+' min':''}</div>
     </div>
+    ${tsSetTableHtml(s)}
     <div class="card">
       <div style="font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.06em;margin-bottom:6px">MATCH STATS</div>
       <table style="width:100%;border-collapse:collapse">
@@ -9855,8 +9889,14 @@ function tsExport(id){
 function tsReportHtml(s){
   const a=s.a,b=s.b, w=s.winner?(s.winner==='a'?s.nameA:s.nameB):null;
   const aPts=a.servePtsPlayed+a.returnPtsPlayed, bPts=b.servePtsPlayed+b.returnPtsPlayed;
-  const setRows=(s.setHistory||[]).map((st,i)=>
-    `<tr><td>Set ${i+1}</td><td class="n">${st.a}${st.tb?' ('+st.tb.a+')':''}</td><td class="n">${st.b}${st.tb?' ('+st.tb.b+')':''}</td></tr>`
+  const sets=s.setHistory||[];
+  const perSet=sets.some(st=>st.sa);
+  const setRows=sets.map((st,i)=>
+    `<tr><td>Set ${i+1}</td>`+
+    `<td class="n">${st.a}${st.tb?' ('+st.tb.a+')':''}</td><td class="n">${st.b}${st.tb?' ('+st.tb.b+')':''}</td>`+
+    (perSet?`<td class="n">${tsWED(st.sa)}</td><td class="n">${tsWED(st.sb)}</td>`+
+            `<td class="n">${st.sa?st.sa.srvW+'/'+st.sa.srvP:'—'}</td><td class="n">${st.sb?st.sb.srvW+'/'+st.sb.srvP:'—'}</td>`:'')+
+    `</tr>`
   ).join('');
   const row=(l,av,bv)=>`<tr><td>${l}</td><td class="n">${av}</td><td class="n">${bv}</td></tr>`;
   return `
@@ -9865,7 +9905,9 @@ function tsReportHtml(s){
     <div class="pr-score">${esc(s.scoreLine||'—')}</div>
     <div style="font-size:12pt;margin-bottom:4px">${w?'<strong>Winner: '+esc(w)+'</strong>':'<em>Match unfinished</em>'}</div>
     ${setRows?`<h2>Set by set</h2><table>
-      <tr><th></th><th class="n">${esc(s.nameA)}</th><th class="n">${esc(s.nameB)}</th></tr>${setRows}</table>`:''}
+      <tr><th></th><th class="n" colspan="2">Games</th>${perSet?`<th class="n" colspan="2">Winners / errors / DFs</th><th class="n" colspan="2">Service points won</th>`:''}</tr>
+      <tr><th></th><th class="n">${esc(s.nameA)}</th><th class="n">${esc(s.nameB)}</th>${perSet?`<th class="n">${esc(s.nameA)}</th><th class="n">${esc(s.nameB)}</th><th class="n">${esc(s.nameA)}</th><th class="n">${esc(s.nameB)}</th>`:''}</tr>
+      ${setRows}</table>`:''}
     <h2>Match statistics</h2>
     <table>
       <tr><th></th><th class="n">${esc(s.nameA)}</th><th class="n">${esc(s.nameB)}</th></tr>
