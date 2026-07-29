@@ -979,6 +979,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       </select>
     </div>
     <div id="ex-autofill" style="display:none">
+      <div id="ex-custom-badge" style="display:none;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;color:var(--muted)"></div>
       <!-- STRENGTH fields -->
       <div id="ex-strength-fields">
         <div class="form-row cols3">
@@ -1038,6 +1039,70 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div class="flex-gap8">
       <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-exercise')">Cancel</button>
       <button class="btn btn-gym" style="flex:2" onclick="addExerciseToSession()">Add to Session</button>
+    </div>
+  </div>
+</div>
+
+<!-- NEW LIBRARY EXERCISE MODAL -->
+<div class="modal-overlay" role="dialog" aria-modal="true" id="modal-new-exercise">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">➕ New Exercise</div>
+      <button class="modal-close" aria-label="Close" onclick="closeModal('modal-new-exercise')">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Saved to your library — available in Add Exercise, Build Session and templates.</div>
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="nex-name" placeholder="e.g. Bulgarian Split Squat" maxlength="60">
+    </div>
+    <div class="form-group">
+      <label>Category</label>
+      <select id="nex-cat"></select>
+    </div>
+    <div class="form-row cols2">
+      <div>
+        <label>Equipment</label>
+        <select id="nex-equip">
+          <option value="m">Machine</option>
+          <option value="bw">Bodyweight / free</option>
+        </select>
+      </div>
+      <div>
+        <label>Type</label>
+        <select id="nex-type" onchange="onNewExTypeChange()">
+          <option value="strength">Strength</option>
+          <option value="cardio">Cardio / timed</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row cols3">
+      <div>
+        <label>Sets</label>
+        <input type="number" inputmode="numeric" id="nex-sets" value="3" min="1" max="20">
+      </div>
+      <div>
+        <label>Reps / Time</label>
+        <input type="text" id="nex-reps" placeholder="10 or 1×30''">
+      </div>
+      <div>
+        <label>Rest</label>
+        <input type="text" id="nex-rest" placeholder="2'">
+      </div>
+    </div>
+    <div class="form-row cols2" id="nex-cardio-labels" style="display:none">
+      <div>
+        <label>Distance label</label>
+        <input type="text" id="nex-dist-label" placeholder="Distance (km)">
+      </div>
+      <div>
+        <label>Rate label</label>
+        <input type="text" id="nex-rpm-label" placeholder="Avg RPM">
+      </div>
+    </div>
+    <div class="flex-gap8">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-new-exercise')">Cancel</button>
+      <button class="btn btn-gym" style="flex:2" onclick="saveNewExercise()">💾 Save to Library</button>
     </div>
   </div>
 </div>
@@ -1542,6 +1607,9 @@ const DB = {
   gymSessions(){return this.get('gym_sessions')||[]},
   saveGym(s){const a=this.gymSessions();a.unshift(s);this.set('gym_sessions',a)},
   updateGym(s){const a=this.gymSessions().map(x=>String(x.id)===String(s.id)?s:x);this.set('gym_sessions',a)},
+  customExercises(){return this.get('custom_exercises')||[]},
+  saveCustomExercise(ex){const a=this.customExercises();a.push(ex);this.set('custom_exercises',a)},
+  deleteCustomExercise(name){const a=this.customExercises().filter(e=>e.name!==name);this.set('custom_exercises',a)},
   gymTemplates(){return this.get('gym_templates')||[]},
   saveTemplate(t){const a=this.gymTemplates();a.push(t);this.set('gym_templates',a)},
   deleteTemplate(id){const a=this.gymTemplates().filter(t=>t.id!==id);this.set('gym_templates',a)},
@@ -1601,7 +1669,8 @@ function checkDirtyBeforeNav(targetTab){
 const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'climb_sessions','climb_assessments','plan_data','rehab_data','macro_data',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
-  'gym_height','tennis_matches','tennis_overlay','custom_gyms','fb_custom_ex'];
+  'gym_height','tennis_matches','tennis_overlay','custom_gyms','fb_custom_ex',
+  'custom_exercises'];
 
 function exportAllData(){
   const data={};
@@ -1887,16 +1956,33 @@ function suggestWeightFull(exName, intensity){
   const pr = DB.ormCache()[exName] || null;
   const prNote = pr ? ` · PR 1RM ${pr.orm} kg (${pr.date})` : '';
 
-  // Most recent logged session entry with weight+reps (by session date)
+  // Most recent logged session entry for this exercise (by session date).
+  //
+  // 1RM derivation, in priority order:
+  //   a) stored effort %  → orm = weight ÷ (intensity/100)   ← exact and STABLE
+  //   b) Epley from reps  → orm = weight × (1 + reps/30)     ← fallback only
+  //
+  // Why (a) first: working sets are prescribed at a target %1RM and are NOT
+  // taken to failure, so Epley under-reads them. Feeding that estimate back in
+  // each session multiplies it by intensity×(1+reps/30) — 0.933 per session in
+  // hypertrophy, 0.800 in deload — so the suggestion ratchets downward over a
+  // macrocycle (100 kg → ~20 kg in one full cycle). Dividing by the effort %
+  // the set was actually performed at returns the same 1RM every time, while
+  // still following any weight change Jo makes in-session.
   let sess = null;
   for(const s of DB.gymSessions()){
     if(sess && (s.date||'') <= sess.date) continue;
     for(const e of (s.exercises||[])){
       if(e.name !== exName) continue;
       const w = parseFloat(e.weight);
+      if(!w || isNaN(w) || w <= 0) continue;
       const reps = parseFloat(e.reps);
-      if(!w || isNaN(w) || w <= 0 || isNaN(reps) || reps <= 0) continue;
-      sess = { orm: w*(1+reps/30), date: s.date||'', method: `${reps} reps (Epley)` };
+      const eff  = parseFloat(e.intensity);
+      if(!isNaN(eff) && eff >= 30 && eff <= 100){
+        sess = { orm: w/(eff/100), date: s.date||'', method: `${w} kg @ ${eff}%` };
+      } else if(!isNaN(reps) && reps > 0){
+        sess = { orm: w*(1+reps/30), date: s.date||'', method: `${reps} reps (Epley)` };
+      } else continue;
       break;
     }
   }
@@ -1948,6 +2034,51 @@ function phaseExDefaults(phaseId){
     power:       { sets: 4, reps: '3',  rest: "4'" },
     deload:      { sets: 2, reps: '10', rest: "1'30\"" }
   }[phaseId] || null;
+}
+
+// ══════════════════════════════════════════════════
+//  CUSTOM EXERCISES (user-added gym library entries)
+// ══════════════════════════════════════════════════
+// Stored under 'custom_exercises' and merged into the EXERCISES array in place
+// at startup, so every existing lookup (filterExercises, generatePlan,
+// suggestWeight, templates) picks them up with no changes. Custom entries carry
+// custom:true so they can be re-synced / removed.
+// NOTE: Climbing Gym (fingerboard) has its own separate flow —
+// addFBCustomExercise() / 'fb_custom_ex' — so CG categories are not offered here.
+const CUSTOM_EX_CATS=[
+  {value:'Warm-up',label:'Warm-up'},
+  {value:'Inferior Members',label:'Inferior Members'},
+  {value:'Superior – Machine',label:'Superior – Machine'},
+  {value:'Superior – No Machine',label:'Superior – No Machine'},
+  {value:'Core',label:'Core'},
+  {value:'Wrist',label:'Wrist'},
+  {value:'Rehab',label:'Rehab'},
+];
+
+// Rebuild the custom slice of EXERCISES from storage (mutates in place).
+function syncCustomExercises(){
+  for(let i=EXERCISES.length-1;i>=0;i--){if(EXERCISES[i].custom)EXERCISES.splice(i,1);}
+  DB.customExercises().forEach(e=>EXERCISES.push({...e,custom:true}));
+}
+
+// ── Current gym macro phase helpers ──────────────────────────────────────────
+const PHASE_INTENSITY={hypertrophy:70,strength:85,power:90,deload:60};
+
+// Returns the active gym macro phase id ('hypertrophy'|'strength'|'power'|'deload')
+// or null when no macrocycle is configured / we're outside its date range.
+function currentGymPhaseId(){
+  try{
+    const ranges=gymMacroDateRanges(DB.gymMacroData());
+    const idx=currentGymMacroPhaseIndex(ranges);
+    if(idx>=0&&idx<GYM_MACRO_PHASES.length)return GYM_MACRO_PHASES[idx].id;
+  }catch(e){}
+  return null;
+}
+
+// Default working intensity (% 1RM) for the current phase; falls back to 85.
+function currentPhaseIntensity(){
+  const id=currentGymPhaseId();
+  return (id&&PHASE_INTENSITY[id])||85;
 }
 
 function gradeToBand(grade){
@@ -2061,13 +2192,9 @@ function gymMode(mode){
     renderTemplates();
     renderGymMacroContextBanner('gym-build-macro-banner');
     // Seed intensity from current macro phase
-    const _gmData=DB.gymMacroData();
-    const _gmRanges=gymMacroDateRanges(_gmData);
-    const _gmIdx=currentGymMacroPhaseIndex(_gmRanges);
-    if(_gmIdx>=0&&_gmIdx<GYM_MACRO_PHASES.length){
-      const _PHASE_INT={hypertrophy:70,strength:85,power:90,deload:60};
-      const _seed=_PHASE_INT[GYM_MACRO_PHASES[_gmIdx].id];
-      if(_seed)document.getElementById('build-intensity').value=_seed;
+    const _seedPhase=currentGymPhaseId();
+    if(_seedPhase&&PHASE_INTENSITY[_seedPhase]){
+      document.getElementById('build-intensity').value=PHASE_INTENSITY[_seedPhase];
     }
   }
   if(mode==='history')renderGymHistory();
@@ -2334,12 +2461,8 @@ function loadTemplate(id){
   const t=DB.gymTemplates().find(x=>x.id===id);
   if(!t)return;
   // Use current macro phase intensity, fallback to template's stored intensity
-  const _PHASE_INT={hypertrophy:70,strength:85,power:90,deload:60};
-  const _gmRanges=gymMacroDateRanges(DB.gymMacroData());
-  const _gmIdx=currentGymMacroPhaseIndex(_gmRanges);
-  const _phaseId=(_gmIdx>=0&&_gmIdx<GYM_MACRO_PHASES.length)?GYM_MACRO_PHASES[_gmIdx].id:null;
-  const phaseIntensity=_phaseId?(_PHASE_INT[_phaseId]||85):85;
-  loadPlanIntoLog(t.exercises, phaseIntensity, _phaseId);
+  const _phaseId=currentGymPhaseId();
+  loadPlanIntoLog(t.exercises, currentPhaseIntensity(), _phaseId);
   toast(`⭐ "${t.name}" loaded — add more exercises below`);
 }
 
@@ -2370,6 +2493,9 @@ function openAddExercise(){
   exFilterArea=''; exFilterEquip='';
   _renderExAreaChips('gym');
   document.querySelectorAll('#ex-equip-chips .ex-chip').forEach((b,i)=>b.classList.toggle('active',i===0));
+  // Seed effort % from the current macro phase (deload 60 · hypertrophy 70 · strength 85 · power 90)
+  const _intEl=document.getElementById('ex-intensity');
+  if(_intEl)_intEl.value=currentPhaseIntensity();
   filterExercises();
   document.getElementById('ex-autofill').style.display='none';
   document.getElementById('ex-suggest').style.display='none';
@@ -2423,16 +2549,20 @@ function filterExercises(){
     return areaOk&&equipOk;
   });
   sel.innerHTML='<option value="">— select —</option>'+
-    filtered.map(e=>`<option value="${e.name}">${e.name}</option>`).join('');
+    filtered.map(e=>`<option value="${esc(e.name)}">${e.custom?'★ ':''}${esc(e.name)}</option>`).join('')+
+    (isFB?'':'<option value="__new__">➕ Create new exercise…</option>');
   document.getElementById('ex-autofill').style.display='none';
 }
 
 function onExerciseSelect(){
-  const name=document.getElementById('ex-name').value;
+  const nameEl=document.getElementById('ex-name');
+  const name=nameEl.value;
+  if(name==='__new__'){nameEl.value='';document.getElementById('ex-autofill').style.display='none';openNewExercise();return}
   if(!name){document.getElementById('ex-autofill').style.display='none';return}
   const ex=EXERCISES.find(e=>e.name===name);
   if(!ex)return;
   document.getElementById('ex-autofill').style.display='block';
+  _renderCustomExBadge(ex);
   const isCardio=!!ex.cardio;
   document.getElementById('ex-strength-fields').style.display=isCardio?'none':'block';
   document.getElementById('ex-cardio-fields').style.display=isCardio?'block':'none';
@@ -2446,12 +2576,94 @@ function onExerciseSelect(){
     document.getElementById('ex-dist-label').textContent=ex.distLabel||'Distance';
     document.getElementById('ex-rpm-label').textContent=ex.rpmLabel||'Avg RPM';
   } else {
-    document.getElementById('ex-sets').value=ex.sets;
-    document.getElementById('ex-reps').value=ex.reps;
-    // Use goal-based rest if a session goal is set, otherwise fall back to exercise default
-    document.getElementById('ex-rest').value=_goalDefaultRest()||ex.rest;
+    // Phase-aware sets / reps / rest — macro phase overrides the library default
+    const phDef=phaseExDefaults(currentGymPhaseId());
+    document.getElementById('ex-sets').value=phDef?phDef.sets:ex.sets;
+    document.getElementById('ex-reps').value=phDef?phDef.reps:ex.reps;
+    // Rest priority: explicit session goal → macro phase → exercise default
+    document.getElementById('ex-rest').value=_goalDefaultRest()||(phDef?phDef.rest:null)||ex.rest;
     calcSuggestedWeight();
   }
+}
+
+// ── New library exercise ─────────────────────────────────────────
+// Shows a "your exercise · remove" strip when a custom entry is selected
+function _renderCustomExBadge(ex){
+  const el=document.getElementById('ex-custom-badge');
+  if(!el)return;
+  if(!ex.custom){el.style.display='none';el.innerHTML='';return}
+  el.style.display='flex';
+  el.innerHTML=`<span>★ Your exercise</span>
+    <button class="btn btn-ghost" style="padding:3px 9px;font-size:11px;color:var(--muted)" onclick="removeCustomExercise('${esc(ex.name).replace(/'/g,"\\'")}')">🗑 Remove from library</button>`;
+}
+
+function openNewExercise(){
+  const catSel=document.getElementById('nex-cat');
+  catSel.innerHTML=CUSTOM_EX_CATS.map(c=>`<option value="${c.value}">${c.label}</option>`).join('');
+  // Pre-select the category matching the active filter chip
+  const AREA_TO_CAT={'Inferior':'Inferior Members','Superior':'Superior – Machine','Core':'Core','Wrist':'Wrist','Warm-up':'Warm-up','Rehab':'Rehab'};
+  if(AREA_TO_CAT[exFilterArea])catSel.value=AREA_TO_CAT[exFilterArea];
+  document.getElementById('nex-name').value='';
+  document.getElementById('nex-equip').value='bw';
+  document.getElementById('nex-type').value='strength';
+  document.getElementById('nex-sets').value=3;
+  document.getElementById('nex-reps').value='';
+  document.getElementById('nex-rest').value='';
+  document.getElementById('nex-dist-label').value='';
+  document.getElementById('nex-rpm-label').value='';
+  onNewExTypeChange();
+  openModal('modal-new-exercise');
+}
+
+function onNewExTypeChange(){
+  const isCardio=document.getElementById('nex-type').value==='cardio';
+  document.getElementById('nex-cardio-labels').style.display=isCardio?'':'none';
+  const reps=document.getElementById('nex-reps');
+  if(isCardio&&!reps.value)reps.placeholder="20'";
+}
+
+function saveNewExercise(){
+  const name=document.getElementById('nex-name').value.trim();
+  if(!name){toast('Give the exercise a name');return}
+  if(name==='__new__'){toast('Pick a different name');return}
+  if(EXERCISES.some(e=>e.name.toLowerCase()===name.toLowerCase())){
+    toast('An exercise with that name already exists');return;
+  }
+  const cat=document.getElementById('nex-cat').value;
+  const isCardio=document.getElementById('nex-type').value==='cardio';
+  const sets=parseInt(document.getElementById('nex-sets').value)||(isCardio?1:3);
+  const reps=document.getElementById('nex-reps').value.trim()||(isCardio?"20'":'10');
+  const rest=document.getElementById('nex-rest').value.trim()||(isCardio?'-':"2'");
+  const ex={
+    name,cat,
+    equip:document.getElementById('nex-equip').value,
+    sets,reps,rest,
+    createdAt:new Date().toISOString()
+  };
+  if(isCardio){
+    ex.cardio=true;
+    ex.distLabel=document.getElementById('nex-dist-label').value.trim()||'Distance (km)';
+    ex.rpmLabel=document.getElementById('nex-rpm-label').value.trim()||'Avg RPM';
+  }
+
+  DB.saveCustomExercise(ex);
+  syncCustomExercises();
+  closeModal('modal-new-exercise');
+
+  // Refresh the picker and select the new exercise straight away
+  filterExercises();
+  const sel=document.getElementById('ex-name');
+  if(sel&&[...sel.options].some(o=>o.value===name)){sel.value=name;onExerciseSelect();}
+  toast(`★ "${name}" added to your library`);
+}
+
+function removeCustomExercise(name){
+  if(!confirm(`Remove "${name}" from your library?\n\nSessions you already logged with it are not affected.`))return;
+  DB.deleteCustomExercise(name);
+  syncCustomExercises();
+  filterExercises();
+  document.getElementById('ex-autofill').style.display='none';
+  toast('Removed from library');
 }
 
 function calcSuggestedWeight(){
@@ -8058,6 +8270,7 @@ function getDelta(last,current){
 
 // ══════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded',async ()=>{
+  syncCustomExercises(); // merge user-added library entries before any render
   document.getElementById('gym-date').value=today();
   document.getElementById('gym-height').value=localStorage.getItem('gym_height')||'';
   document.getElementById('fb-date').value=today();
@@ -8180,6 +8393,7 @@ async function syncFromCloud(){
     if(row.last_modified){localStorage.setItem('_local_modified',row.last_modified.toString());}
     _setSyncStatus('ok');
     if(changed){
+      syncCustomExercises(); // pulled library entries may differ from local
       const activeNav=document.querySelector('.nav-btn.active');
       const tab=activeNav?activeNav.classList[1]:'home';
       switchTab(tab);
