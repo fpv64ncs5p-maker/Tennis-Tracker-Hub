@@ -373,6 +373,55 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .login-box label{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;text-align:left}
 /* ── Sync indicator ── */
 #sync-status{font-size:11px;color:var(--muted);white-space:nowrap;padding-top:6px}
+
+/* ══ Tennis hub ══ */
+.hub-card{display:block;width:100%;text-align:left;background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--tennis);border-radius:var(--radius);padding:16px 14px;margin-bottom:12px;box-shadow:0 4px 20px rgba(0,0,0,.07),0 1px 4px rgba(0,0,0,.05);cursor:pointer;font-family:inherit;color:var(--text);-webkit-tap-highlight-color:transparent}
+.hub-card:active{transform:scale(.99)}
+.hub-card .hub-ico{font-size:26px;line-height:1}
+.hub-card .hub-t{font-size:17px;font-weight:800;margin-top:6px}
+.hub-card .hub-d{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.4}
+.hub-card .hub-badge{display:inline-block;margin-top:8px;font-size:11px;font-weight:800;letter-spacing:.04em;background:var(--tennis-dim);color:var(--tennis);border-radius:20px;padding:3px 10px}
+.back-link{background:none;border:none;color:var(--tennis);font-weight:700;font-size:14px;cursor:pointer;padding:2px 0;margin-bottom:8px;font-family:inherit;-webkit-tap-highlight-color:transparent}
+
+/* ══ Live scoring ══ */
+#ts-live{user-select:none;-webkit-user-select:none}
+.ts-scorebox{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center;margin-bottom:10px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+.ts-sets{font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.06em;min-height:18px}
+.ts-pts{font-size:38px;font-weight:800;line-height:1.1;margin-top:2px}
+.ts-names{display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;font-size:13px;font-weight:800;color:var(--muted);margin-bottom:2px}
+.ts-changeover{background:#fef3c7;color:var(--yellow);font-size:12px;font-weight:800;letter-spacing:.06em;border-radius:20px;padding:4px 12px;display:inline-block;margin-top:6px}
+.ts-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ts-col{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+.ts-col h4{font-size:13px;font-weight:800;text-align:center;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ts-btn{width:100%;border-radius:var(--radius-sm);font-weight:800;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent;border:2px solid transparent}
+.ts-won{background:var(--tennis);color:#fff;padding:20px 6px;font-size:17px;letter-spacing:.04em;margin-bottom:8px}
+.ts-sub{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ts-err{background:none;color:var(--red);border-color:var(--red);padding:13px 2px;font-size:12.5px}
+.ts-df{background:none;color:var(--yellow);border-color:var(--yellow);padding:13px 2px;font-size:12.5px}
+.ts-btn:disabled{opacity:.28;cursor:default}
+.ts-btn:active:not(:disabled){transform:scale(.97);filter:brightness(.94)}
+.ts-undo{width:100%;margin-top:10px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:var(--radius-sm);padding:12px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit}
+.ts-serve{color:var(--tennis)}
+
+/* ══ Print / PDF export ══ */
+#print-root{display:none}
+@media print{
+  body>*{display:none!important}
+  body>#print-root{display:block!important}
+  body{background:#fff!important}
+  @page{margin:14mm}
+  #print-root{color:#000;font-family:system-ui,-apple-system,sans-serif;font-size:12pt}
+  #print-root table{width:100%;border-collapse:collapse;margin:8px 0 16px}
+  #print-root th,#print-root td{border:1px solid #999;padding:5px 8px;text-align:left;font-size:11pt}
+  #print-root th{background:#eee;font-weight:700}
+  #print-root td.n,#print-root th.n{text-align:center}
+  #print-root h1{font-size:20pt;margin:0 0 2px}
+  #print-root h2{font-size:13pt;margin:16px 0 4px;border-bottom:2px solid #000;padding-bottom:2px}
+  #print-root .pr-sub{font-size:11pt;color:#444;margin-bottom:14px}
+  #print-root .pr-score{font-size:24pt;font-weight:800;letter-spacing:.04em;margin:6px 0}
+  #print-root .pr-foot{margin-top:22px;font-size:9pt;color:#666;border-top:1px solid #ccc;padding-top:6px}
+  #print-root .pr-notes{white-space:pre-wrap;font-size:11pt}
+}
 </style>
 </head>
 <body>
@@ -896,6 +945,30 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     </div>
     <!-- TENNIS TAB -->
     <div id="tab-tennis" class="tab-panel">
+
+    <!-- ── TENNIS HUB (landing screen) ── -->
+    <div id="tennis-hub">
+      <div class="page-header">
+        <h1>🎾 Tennis</h1>
+        <p id="tennis-hub-sub">Matches &amp; scoring</p>
+      </div>
+      <button class="hub-card" onclick="tennisGo('matches')">
+        <div class="hub-ico">📋</div>
+        <div class="hub-t">My tennis matches</div>
+        <div class="hub-d">History, stats and watch matches — everything that counts towards your record.</div>
+        <div class="hub-badge" id="hub-matches-badge" style="display:none"></div>
+      </button>
+      <button class="hub-card" onclick="tennisGo('score')">
+        <div class="hub-ico">⏱️</div>
+        <div class="hub-t">Score a match</div>
+        <div class="hub-d">Keep score for someone else, export a PDF to share, then delete it. Kept separate from your own stats.</div>
+        <div class="hub-badge" id="hub-score-badge" style="display:none"></div>
+      </button>
+    </div>
+
+    <!-- ── MY TENNIS MATCHES ── -->
+    <div id="tennis-matches-view" style="display:none">
+      <button class="back-link" onclick="tennisGo('hub')">← Tennis</button>
       <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <div>
           <h1>🎾 Tennis</h1>
@@ -918,6 +991,75 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <div id="tennis-form-dots" style="display:flex;gap:5px;flex-wrap:wrap"></div>
       </div>
       <div id="tennis-list"></div>
+    </div>
+
+    <!-- ── SCORE A MATCH ── -->
+    <div id="tennis-score-view" style="display:none">
+
+      <!-- setup + saved scoresheets -->
+      <div id="ts-home">
+        <button class="back-link" onclick="tennisGo('hub')">← Tennis</button>
+        <div class="page-header">
+          <h1>⏱️ Score a match</h1>
+          <p>For someone else — never counts towards your stats</p>
+        </div>
+        <div id="ts-resume-banner" style="display:none"></div>
+        <div class="card">
+          <div style="font-size:13px;font-weight:800;color:var(--muted);letter-spacing:.05em;margin-bottom:10px">NEW SCORESHEET</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="form-group" style="margin-bottom:8px">
+              <label>Player / team A</label>
+              <input type="text" id="ts-name-a" placeholder="Name" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+            </div>
+            <div class="form-group" style="margin-bottom:8px">
+              <label>Player / team B</label>
+              <input type="text" id="ts-name-b" placeholder="Name" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:8px">
+            <label>Type</label>
+            <div style="display:flex;gap:6px">
+              <button class="pill-toggle active" data-ts-type="singles" onclick="tsSetType('singles')">Singles</button>
+              <button class="pill-toggle" data-ts-type="doubles" onclick="tsSetType('doubles')">Doubles</button>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:8px">
+            <label>Format</label>
+            <select id="ts-format" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px"></select>
+          </div>
+          <div class="form-group" style="margin-bottom:8px">
+            <label>Serves first</label>
+            <div style="display:flex;gap:6px">
+              <button class="pill-toggle active" data-ts-serve="a" onclick="tsSetServe('a')">A</button>
+              <button class="pill-toggle" data-ts-serve="b" onclick="tsSetServe('b')">B</button>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:12px">
+            <label>Event / location <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+            <input type="text" id="ts-event" placeholder="Club, round, competition…" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+          </div>
+          <button class="btn" onclick="tsStart()" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:13px;border-radius:var(--radius-sm);font-weight:800;font-size:15px">▶ Start scoring</button>
+        </div>
+        <div style="font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.06em;margin:18px 0 8px">SAVED SCORESHEETS</div>
+        <div id="ts-sheet-list"></div>
+      </div>
+
+      <!-- live scoring -->
+      <div id="ts-live" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+          <button class="back-link" style="margin:0" onclick="tsPause()">← Pause</button>
+          <button onclick="tsOpenFinish()" style="background:var(--tennis);color:#fff;border:none;border-radius:var(--radius-sm);padding:8px 14px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit">Finish ✓</button>
+        </div>
+        <div id="ts-board"></div>
+      </div>
+
+      <!-- saved scoresheet detail -->
+      <div id="ts-detail" style="display:none">
+        <button class="back-link" onclick="tsShow('home')">← Scoresheets</button>
+        <div id="ts-detail-body"></div>
+      </div>
+    </div>
+
     </div>
   </div>
 
@@ -2106,7 +2248,9 @@ function switchTab(tab){
   if(tab==='rehab')renderRehab();
   if(tab==='plan'){if(_plannerView==='monthly')renderMonthlyResume();else renderPlanner();}
   if(tab==='gym')renderGymHistory();
-  if(tab==='tennis')renderTennis();
+  // Tennis always lands on the hub (Jo's choice 2026-07-29) — the old
+  // history/stats screen is now the 'matches' sub-view.
+  if(tab==='tennis')tennisGo('hub');
 }
 
 // ══════════════════════════════════════════════════
@@ -9122,6 +9266,628 @@ function miniStat(label,value){
     <div style="font-size:10px;color:var(--muted);margin-top:1px">${label}</div>
   </div>`;
 }
+
+// ══════════════════════════════════════════════════
+//  TENNIS HUB NAVIGATION
+//  Tennis tab always lands on the hub; 'matches' is the old screen,
+//  'score' is the scoresheet module for scoring someone else's match.
+// ══════════════════════════════════════════════════
+let _tennisView='hub';
+function tennisGo(view){
+  _tennisView=view;
+  const ids={hub:'tennis-hub',matches:'tennis-matches-view',score:'tennis-score-view'};
+  Object.keys(ids).forEach(k=>{
+    const el=document.getElementById(ids[k]);
+    if(el) el.style.display = (k===view?'block':'none');
+  });
+  if(view==='hub')     renderTennisHub();
+  if(view==='matches') renderTennis();
+  if(view==='score')   { if(_tsScreen==='live'&&!_tsEngine) tsShow('home'); else tsShow(_tsScreen); }
+  window.scrollTo(0,0);
+}
+
+function renderTennisHub(){
+  // "My matches" badge — count of everything that counts towards Jo's record
+  if(!_sbFetched) _fetchSbMatches();
+  const mb=document.getElementById('hub-matches-badge');
+  if(mb){
+    const n=_sbMatches.length+_getTennisMatches().length;
+    mb.style.display=n>0?'inline-block':'none';
+    mb.textContent=n>0?`${n} match${n===1?'':'es'}`:'';
+  }
+  // "Score a match" badge — a match in progress takes priority over the saved count
+  const sb=document.getElementById('hub-score-badge');
+  if(sb){
+    const draft=tsGetDraft(), n=tsSheets().length;
+    if(draft){ sb.style.display='inline-block'; sb.textContent='● MATCH IN PROGRESS'; }
+    else if(n>0){ sb.style.display='inline-block'; sb.textContent=`${n} saved`; }
+    else sb.style.display='none';
+  }
+}
+
+// showToast() was called in three places in the tennis code but never defined
+// (the real helper is toast()) — those calls silently threw. Alias, don't rename.
+function showToast(msg){toast(msg);}
+
+// ══════════════════════════════════════════════════
+//  TENNIS SCORESHEET — SCORING ENGINE
+//  JS port of the watch's TennisMatchEngine.mc, generalised to two
+//  sides (the watch only ever scores from Jo's perspective).
+//  Plain serialisable objects so the whole match state can be dropped
+//  into localStorage after every single point.
+// ══════════════════════════════════════════════════
+const TS_WON=0, TS_ERR=1, TS_DF=2;
+
+// Local-only storage. Deliberately NOT in DATA_KEYS and never written via
+// DB.set(): scoresheets must never reach Supabase, the cloud sync, or Jo's
+// own tennis stats. Same lesson as abandoned watch matches (2026-07-15).
+const TS_SHEETS_KEY='tennis_scoresheets';
+const TS_DRAFT_KEY ='_tennis_score_draft';
+
+const TS_FORMATS={
+  single_set:  {label:'1 Set',                 matchFormat:0,setsToWin:1,tiebreakEnabled:true, superTB:false},
+  best_of_3:   {label:'Best of 3',             matchFormat:0,setsToWin:2,tiebreakEnabled:true, superTB:false},
+  best_of_3_st:{label:'Best of 3 + Super TB',  matchFormat:0,setsToWin:2,tiebreakEnabled:true, superTB:true },
+  super_tb:    {label:'Super tiebreak (10)',   matchFormat:2,setsToWin:1,tiebreakEnabled:false,superTB:false},
+  tiebreak:    {label:'Tiebreak (7)',          matchFormat:1,setsToWin:1,tiebreakEnabled:false,superTB:false},
+};
+
+function tsNewPlayer(){return{points:0,games:0,sets:0,winners:0,unforcedErrors:0,doubleFaults:0,
+  servePtsPlayed:0,servePtsWon:0,returnPtsPlayed:0,returnPtsWon:0,
+  tiebreakPointsWon:0,tiebreakPointsLost:0,tiebreaksWon:0};}
+
+function tsCreate(cfg){
+  const f=TS_FORMATS[cfg.format]||TS_FORMATS.best_of_3;
+  const aFirst=cfg.serveFirst!=='b';
+  return {
+    v:1, id:'ts'+Date.now(),
+    nameA:cfg.nameA||'Player A', nameB:cfg.nameB||'Player B',
+    matchType:cfg.matchType||'singles', format:cfg.format||'best_of_3', event:cfg.event||'',
+    matchFormat:f.matchFormat, setsToWin:f.setsToWin,
+    tiebreakEnabled:f.tiebreakEnabled, superTiebreakFinalSet:f.superTB,
+    a:tsNewPlayer(), b:tsNewPlayer(),
+    inTiebreak:f.matchFormat===1, inSuperTiebreak:f.matchFormat===2,
+    matchOver:false, setHistory:[], hist:[],
+    aServing:aFirst, tbPointsPlayed:0, tbFirstServer:aFirst, needsChangeover:false,
+    startedAt:Date.now(), elapsedSec:0
+  };
+}
+
+// ── Undo stack ──────────────────────────────────────────────
+// Timer fields are excluded from the snapshot, otherwise an undo would
+// also rewind the clock.
+function tsSnap(e){
+  const {hist,elapsedSec,startedAt,...rest}=e;
+  return JSON.parse(JSON.stringify(rest));
+}
+function tsPush(e){ e.hist.push(tsSnap(e)); if(e.hist.length>200) e.hist.shift(); }
+function tsUndo(e){ if(!e.hist.length) return false; Object.assign(e,e.hist.pop()); return true; }
+
+// ── Point entry ─────────────────────────────────────────────
+// side: 'a'|'b' — the player who DID the thing.
+//   WON = they won the point outright, ERR = their unforced error,
+//   DF = their double fault. ERR and DF award the point to the other side.
+function tsInput(e,side,type){
+  if(e.matchOver) return;
+  e.needsChangeover=false;
+  tsPush(e);
+  const actor=side==='a'?e.a:e.b, other=side==='a'?e.b:e.a;
+  const inTB=e.inTiebreak||e.inSuperTiebreak;
+  if(type===TS_WON){
+    actor.winners++;
+    if(inTB){actor.tiebreakPointsWon++;other.tiebreakPointsLost++;}
+    tsAward(e,actor,other);
+  }else{
+    if(type===TS_ERR) actor.unforcedErrors++; else actor.doubleFaults++;
+    if(inTB){actor.tiebreakPointsLost++;other.tiebreakPointsWon++;}
+    tsAward(e,other,actor);
+  }
+}
+
+// Serve/return stats + tiebreak server rotation (1 point, then every 2)
+function tsRecordServe(e,winner){
+  const server  =e.aServing?e.a:e.b;
+  const receiver=e.aServing?e.b:e.a;
+  server.servePtsPlayed++; receiver.returnPtsPlayed++;
+  if(winner===server) server.servePtsWon++; else receiver.returnPtsWon++;
+  if(e.inTiebreak||e.inSuperTiebreak){
+    e.tbPointsPlayed++;
+    if(e.tbPointsPlayed%2===1) e.aServing=!e.aServing;
+  }
+}
+
+function tsAward(e,winner,loser){
+  tsRecordServe(e,winner);
+  if(e.inSuperTiebreak){
+    winner.points++;
+    const t=e.a.points+e.b.points; if(t>0&&t%6===0) e.needsChangeover=true;
+    tsCheckSuperTB(e,winner,loser); return;
+  }
+  if(e.inTiebreak){
+    winner.points++;
+    const t=e.a.points+e.b.points; if(t>0&&t%6===0) e.needsChangeover=true;
+    tsCheckTB(e,winner,loser); return;
+  }
+  const wp=winner.points, lp=loser.points;
+  if(wp===3&&lp===3)      winner.points=4;            // deuce → advantage
+  else if(wp===4)         tsWinGame(e,winner,loser);  // advantage → game
+  else if(wp===3&&lp===4) loser.points=3;             // back to deuce
+  else{
+    winner.points++;
+    if(winner.points===4&&loser.points<3) tsWinGame(e,winner,loser);
+  }
+}
+
+function tsWinGame(e,winner,loser){
+  winner.games++; winner.points=0; loser.points=0;
+  e.inTiebreak=false; e.aServing=!e.aServing; e.tbPointsPlayed=0;
+  if((e.a.games+e.b.games)%2===1) e.needsChangeover=true;  // change ends on odd games
+  tsCheckSet(e,winner,loser);
+}
+
+function tsCheckSet(e,winner,loser){
+  const wg=winner.games, lg=loser.games;
+  if(e.tiebreakEnabled&&wg===6&&lg===6){
+    e.inTiebreak=true; e.tbFirstServer=e.aServing; e.tbPointsPlayed=0; return;
+  }
+  if(wg>=6&&(wg-lg)>=2){
+    tsAddSet(e,winner); winner.sets++;
+    tsResetSet(e); tsCheckMatch(e,winner); tsEnterSuperTB(e);
+  }
+}
+
+function tsCheckTB(e,winner,loser){
+  if(winner.points>=7&&(winner.points-loser.points)>=2){
+    tsAddSet(e,winner);
+    e.inTiebreak=false; e.aServing=!e.tbFirstServer; e.tbPointsPlayed=0;
+    winner.sets++; winner.tiebreaksWon++;
+    tsResetSet(e); tsCheckMatch(e,winner); tsEnterSuperTB(e);
+  }
+}
+
+function tsCheckSuperTB(e,winner,loser){
+  if(winner.points>=10&&(winner.points-loser.points)>=2){
+    tsAddSet(e,winner);
+    e.inSuperTiebreak=false; e.aServing=!e.tbFirstServer; e.tbPointsPlayed=0;
+    winner.sets++; winner.tiebreaksWon++;
+    tsResetSet(e); tsCheckMatch(e,winner);
+  }
+}
+
+// Stores the tennis-convention set score, plus the raw tiebreak points so
+// the report can print 7-6(5).
+function tsAddSet(e,winner){
+  let ap,bp,tb=null;
+  if(e.inSuperTiebreak){ ap=e.a.points; bp=e.b.points; }
+  else if(e.inTiebreak){
+    tb={a:e.a.points,b:e.b.points};
+    if(e.matchFormat===1){ ap=e.a.points; bp=e.b.points; tb=null; }
+    else if(winner===e.a){ ap=7; bp=6; } else { ap=6; bp=7; }
+  }
+  else { ap=e.a.games; bp=e.b.games; }
+  e.setHistory.push({a:ap,b:bp,tb});
+}
+
+function tsResetSet(e){ e.a.games=0; e.a.points=0; e.b.games=0; e.b.points=0; }
+function tsCheckMatch(e,winner){ if(winner.sets>=e.setsToWin) e.matchOver=true; }
+
+// Deciding set becomes a super tiebreak BEFORE any point is played
+function tsEnterSuperTB(e){
+  if(e.matchOver||!e.superTiebreakFinalSet||e.setsToWin<2) return;
+  if((e.a.sets+e.b.sets)===(e.setsToWin*2-2)){
+    e.inSuperTiebreak=true; e.tbFirstServer=e.aServing; e.tbPointsPlayed=0;
+  }
+}
+
+function tsPointLabel(e,p){
+  if(e.inTiebreak||e.inSuperTiebreak) return String(p.points);
+  return ['0','15','30','40','Ad'][Math.min(Math.max(p.points,0),4)];
+}
+function tsWinnerSide(e){ return e.matchOver ? (e.a.sets>e.b.sets?'a':'b') : null; }
+
+// ══════════════════════════════════════════════════
+//  TENNIS SCORESHEET — STORAGE (local only)
+// ══════════════════════════════════════════════════
+function tsSheets(){try{return JSON.parse(localStorage.getItem(TS_SHEETS_KEY))||[]}catch{return[]}}
+function tsSetSheets(a){try{localStorage.setItem(TS_SHEETS_KEY,JSON.stringify(a));}catch(e){}}
+function tsGetDraft(){try{return JSON.parse(localStorage.getItem(TS_DRAFT_KEY))||null}catch{return null}}
+function tsSaveDraft(){
+  if(!_tsEngine) return;
+  try{localStorage.setItem(TS_DRAFT_KEY,JSON.stringify(_tsEngine));}catch(e){}
+}
+function tsClearDraft(){try{localStorage.removeItem(TS_DRAFT_KEY);}catch(e){}}
+
+// ══════════════════════════════════════════════════
+//  TENNIS SCORESHEET — UI
+// ══════════════════════════════════════════════════
+let _tsEngine=null;
+let _tsScreen='home';       // 'home' | 'live' | 'detail'
+let _tsDetailId=null;
+let _tsType='singles';
+let _tsServe='a';
+let _tsTimer=null;
+
+function tsShow(screen){
+  _tsScreen=screen;
+  ['home','live','detail'].forEach(s=>{
+    const el=document.getElementById('ts-'+s);
+    if(el) el.style.display=(s===screen?'block':'none');
+  });
+  if(screen==='home'){ tsStopTimer(); tsRenderHome(); }
+  if(screen==='live'){ tsRenderLive(); tsStartTimer(); }
+  if(screen==='detail'){ tsStopTimer(); tsRenderDetail(); }
+  window.scrollTo(0,0);
+}
+
+function tsSetType(v){
+  _tsType=v;
+  document.querySelectorAll('[data-ts-type]').forEach(b=>{
+    const on=b.dataset.tsType===v;
+    b.classList.toggle('active',on);
+    b.style.background=on?'var(--tennis)':''; b.style.color=on?'#fff':''; b.style.borderColor=on?'var(--tennis)':'';
+  });
+}
+function tsSetServe(v){
+  _tsServe=v;
+  document.querySelectorAll('[data-ts-serve]').forEach(b=>{
+    const on=b.dataset.tsServe===v;
+    b.classList.toggle('active',on);
+    b.style.background=on?'var(--tennis)':''; b.style.color=on?'#fff':''; b.style.borderColor=on?'var(--tennis)':'';
+  });
+}
+
+function tsRenderHome(){
+  // format dropdown
+  const sel=document.getElementById('ts-format');
+  if(sel&&!sel.options.length){
+    sel.innerHTML=Object.keys(TS_FORMATS).map(k=>`<option value="${k}">${esc(TS_FORMATS[k].label)}</option>`).join('');
+    sel.value='best_of_3';
+  }
+  tsSetType(_tsType); tsSetServe(_tsServe);
+
+  // resume banner for a match left in progress
+  const ban=document.getElementById('ts-resume-banner');
+  const draft=tsGetDraft();
+  if(ban){
+    if(draft){
+      ban.style.display='block';
+      ban.innerHTML=`<div class="card" style="border-left-color:var(--yellow);background:#fffbeb">
+        <div style="font-weight:800;font-size:14px;margin-bottom:2px">● Match in progress</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:10px">${esc(draft.nameA)} vs ${esc(draft.nameB)} — ${esc(tsScoreLine(draft))}</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="tsResume()" style="flex:1;background:var(--tennis);color:#fff;border:none;padding:10px;border-radius:var(--radius-sm);font-weight:800;font-size:14px">Resume</button>
+          <button class="btn" onclick="tsDropDraft()" style="background:none;color:var(--red);border:1px solid var(--red);padding:10px 14px;border-radius:var(--radius-sm);font-weight:700;font-size:13px">Discard</button>
+        </div>
+      </div>`;
+    } else ban.style.display='none';
+  }
+  tsRenderSheetList();
+}
+
+function tsRenderSheetList(){
+  const wrap=document.getElementById('ts-sheet-list');
+  if(!wrap) return;
+  const sheets=tsSheets().slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.savedAt-a.savedAt);
+  if(!sheets.length){
+    wrap.innerHTML=`<div class="card" style="text-align:center;padding:22px 14px;color:var(--muted)">
+      <div style="font-size:28px;margin-bottom:6px">📄</div>
+      <div style="font-size:13px">No scoresheets yet. Start one above — it stays on this device and never touches your own stats.</div>
+    </div>`;
+    return;
+  }
+  wrap.innerHTML=sheets.map(s=>{
+    const w=s.winner?(s.winner==='a'?s.nameA:s.nameB):null;
+    const badge=w?`<span style="font-size:11px;font-weight:800;background:var(--tennis-dim);color:var(--tennis);border-radius:20px;padding:2px 8px">${esc(w)} won</span>`
+                 :`<span style="font-size:11px;font-weight:800;background:var(--surface2);color:var(--muted);border-radius:20px;padding:2px 8px">UNFINISHED</span>`;
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div style="min-width:0">
+          <div style="font-weight:800;font-size:15px">${esc(s.nameA)} vs ${esc(s.nameB)}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(tsFmtDate(s.date))}${s.event?' · '+esc(s.event):''}</div>
+        </div>
+        ${badge}
+      </div>
+      <div style="font-size:20px;font-weight:800;letter-spacing:.04em;margin:8px 0 10px">${esc(s.scoreLine||'—')}</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn" onclick="tsOpenSheet('${s.id}')" style="flex:1;background:var(--surface2);color:var(--text);border:none;padding:9px;border-radius:var(--radius-sm);font-weight:700;font-size:13px">Open</button>
+        <button class="btn" onclick="tsExport('${s.id}')" style="flex:1;background:var(--tennis);color:#fff;border:none;padding:9px;border-radius:var(--radius-sm);font-weight:700;font-size:13px">📄 PDF</button>
+        <button class="btn" onclick="tsDeleteSheet('${s.id}')" style="background:none;color:var(--red);border:1px solid var(--red);padding:9px 12px;border-radius:var(--radius-sm);font-weight:700;font-size:13px">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function tsFmtDate(d){
+  if(!d) return '';
+  const dt=new Date(d+'T00:00:00');
+  if(isNaN(dt)) return d;
+  return dt.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
+}
+function tsFmtClock(sec){
+  sec=Math.max(0,Math.round(sec));
+  const m=Math.floor(sec/60), s=sec%60;
+  return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+}
+
+// "6-4 3-6 10-8" — completed sets plus the set in progress
+function tsScoreLine(e){
+  const parts=(e.setHistory||[]).map(s=>{
+    const lo=Math.min(s.tb?s.tb.a:0,s.tb?s.tb.b:0);
+    return s.a+'-'+s.b+(s.tb?'('+lo+')':'');
+  });
+  const cur=(e.a.games||0)+(e.b.games||0);
+  if(!e.matchOver&&(cur>0||!parts.length)) parts.push(e.a.games+'-'+e.b.games);
+  return parts.join(' ');
+}
+
+function tsStart(){
+  const nameA=(document.getElementById('ts-name-a').value||'').trim()||'Player A';
+  const nameB=(document.getElementById('ts-name-b').value||'').trim()||'Player B';
+  if(tsGetDraft()&&!confirm('There is already a match in progress. Starting a new one will discard it. Continue?')) return;
+  _tsEngine=tsCreate({
+    nameA,nameB,matchType:_tsType,serveFirst:_tsServe,
+    format:document.getElementById('ts-format').value,
+    event:(document.getElementById('ts-event').value||'').trim()
+  });
+  tsSaveDraft();
+  tsShow('live');
+}
+
+function tsResume(){
+  const d=tsGetDraft();
+  if(!d) return;
+  if(!d.hist) d.hist=[];
+  _tsEngine=d;
+  tsShow('live');
+}
+function tsDropDraft(){
+  if(!confirm('Discard the match in progress? This cannot be undone.')) return;
+  _tsEngine=null; tsClearDraft(); tsRenderHome(); toast('Match discarded');
+}
+function tsPause(){ tsSaveDraft(); tsShow('home'); }
+
+// ── Live timer (ticks only while the screen is open, so a sleeping
+//    phone doesn't inflate the duration; editable when finishing) ──
+function tsStartTimer(){
+  tsStopTimer();
+  _tsTimer=setInterval(()=>{
+    if(!_tsEngine||_tsEngine.matchOver) return;
+    _tsEngine.elapsedSec=(_tsEngine.elapsedSec||0)+1;
+    const el=document.getElementById('ts-clock');
+    if(el) el.textContent=tsFmtClock(_tsEngine.elapsedSec);
+    if(_tsEngine.elapsedSec%15===0) tsSaveDraft();
+  },1000);
+}
+function tsStopTimer(){ if(_tsTimer){clearInterval(_tsTimer);_tsTimer=null;} }
+
+function tsTap(side,type){
+  if(!_tsEngine) return;
+  tsInput(_tsEngine,side,type);
+  tsSaveDraft();           // every single point is persisted
+  tsRenderLive();
+  if(_tsEngine.matchOver) setTimeout(tsOpenFinish,450);
+}
+function tsUndoTap(){
+  if(!_tsEngine) return;
+  if(!tsUndo(_tsEngine)){ toast('Nothing to undo'); return; }
+  tsSaveDraft(); tsRenderLive();
+}
+
+function tsRenderLive(){
+  const e=_tsEngine, board=document.getElementById('ts-board');
+  if(!e||!board) return;
+  const sets=(e.setHistory||[]).map(s=>s.a+'-'+s.b).join('  ');
+  const inTB=e.inTiebreak||e.inSuperTiebreak;
+  const tbLabel=e.inSuperTiebreak?'SUPER TIEBREAK':(e.inTiebreak?'TIEBREAK':'');
+  const dot='<span class="ts-serve">●</span>';
+  const gamesLine=inTB?'':`${e.a.games} - ${e.b.games}`;
+
+  board.innerHTML=`
+    <div class="ts-scorebox">
+      <div class="ts-names">
+        <div style="text-align:right">${e.aServing?dot+' ':''}${esc(e.nameA)}</div>
+        <div style="color:var(--muted2)">vs</div>
+        <div style="text-align:left">${esc(e.nameB)}${!e.aServing?' '+dot:''}</div>
+      </div>
+      <div class="ts-sets">${sets?esc(sets):'&nbsp;'}${tbLabel?'<span style="color:var(--tennis);margin-left:8px">'+tbLabel+'</span>':''}</div>
+      ${gamesLine?`<div style="font-size:20px;font-weight:800;color:var(--muted);margin-top:2px">${gamesLine}</div>`:''}
+      <div class="ts-pts">${tsPointLabel(e,e.a)} <span style="color:var(--muted2)">-</span> ${tsPointLabel(e,e.b)}</div>
+      <div style="font-size:12px;color:var(--muted);font-weight:700;margin-top:4px" id="ts-clock-wrap">⏱ <span id="ts-clock">${tsFmtClock(e.elapsedSec||0)}</span></div>
+      ${e.needsChangeover?'<div class="ts-changeover">↔ SWITCH ENDS</div>':''}
+      ${e.matchOver?`<div style="margin-top:8px;font-size:15px;font-weight:800;color:var(--tennis)">🏆 ${esc(tsWinnerSide(e)==='a'?e.nameA:e.nameB)} wins</div>`:''}
+    </div>
+    <div class="ts-cols">
+      ${tsCol(e,'a')}
+      ${tsCol(e,'b')}
+    </div>
+    <button class="ts-undo" onclick="tsUndoTap()" ${e.hist&&e.hist.length?'':'disabled style="opacity:.4"'}>↶ UNDO LAST POINT</button>
+    <div style="font-size:11.5px;color:var(--muted);text-align:center;margin-top:10px;line-height:1.5">
+      <strong>WON</strong> = won the point · <strong>ERR</strong> = their unforced error · <strong>D.F</strong> = their double fault<br>
+      Every point is saved — you can close the app and come back.
+    </div>`;
+}
+
+function tsCol(e,side){
+  const p=side==='a'?e.a:e.b;
+  const name=side==='a'?e.nameA:e.nameB;
+  const serving=(side==='a')===e.aServing;
+  const off=e.matchOver?'disabled':'';
+  return `<div class="ts-col">
+    <h4>${serving?'<span class="ts-serve">●</span> ':''}${esc(name)}</h4>
+    <button class="ts-btn ts-won" ${off} onclick="tsTap('${side}',0)">WON</button>
+    <div class="ts-sub">
+      <button class="ts-btn ts-err" ${off} onclick="tsTap('${side}',1)">ERR</button>
+      <button class="ts-btn ts-df" ${off||(serving?'':'disabled')} onclick="tsTap('${side}',2)">D.F</button>
+    </div>
+  </div>`;
+}
+
+// ── Finish + save ───────────────────────────────────────────
+function tsOpenFinish(){
+  const e=_tsEngine;
+  if(!e) return;
+  const w=tsWinnerSide(e);
+  document.getElementById('ts-finish-title').textContent=e.matchOver?'Match complete':'Finish scoresheet';
+  document.getElementById('ts-finish-summary').innerHTML=
+    `<strong>${esc(e.nameA)} vs ${esc(e.nameB)}</strong><br>${esc(tsScoreLine(e))}`+
+    (w?` · <strong>${esc(w==='a'?e.nameA:e.nameB)} won</strong>`:' · <em>unfinished</em>');
+  const d=new Date();
+  document.getElementById('ts-fin-date').value=
+    d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  document.getElementById('ts-fin-dur').value=String(Math.max(1,Math.round((e.elapsedSec||0)/60)));
+  document.getElementById('ts-fin-event').value=e.event||'';
+  document.getElementById('ts-fin-notes').value='';
+  openModal('modal-ts-finish');
+}
+
+function tsSaveSheet(){
+  const e=_tsEngine;
+  if(!e) return;
+  const dur=parseInt((document.getElementById('ts-fin-dur').value||'').replace(/[^0-9]/g,''),10);
+  const sheet={
+    id:e.id, savedAt:Date.now(),
+    nameA:e.nameA, nameB:e.nameB, matchType:e.matchType, format:e.format,
+    formatLabel:(TS_FORMATS[e.format]||{}).label||e.format,
+    date:document.getElementById('ts-fin-date').value||'',
+    durationMin:isNaN(dur)?null:dur,
+    event:(document.getElementById('ts-fin-event').value||'').trim(),
+    notes:(document.getElementById('ts-fin-notes').value||'').trim(),
+    finished:!!e.matchOver, winner:tsWinnerSide(e),
+    scoreLine:tsScoreLine(e), setHistory:e.setHistory,
+    a:e.a, b:e.b
+  };
+  const all=tsSheets().filter(s=>s.id!==sheet.id);
+  all.push(sheet);
+  tsSetSheets(all);
+  _tsEngine=null; tsClearDraft(); tsStopTimer();
+  closeModal('modal-ts-finish');
+  _tsDetailId=sheet.id;
+  tsShow('detail');
+  toast('Scoresheet saved');
+}
+
+function tsDiscard(){
+  if(!confirm('Discard this match? Nothing will be saved.')) return;
+  _tsEngine=null; tsClearDraft(); tsStopTimer();
+  closeModal('modal-ts-finish');
+  tsShow('home');
+  toast('Match discarded');
+}
+
+function tsOpenSheet(id){ _tsDetailId=id; tsShow('detail'); }
+
+function tsDeleteSheet(id){
+  const s=tsSheets().find(x=>x.id===id);
+  if(!s) return;
+  if(!confirm(`Delete the scoresheet "${s.nameA} vs ${s.nameB}"? This cannot be undone.`)) return;
+  tsSetSheets(tsSheets().filter(x=>x.id!==id));
+  if(_tsDetailId===id) _tsDetailId=null;
+  tsShow('home');
+  toast('Scoresheet deleted');
+}
+
+function tsPct(won,played){ return played>0?Math.round(won/played*100)+'%':'—'; }
+
+function tsRenderDetail(){
+  const wrap=document.getElementById('ts-detail-body');
+  const s=tsSheets().find(x=>x.id===_tsDetailId);
+  if(!wrap) return;
+  if(!s){ wrap.innerHTML='<div class="card">Scoresheet not found.</div>'; return; }
+  const w=s.winner?(s.winner==='a'?s.nameA:s.nameB):null;
+  const row=(label,av,bv)=>`<tr>
+    <td style="padding:6px 4px;font-size:13px;text-align:center;font-weight:700">${av}</td>
+    <td style="padding:6px 4px;font-size:12px;color:var(--muted);text-align:center">${label}</td>
+    <td style="padding:6px 4px;font-size:13px;text-align:center;font-weight:700">${bv}</td></tr>`;
+  const a=s.a,b=s.b;
+  const aPts=a.servePtsPlayed+a.returnPtsPlayed, bPts=b.servePtsPlayed+b.returnPtsPlayed;
+  wrap.innerHTML=`
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div>
+          <div style="font-size:18px;font-weight:800">${esc(s.nameA)} vs ${esc(s.nameB)}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(tsFmtDate(s.date))}${s.event?' · '+esc(s.event):''}</div>
+        </div>
+        ${w?`<span style="font-size:11px;font-weight:800;background:var(--tennis-dim);color:var(--tennis);border-radius:20px;padding:3px 9px;white-space:nowrap">${esc(w)} won</span>`
+           :`<span style="font-size:11px;font-weight:800;background:var(--surface2);color:var(--muted);border-radius:20px;padding:3px 9px">UNFINISHED</span>`}
+      </div>
+      <div style="font-size:26px;font-weight:800;letter-spacing:.04em;margin:10px 0 4px">${esc(s.scoreLine||'—')}</div>
+      <div style="font-size:12px;color:var(--muted)">${esc(s.formatLabel||'')} · ${esc(s.matchType==='doubles'?'Doubles':'Singles')}${s.durationMin?' · '+s.durationMin+' min':''}</div>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.06em;margin-bottom:6px">MATCH STATS</div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr><td style="text-align:center;font-size:12px;font-weight:800;padding-bottom:4px">${esc(s.nameA)}</td><td></td>
+            <td style="text-align:center;font-size:12px;font-weight:800;padding-bottom:4px">${esc(s.nameB)}</td></tr>
+        ${row('Points played',aPts,bPts)}
+        ${row('Points won',a.winners+b.unforcedErrors+b.doubleFaults,b.winners+a.unforcedErrors+a.doubleFaults)}
+        ${row('Winning shots',a.winners,b.winners)}
+        ${row('Unforced errors',a.unforcedErrors,b.unforcedErrors)}
+        ${row('Double faults',a.doubleFaults,b.doubleFaults)}
+        ${row('Service pts won',a.servePtsWon+'/'+a.servePtsPlayed+' ('+tsPct(a.servePtsWon,a.servePtsPlayed)+')',
+                                b.servePtsWon+'/'+b.servePtsPlayed+' ('+tsPct(b.servePtsWon,b.servePtsPlayed)+')')}
+        ${row('Return pts won',a.returnPtsWon+'/'+a.returnPtsPlayed+' ('+tsPct(a.returnPtsWon,a.returnPtsPlayed)+')',
+                               b.returnPtsWon+'/'+b.returnPtsPlayed+' ('+tsPct(b.returnPtsWon,b.returnPtsPlayed)+')')}
+        ${(a.tiebreaksWon+b.tiebreaksWon)>0?row('Tiebreaks won',a.tiebreaksWon,b.tiebreaksWon):''}
+      </table>
+    </div>
+    ${s.notes?`<div class="card"><div style="font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.06em;margin-bottom:4px">NOTES</div><div style="font-size:14px;white-space:pre-wrap">${esc(s.notes)}</div></div>`:''}
+    <button class="btn" onclick="tsExport('${s.id}')" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:13px;border-radius:var(--radius-sm);font-weight:800;font-size:15px">📄 Export as PDF</button>
+    <div style="font-size:11.5px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.5">
+      On iPhone: the print sheet opens → tap <strong>Share</strong> → <strong>Save to Files</strong> or send it straight to WhatsApp / Mail.
+    </div>
+    <button class="btn" onclick="tsDeleteSheet('${s.id}')" style="width:100%;background:none;color:var(--red);border:1px solid var(--red);padding:11px;border-radius:var(--radius-sm);font-weight:700;font-size:14px;margin-top:14px">🗑 Delete scoresheet</button>`;
+}
+
+// ── Print-to-PDF report ─────────────────────────────────────
+// No PDF library: a print-only stylesheet + window.print() keeps the app
+// single-file with no dependencies. iOS turns the print sheet into a PDF.
+function tsExport(id){
+  const s=tsSheets().find(x=>x.id===id);
+  if(!s) return;
+  const root=document.getElementById('print-root');
+  root.innerHTML=tsReportHtml(s);
+  const restore=()=>{ root.innerHTML=''; window.removeEventListener('afterprint',restore); };
+  window.addEventListener('afterprint',restore);
+  setTimeout(restore,120000);   // fallback: iOS Safari doesn't always fire afterprint
+  setTimeout(()=>window.print(),60);
+}
+
+function tsReportHtml(s){
+  const a=s.a,b=s.b, w=s.winner?(s.winner==='a'?s.nameA:s.nameB):null;
+  const aPts=a.servePtsPlayed+a.returnPtsPlayed, bPts=b.servePtsPlayed+b.returnPtsPlayed;
+  const setRows=(s.setHistory||[]).map((st,i)=>
+    `<tr><td>Set ${i+1}</td><td class="n">${st.a}${st.tb?' ('+st.tb.a+')':''}</td><td class="n">${st.b}${st.tb?' ('+st.tb.b+')':''}</td></tr>`
+  ).join('');
+  const row=(l,av,bv)=>`<tr><td>${l}</td><td class="n">${av}</td><td class="n">${bv}</td></tr>`;
+  return `
+    <h1>${esc(s.nameA)} vs ${esc(s.nameB)}</h1>
+    <div class="pr-sub">${esc(tsFmtDate(s.date))}${s.event?' · '+esc(s.event):''} · ${esc(s.formatLabel||'')} · ${esc(s.matchType==='doubles'?'Doubles':'Singles')}${s.durationMin?' · '+s.durationMin+' min':''}</div>
+    <div class="pr-score">${esc(s.scoreLine||'—')}</div>
+    <div style="font-size:12pt;margin-bottom:4px">${w?'<strong>Winner: '+esc(w)+'</strong>':'<em>Match unfinished</em>'}</div>
+    ${setRows?`<h2>Set by set</h2><table>
+      <tr><th></th><th class="n">${esc(s.nameA)}</th><th class="n">${esc(s.nameB)}</th></tr>${setRows}</table>`:''}
+    <h2>Match statistics</h2>
+    <table>
+      <tr><th></th><th class="n">${esc(s.nameA)}</th><th class="n">${esc(s.nameB)}</th></tr>
+      ${row('Points played',aPts,bPts)}
+      ${row('Points won',a.winners+b.unforcedErrors+b.doubleFaults,b.winners+a.unforcedErrors+a.doubleFaults)}
+      ${row('Winning shots',a.winners,b.winners)}
+      ${row('Unforced errors',a.unforcedErrors,b.unforcedErrors)}
+      ${row('Double faults',a.doubleFaults,b.doubleFaults)}
+      ${row('Service points won',a.servePtsWon+' / '+a.servePtsPlayed+' ('+tsPct(a.servePtsWon,a.servePtsPlayed)+')',
+                                 b.servePtsWon+' / '+b.servePtsPlayed+' ('+tsPct(b.servePtsWon,b.servePtsPlayed)+')')}
+      ${row('Return points won',a.returnPtsWon+' / '+a.returnPtsPlayed+' ('+tsPct(a.returnPtsWon,a.returnPtsPlayed)+')',
+                                b.returnPtsWon+' / '+b.returnPtsPlayed+' ('+tsPct(b.returnPtsWon,b.returnPtsPlayed)+')')}
+      ${(a.tiebreaksWon+b.tiebreaksWon)>0?row('Tiebreaks won',a.tiebreaksWon,b.tiebreaksWon):''}
+    </table>
+    ${s.notes?`<h2>Notes</h2><div class="pr-notes">${esc(s.notes)}</div>`:''}
+    <div class="pr-foot">Scored live with Training Hub · ${esc(tsFmtDate(s.date))}</div>`;
+}
+
+// Save the live match when the app is backgrounded or the screen sleeps —
+// same protection as the climbing draft (lesson from 2026-06-22).
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) tsSaveDraft(); });
+window.addEventListener('pagehide',tsSaveDraft);
 </script>
 
 <!-- login overlay removed — sync uses anon key, no login needed -->
@@ -9330,6 +10096,41 @@ function miniStat(label,value){
     <button onclick="deleteWatchPermanently()" style="width:100%;background:none;color:var(--red);border:none;padding:8px;font-weight:600;font-size:12.5px;margin-top:6px;cursor:pointer;text-decoration:underline">Delete permanently from database</button>
   </div>
 </div>
+
+<!-- FINISH SCORESHEET MODAL -->
+<div class="modal-overlay" role="dialog" aria-modal="true" id="modal-ts-finish">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="ts-finish-title">Finish scoresheet</h3>
+      <button class="modal-close" aria-label="Close" onclick="closeModal('modal-ts-finish')">✕</button>
+    </div>
+    <div id="ts-finish-summary" style="font-size:13px;background:var(--surface2);padding:9px 10px;border-radius:var(--radius-sm);margin-bottom:12px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" id="ts-fin-date" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+      </div>
+      <div class="form-group">
+        <label>Duration (min)</label>
+        <input type="text" inputmode="numeric" id="ts-fin-dur" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Event / location</label>
+      <input type="text" id="ts-fin-event" placeholder="Club, round, competition…" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="ts-fin-notes" rows="2" placeholder="Anything worth remembering…" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px;resize:none;font-family:inherit"></textarea>
+    </div>
+    <button class="btn" onclick="tsSaveSheet()" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:12px;border-radius:var(--radius-sm);font-weight:800;font-size:15px">Save scoresheet</button>
+    <button class="btn" onclick="closeModal('modal-ts-finish')" style="width:100%;background:none;color:var(--muted);border:1px solid var(--border);padding:10px;border-radius:var(--radius-sm);font-weight:700;font-size:14px;margin-top:8px">Keep scoring</button>
+    <button onclick="tsDiscard()" style="width:100%;background:none;color:var(--red);border:none;padding:8px;font-weight:600;font-size:12.5px;margin-top:6px;cursor:pointer;text-decoration:underline">Discard this match</button>
+  </div>
+</div>
+
+<!-- PRINT / PDF EXPORT TARGET (hidden on screen, only rendered when printing) -->
+<div id="print-root"></div>
 
 </body>
 </html>
