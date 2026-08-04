@@ -4158,21 +4158,19 @@ function addRouteEntry(bi,phase){
   renderClimbBlocks();
 }
 
-let _editRouteCtx={bi:null,phase:null,ei:null};
+let _editRouteCtx={kind:null,bi:null,phase:null,section:null,ei:null};
 
-function editRouteEntry(bi,phase,ei){
-  const e=climbBlocks[bi]?.phases?.[phase]?.[ei];
-  if(!e)return;
-  _editRouteCtx={bi,phase,ei};
-  // Populate grade select
+// Shared: populate + open the Edit Route modal for any route entry.
+// (2026-08-04) The current renderer's pencils previously "edited" by deleting
+// the route and prefilling the Add row — looked like a delete. All pencils
+// now use this modal; the entry is only touched on Save.
+function _openRouteEditModal(e){
   const gradeEl=document.getElementById('route-grade');
   gradeEl.innerHTML=GRADE_OPTS;
   gradeEl.value=e.grade;
-  // Populate count select
   const countEl=document.getElementById('route-count');
   countEl.innerHTML=COUNT_OPTS;
   countEl.value=e.count||1;
-  // Other fields
   document.getElementById('route-result').value=e.result||'OS';
   document.getElementById('route-movements').value=e.movements||'';
   document.getElementById('route-climbed-down').checked=!!e.climbedDown;
@@ -4181,10 +4179,24 @@ function editRouteEntry(bi,phase,ei){
   openModal('modal-route');
 }
 
-function saveRouteEntryEdit(){
-  const {bi,phase,ei}=_editRouteCtx;
-  if(bi===null)return;
+// Resolve the entry the modal is editing, based on which pencil opened it.
+function _editRouteTarget(){
+  const c=_editRouteCtx;
+  if(c.kind==='section')return climbSession[c.section]?.[c.ei];
+  if(c.kind==='block')return climbSession.blocks[c.bi]?.routes?.[c.ei];
+  if(c.kind==='legacy')return climbBlocks[c.bi]?.phases?.[c.phase]?.[c.ei];
+  return null;
+}
+
+function editRouteEntry(bi,phase,ei){
   const e=climbBlocks[bi]?.phases?.[phase]?.[ei];
+  if(!e)return;
+  _editRouteCtx={kind:'legacy',bi,phase,ei,section:null};
+  _openRouteEditModal(e);
+}
+
+function saveRouteEntryEdit(){
+  const e=_editRouteTarget();
   if(!e)return;
   e.grade=document.getElementById('route-grade').value;
   e.result=document.getElementById('route-result').value;
@@ -4192,6 +4204,8 @@ function saveRouteEntryEdit(){
   e.movements=parseInt(document.getElementById('route-movements').value)||0;
   e.climbedDown=document.getElementById('route-climbed-down').checked;
   e.notes=document.getElementById('route-notes').value;
+  _editRouteCtx={kind:null,bi:null,phase:null,section:null,ei:null};
+  if(typeof markDirty==='function')markDirty('climb');
   closeModal('modal-route');
   renderClimbBlocks();
   toast('✅ Route updated');
@@ -4462,36 +4476,17 @@ function removeRouteFromBlock(bi,ei){
 }
 
 function editRouteInSection(section,ei){
-  const prefix=section==='warmup'?'wu':'cd';
   const e=climbSession[section][ei];
   if(!e)return;
-  // Load values back into the input row
-  document.getElementById(`${prefix}-grade`).value=e.grade;
-  document.getElementById(`${prefix}-result`).value=e.result;
-  document.getElementById(`${prefix}-count`).value=e.count||1;
-  document.getElementById(`${prefix}-mvs`).value=e.movements||'';
-  document.getElementById(`${prefix}-down`).checked=!!e.climbedDown;
-  // Remove the route so user can re-add with corrections
-  climbSession[section].splice(ei,1);
-  renderClimbBlocks();
-  // Scroll to the section input
-  document.getElementById(`${prefix}-grade`).scrollIntoView({behavior:'smooth',block:'center'});
+  _editRouteCtx={kind:'section',section,ei,bi:null,phase:null};
+  _openRouteEditModal(e);
 }
 
 function editRouteInBlock(bi,ei){
   const e=climbSession.blocks[bi]?.routes[ei];
   if(!e)return;
-  // Load values back into the block's input row
-  document.getElementById(`block-${bi}-grade`).value=e.grade;
-  document.getElementById(`block-${bi}-result`).value=e.result;
-  document.getElementById(`block-${bi}-count`).value=e.count||1;
-  document.getElementById(`block-${bi}-mvs`).value=e.movements||'';
-  document.getElementById(`block-${bi}-down`).checked=!!e.climbedDown;
-  // Remove the route so user can re-add with corrections
-  climbSession.blocks[bi].routes.splice(ei,1);
-  renderClimbBlocks();
-  // Scroll to the block input
-  document.getElementById(`block-${bi}-grade`).scrollIntoView({behavior:'smooth',block:'center'});
+  _editRouteCtx={kind:'block',bi,ei,phase:null,section:null};
+  _openRouteEditModal(e);
 }
 
 // Old renderer kept for reference - will handle legacy format
