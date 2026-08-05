@@ -165,6 +165,16 @@ select option{background:var(--surface2)}
 .result-repeat{background:rgba(139,148,158,.1);color:var(--muted);border:1px solid var(--border)}
 .route-info{flex:1;font-size:12px;color:var(--muted)}
 
+/* ── Wall angle ── */
+.route-angle{padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap}
+.angle-slab{background:rgba(2,132,199,.12);color:#0284c7;border:1px solid rgba(2,132,199,.25)}
+.angle-vertical{background:rgba(21,128,61,.12);color:var(--green);border:1px solid rgba(21,128,61,.25)}
+.angle-overhang{background:rgba(180,83,9,.12);color:#b45309;border:1px solid rgba(180,83,9,.25)}
+.angle-roof{background:rgba(190,24,93,.12);color:#be185d;border:1px solid rgba(190,24,93,.25)}
+.angle-chips{display:flex;gap:4px;margin-bottom:6px}
+.angle-chip{flex:1;padding:6px 2px;font-size:11px;font-weight:700;text-align:center;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface2);color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap}
+.angle-chip.on.angle-slab,.angle-chip.on.angle-vertical,.angle-chip.on.angle-overhang,.angle-chip.on.angle-roof{font-weight:800}
+
 /* ── Session history ── */
 .session-item{padding:13px;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border);margin-bottom:8px;cursor:pointer;transition:border-color .15s}
 .session-item:hover{border-color:var(--muted2)}
@@ -800,6 +810,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <div class="card" id="climb-session-summary" style="display:none">
           <div class="card-title">Session Summary</div>
           <div class="stats-row" id="climb-stats-summary"></div>
+          <div id="climb-angle-summary"></div>
         </div>
 
         <div style="display:flex;gap:8px">
@@ -820,6 +831,14 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
             <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--green);display:inline-block"></span>Red Point</span>
           </div>
         </div>
+        <div class="segment" id="pyramid-angle-filter" style="margin-bottom:8px;display:flex;background:var(--surface2);border-radius:var(--radius-sm);padding:3px;gap:2px">
+          <button class="seg-btn active" onclick="pyramidAngleFilter('')">All</button>
+          <button class="seg-btn" onclick="pyramidAngleFilter('Slab')">Slab</button>
+          <button class="seg-btn" onclick="pyramidAngleFilter('Vertical')">Vert</button>
+          <button class="seg-btn" onclick="pyramidAngleFilter('Overhang')">Overh</button>
+          <button class="seg-btn" onclick="pyramidAngleFilter('Roof')">Roof</button>
+        </div>
+        <div id="pyramid-angle-note" style="display:none;font-size:11px;color:var(--muted);margin:-4px 0 8px;padding:0 2px"></div>
         <div id="pyramid-tiers"></div>
         <div class="card" style="margin-top:8px">
           <div class="card-title">Stats by Grade</div>
@@ -1282,6 +1301,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <label>Mvs / route</label>
         <input type="number" inputmode="decimal" id="route-movements" placeholder="e.g. 15" min="0">
       </div>
+    </div>
+    <div class="form-group">
+      <label>Wall angle (optional)</label>
+      <div id="route-angle-chips"></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius-sm)">
       <input type="checkbox" id="route-climbed-down" style="width:18px;height:18px;flex-shrink:0;cursor:pointer">
@@ -3672,6 +3695,19 @@ function showSessionDetail(type,id){
       ${detMeters?`<div class="stat-box"><div class="stat-val stat-climb">${detMeters>=1000?(detMeters/1000).toFixed(1)+'km':detMeters+'m'}</div><div class="stat-lbl">Meters</div></div>`:''}
       ${detTotalMvs?`<div class="stat-box"><div class="stat-val stat-climb">${detTotalMvs}</div><div class="stat-lbl">Total Mvs${detAvgMvs?' · ~'+detAvgMvs+'/rt':''}</div></div>`:''}
     </div>`;
+    html+=angleSummaryHtml(angleCounts(getSessionRoutes(s).map(r=>({...r,count:1}))));
+    // Warm-up / cool-down sections (current format). Before 2026-08-05 the
+    // detail modal only ever looked at b.phases/b.entries, so these — and the
+    // block's own routes[] — were silently missing from every saved session.
+    const _detRow=e=>`<div class="route-item">
+      <div class="route-grade">${e.grade}</div>
+      <span class="route-result result-${(e.result||'').toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
+      <div class="route-info">×${e.count||1}${e.movements?` · ${e.movements}mv/rt`:''}${e.climbedDown?' · ↕':''}${e.notes?` · ${e.notes}`:''}</div>
+    </div>`;
+    if((s.warmup||[]).length){
+      html+=`<div style="font-size:11px;font-weight:700;color:${PHASE_COLORS.warmup};text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">🔥 Warm-up</div>`;
+      html+=s.warmup.map(_detRow).join('');
+    }
     if(s.blocks){
       // New block-based format
       for(const b of s.blocks){
@@ -3680,14 +3716,14 @@ function showSessionDetail(type,id){
           const typeLabel=b.climbingType||'—';
           const wallLabel=blockWallH>0?blockWallH+'m':'—';
           html+=`<div style="font-size:11px;font-weight:700;color:var(--climb);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">🪨 Routes / Bouldering · ${typeLabel} · ${wallLabel}</div>`;
-          const phaseSrc=b.phases||{main:b.entries||[]};
+          const phaseSrc=b.phases||{main:b.routes||b.entries||[]};
           for(const phase of ['warmup','main','cooldown']){
             const entries=phaseSrc[phase]||[];
             if(!entries.length) continue;
             html+=`<div style="font-size:10px;font-weight:700;color:${PHASE_COLORS[phase]};text-transform:uppercase;margin:6px 0 4px">${PHASE_LABELS[phase]}</div>`;
             html+=entries.map(e=>`<div class="route-item">
               <div class="route-grade">${e.grade}</div>
-              <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>
+              <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
               <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv/rt`:''}${e.climbedDown?' · ↕':''}</div>
             </div>`).join('');
           }
@@ -3703,6 +3739,10 @@ function showSessionDetail(type,id){
           html+=`<div style="font-size:11px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">🔁 ARC</div>`;
           html+=`<div class="route-item"><div class="route-grade" style="color:#16a34a">${b.arcDuration||'?'} min</div><div class="route-info">${b.intensity||''}</div></div>`;
         }
+      }
+      if((s.cooldown||[]).length){
+        html+=`<div style="font-size:11px;font-weight:700;color:${PHASE_COLORS.cooldown};text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">❄️ Cool-down</div>`;
+        html+=s.cooldown.map(_detRow).join('');
       }
     } else {
       // Legacy format
@@ -4058,6 +4098,56 @@ const PHASE_LABELS={warmup:'Warm-up',main:'Main Session',cooldown:'Cool-down'};
 const PHASE_COLORS={warmup:'#ea7c3a',main:'var(--climb)',cooldown:'#16a34a'};
 const COUNT_OPTS=[1,2,3,4,5,6,7,8,9,10].map(n=>`<option value="${n}">×${n}</option>`).join('');
 
+/* ── WALL ANGLE (2026-08-05) ──────────────────────────────────────────────
+   Optional per-route wall angle. Routes logged before this existed simply
+   have no `angle` → they show no badge and are excluded from angle-filtered
+   views (same convention as uncategorised tennis matches). No migration. */
+const WALL_ANGLES=['Slab','Vertical','Overhang','Roof'];
+const ANGLE_SHORT={Slab:'Slab',Vertical:'Vert',Overhang:'Overh',Roof:'Roof'};
+const ANGLE_CLS={Slab:'angle-slab',Vertical:'angle-vertical',Overhang:'angle-overhang',Roof:'angle-roof'};
+// Sticky per add-row selection: key is 'wu' | 'cd' | 'b<i>'. Survives the
+// re-render after each Add, so a whole overhang block is one tap total.
+let _pendingAngle={};
+let _modalAngle='';
+
+function angleBadge(a){
+  return a&&ANGLE_CLS[a]?`<span class="route-angle ${ANGLE_CLS[a]}">${a}</span>`:'';
+}
+// Chip row markup. `key` is the add-row key, or 'modal' for the edit dialog.
+// Tapping the active chip again clears it (angle stays optional).
+function angleChipsHtml(current,key){
+  return `<div class="angle-chips">${WALL_ANGLES.map(a=>
+    `<div class="angle-chip ${ANGLE_CLS[a]}${current===a?' on':''}" data-angle="${a}" onclick="${key==='modal'?`pickModalAngle('${a}',this)`:`pickAngle('${key}','${a}',this)`}">${ANGLE_SHORT[a]}</div>`
+  ).join('')}</div>`;
+}
+// DOM-only toggle: a full renderClimbBlocks() here would wipe the grade /
+// result / movements the user already set in the same add-row.
+function _toggleChipRow(el,angle){
+  el.parentNode.querySelectorAll('.angle-chip').forEach(c=>c.classList.toggle('on',c.dataset.angle===angle));
+}
+function pickAngle(key,angle,el){
+  const next=_pendingAngle[key]===angle?'':angle;
+  _pendingAngle[key]=next;
+  _toggleChipRow(el,next);
+}
+function pickModalAngle(a,el){
+  _modalAngle=_modalAngle===a?'':a;
+  _toggleChipRow(el,_modalAngle);
+}
+// Count routes per angle (respects `count`, ignores unset angles).
+function angleCounts(entries){
+  const c={};
+  for(const e of entries){
+    if(!e.angle)continue;
+    c[e.angle]=(c[e.angle]||0)+(e.count||1);
+  }
+  return c;
+}
+function angleSummaryHtml(counts){
+  const parts=WALL_ANGLES.filter(a=>counts[a]).map(a=>`<span class="route-angle ${ANGLE_CLS[a]}">${a} ${counts[a]}</span>`);
+  return parts.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${parts.join('')}</div>`:'';
+}
+
 function climbMode(mode){
   document.getElementById('climb-log').style.display=mode==='log'?'':'none';
   document.getElementById('climb-pyramid').style.display=mode==='pyramid'?'':'none';
@@ -4152,7 +4242,7 @@ function addRouteEntry(bi,phase){
   const climbedDown=document.getElementById(`bd-${bi}-${phase}`).checked;
   // Migrate old entries[] to phases if needed
   if(!climbBlocks[bi].phases) climbBlocks[bi].phases={warmup:climbBlocks[bi].entries||[],main:[],cooldown:[]};
-  climbBlocks[bi].phases[phase].push({grade,result,count,movements,climbedDown});
+  climbBlocks[bi].phases[phase].push({grade,result,count,movements,climbedDown,angle:''});
   // Reset movements input
   document.getElementById(`bm-${bi}-${phase}`).value='';
   renderClimbBlocks();
@@ -4175,6 +4265,8 @@ function _openRouteEditModal(e){
   document.getElementById('route-movements').value=e.movements||'';
   document.getElementById('route-climbed-down').checked=!!e.climbedDown;
   document.getElementById('route-notes').value=e.notes||'';
+  _modalAngle=e.angle||'';
+  document.getElementById('route-angle-chips').innerHTML=angleChipsHtml(_modalAngle,'modal');
   document.getElementById('route-modal-title').textContent='✏️ Edit Route';
   openModal('modal-route');
 }
@@ -4204,6 +4296,7 @@ function saveRouteEntryEdit(){
   e.movements=parseInt(document.getElementById('route-movements').value)||0;
   e.climbedDown=document.getElementById('route-climbed-down').checked;
   e.notes=document.getElementById('route-notes').value;
+  e.angle=_modalAngle;
   _editRouteCtx={kind:null,bi:null,phase:null,section:null,ei:null};
   if(typeof markDirty==='function')markDirty('climb');
   closeModal('modal-route');
@@ -4263,6 +4356,7 @@ function renderClimbBlocks(){
       <select id="wu-result" style="flex:2;min-width:80px;font-size:13px">${RESULT_OPTS}</select>
       <select id="wu-count" style="width:52px;font-size:13px">${COUNT_OPTS}</select>
     </div>
+    ${angleChipsHtml(_pendingAngle['wu']||'','wu')}
     <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
       <div style="flex:1;display:flex;align-items:center;gap:4px">
         <span class="text-xxs-muted-nowrap">Mvs/rt:</span>
@@ -4276,7 +4370,7 @@ function renderClimbBlocks(){
     <div id="warmup-routes">${climbSession.warmup.length?climbSession.warmup.map((e,ei)=>`
       <div class="route-item">
         <div class="route-grade">${e.grade}</div>
-        <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>
+        <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
         <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}</div>
         <button class="btn-icon" style="font-size:13px" onclick="editRouteInSection('warmup',${ei})">✏️</button>
         <button class="btn-icon" onclick="removeRouteFromSection('warmup',${ei})">✕</button>
@@ -4319,6 +4413,7 @@ function renderClimbBlocks(){
           <select id="block-${bi}-result" style="flex:2;min-width:80px;font-size:13px">${RESULT_OPTS}</select>
           <select id="block-${bi}-count" style="width:52px;font-size:13px">${COUNT_OPTS}</select>
         </div>
+        ${angleChipsHtml(_pendingAngle['b'+bi]||'','b'+bi)}
         <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
           <div style="flex:1;display:flex;align-items:center;gap:4px">
             <span class="text-xxs-muted-nowrap">Mvs/rt:</span>
@@ -4332,7 +4427,7 @@ function renderClimbBlocks(){
         <div id="block-${bi}-routes">${b.routes.length?b.routes.map((e,ei)=>`
           <div class="route-item">
             <div class="route-grade">${e.grade}</div>
-            <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>
+            <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
             <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}</div>
             <button class="btn-icon" style="font-size:13px" onclick="editRouteInBlock(${bi},${ei})">✏️</button>
             <button class="btn-icon" onclick="removeRouteFromBlock(${bi},${ei})">✕</button>
@@ -4410,6 +4505,7 @@ function renderClimbBlocks(){
       <select id="cd-result" style="flex:2;min-width:80px;font-size:13px">${RESULT_OPTS}</select>
       <select id="cd-count" style="width:52px;font-size:13px">${COUNT_OPTS}</select>
     </div>
+    ${angleChipsHtml(_pendingAngle['cd']||'','cd')}
     <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
       <div style="flex:1;display:flex;align-items:center;gap:4px">
         <span class="text-xxs-muted-nowrap">Mvs/rt:</span>
@@ -4423,7 +4519,7 @@ function renderClimbBlocks(){
     <div id="cooldown-routes">${climbSession.cooldown.length?climbSession.cooldown.map((e,ei)=>`
       <div class="route-item">
         <div class="route-grade">${e.grade}</div>
-        <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>
+        <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
         <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}</div>
         <button class="btn-icon" style="font-size:13px" onclick="editRouteInSection('cooldown',${ei})">✏️</button>
         <button class="btn-icon" onclick="removeRouteFromSection('cooldown',${ei})">✕</button>
@@ -4443,7 +4539,8 @@ function addRouteToSection(section){
   const count=parseInt(document.getElementById(`${prefix}-count`).value)||1;
   const movements=parseInt(document.getElementById(`${prefix}-mvs`).value)||0;
   const climbedDown=document.getElementById(`${prefix}-down`).checked;
-  climbSession[section].push({grade,result,count,movements,climbedDown});
+  const angle=_pendingAngle[prefix]||'';
+  climbSession[section].push({grade,result,count,movements,climbedDown,angle});
   markDirty('climb');
   document.getElementById(`${prefix}-mvs`).value='';
   document.getElementById(`${prefix}-down`).checked=false;
@@ -4456,7 +4553,8 @@ function addRouteToBlock(bi){
   const count=parseInt(document.getElementById(`block-${bi}-count`).value)||1;
   const movements=parseInt(document.getElementById(`block-${bi}-mvs`).value)||0;
   const climbedDown=document.getElementById(`block-${bi}-down`).checked;
-  climbSession.blocks[bi].routes.push({grade,result,count,movements,climbedDown});
+  const angle=_pendingAngle['b'+bi]||'';
+  climbSession.blocks[bi].routes.push({grade,result,count,movements,climbedDown,angle});
   markDirty('climb');
   document.getElementById(`block-${bi}-mvs`).value='';
   document.getElementById(`block-${bi}-down`).checked=false;
@@ -4526,7 +4624,7 @@ function renderClimbBlocksLegacy(){
           <div>${entries.length?entries.map((e,ei)=>`
             <div class="route-item">
               <div class="route-grade">${e.grade}</div>
-              <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>
+              <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
               <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}</div>
               <button class="btn-icon" style="font-size:13px" onclick="editRouteEntry(${bi},'${phase}',${ei})">✏️</button>
               <button class="btn-icon" onclick="removeRouteEntry(${bi},'${phase}',${ei})">✕</button>
@@ -4651,6 +4749,12 @@ function updateClimbSummary(){
     ${totalMeters?`<div class="stat-box"><div class="stat-val stat-climb">${totalMeters}m</div><div class="stat-lbl">Meters</div></div>`:''}
     ${totalMovements?`<div class="stat-box"><div class="stat-val stat-climb">${totalMovements}</div><div class="stat-lbl">Total Mvs${avgMvs?` · ~${avgMvs}/rt`:''}</div></div>`:''}
     ${totalMoves?`<div class="stat-box"><div class="stat-val stat-climb">${totalMoves}</div><div class="stat-lbl">Moves</div></div>`:''}`;
+  // Wall-angle breakdown (only routes that carry an angle)
+  const angEl=document.getElementById('climb-angle-summary');
+  if(angEl){
+    const allEntries=[...climbSession.warmup,...climbSession.blocks.filter(b=>b.type==='routes').flatMap(b=>b.routes||[]),...climbSession.cooldown];
+    angEl.innerHTML=angleSummaryHtml(angleCounts(allEntries));
+  }
 }
 
 // Normalise result strings to title case regardless of how old sessions stored them
@@ -4660,7 +4764,7 @@ function normResult(r){
 }
 // Helper: get flat routes array from all formats (new warmup/blocks/cooldown, old routes[], entries[], or phases-based)
 function getSessionRoutes(s){
-  if(s.routes) return s.routes.map(r=>({...r,result:normResult(r.result),climbedDown:r.climbedDown||false,movements:r.movements||0}));
+  if(s.routes) return s.routes.map(r=>({...r,result:normResult(r.result),climbedDown:r.climbedDown||false,movements:r.movements||0,angle:r.angle||''}));
   const routes=[];
 
   // New format: warmup/blocks/cooldown
@@ -4671,7 +4775,7 @@ function getSessionRoutes(s){
     }
     for(const e of allRoutes){
       for(let i=0;i<(e.count||1);i++){
-        routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false});
+        routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||''});
       }
     }
     return routes;
@@ -4683,16 +4787,16 @@ function getSessionRoutes(s){
     if(b.phases){
       for(const phase of ['warmup','main','cooldown']){
         for(const e of (b.phases[phase]||[])){
-          for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false});
+          for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||''});
         }
       }
     } else if(b.routes){
       for(const e of b.routes){
-        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false});
+        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||''});
       }
     } else {
       for(const e of (b.entries||[])){
-        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false});
+        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||''});
       }
     }
   }
@@ -5048,13 +5152,29 @@ function renderClimbHistory(){
     +`<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:6px">${sessions.length} total sessions</div>`;
 }
 
+// Pyramid wall-angle filter ('' = all). Routes logged without an angle only
+// appear under "All" — same convention as uncategorised tennis matches.
+let _pyramidAngle='';
+function pyramidAngleFilter(a){
+  _pyramidAngle=a;
+  document.querySelectorAll('#pyramid-angle-filter .seg-btn').forEach(b=>{
+    b.classList.toggle('active',(b.getAttribute('onclick')||'').includes(`('${a}')`));
+  });
+  renderPyramid();
+}
+
 function renderPyramid(){
   // Count OS/Flash/RP/Project per grade band from all climb sessions
   const counts={};
+  let skippedNoAngle=0;
   PYRAMID.forEach(p=>{counts[p.grade]={os:0,rp:0,project:0,meters:0,moves:0,movesCount:0}});
   for(const s of DB.climbSessions()){
     const wallH=GYMS[s.gym]||s.wallHeight||0;
     for(const r of getSessionRoutes(s)){
+      if(_pyramidAngle){
+        if(!r.angle){skippedNoAngle++;continue;}
+        if(r.angle!==_pyramidAngle)continue;
+      }
       const band=gradeToBand(r.grade);
       if(!band||!counts[band])continue;
       if(r.result==='OS'||r.result==='Flash')counts[band].os++;
@@ -5071,6 +5191,14 @@ function renderPyramid(){
   const tierEl=document.getElementById('pyramid-tiers');
   const statsEl=document.getElementById('pyramid-stats');
   tierEl.innerHTML='';statsEl.innerHTML='';
+
+  const noteEl=document.getElementById('pyramid-angle-note');
+  if(noteEl){
+    if(_pyramidAngle){
+      noteEl.style.display='';
+      noteEl.innerHTML=`Showing <strong>${_pyramidAngle}</strong> only${skippedNoAngle?` · ${skippedNoAngle} route${skippedNoAngle===1?'':'s'} with no angle logged excluded`:''}`;
+    } else noteEl.style.display='none';
+  }
 
   PYRAMID.filter(p=>p.os!==null||p.rp!==null).forEach(p=>{
     const c=counts[p.grade]||{os:0,rp:0,meters:0,moves:0};
