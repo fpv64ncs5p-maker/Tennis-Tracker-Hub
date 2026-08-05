@@ -3705,6 +3705,10 @@ function showSessionDetail(type,id){
       ${detTotalMvs?`<div class="stat-box"><div class="stat-val stat-climb">${detTotalMvs}</div><div class="stat-lbl">Total Mvs${detAvgMvs?' · ~'+detAvgMvs+'/rt':''}</div></div>`:''}
     </div>`;
     html+=angleSummaryHtml(angleCounts(getSessionRoutes(s).map(r=>({...r,count:1}))));
+    if(s.plan&&s.plan.items){
+      const pDone=s.plan.items.filter(i=>i.done).length;
+      html+=`<div style="font-size:12px;color:var(--muted);margin-top:10px">📋 Plan: <strong style="color:var(--text)">${s.plan.label||'template'}</strong> — ${pDone}/${s.plan.items.length} climbed</div>`;
+    }
     // Warm-up / cool-down sections (current format). Before 2026-08-05 the
     // detail modal only ever looked at b.phases/b.entries, so these — and the
     // block's own routes[] — were silently missing from every saved session.
@@ -4045,31 +4049,135 @@ const CLIMB_TEMPLATES=[
    cooldown:['6b','6b']},
 ];
 
-function groupRoutes(grades){
-  const counts={},order=[];
-  grades.forEach(g=>{if(!counts[g]){counts[g]=0;order.push(g);}counts[g]++;});
-  return order.map(g=>({grade:g,result:'Repeat',count:counts[g],climbedDown:false}));
-}
+/* ── SESSION TEMPLATES AS A TICK-OFF PLAN (2026-08-05) ────────────────────
+   Applying a template used to write the whole thing straight into the log as
+   if it had already been climbed (result 'Repeat'), so 15 routes and ~200m
+   counted towards meters/pyramid/stats before Jo touched the wall — and
+   groupRoutes() collapsed duplicates, throwing away the ordered ladder that
+   makes a Base vs Power session what it is.
+   Now a template loads a PLAN: an ordered checklist that counts for nothing
+   until ticked. Ticking a route appends a real logged entry (default OS) to
+   the current burn; unticking removes it again via the `pid` back-reference.
+   The plan lives on climbSession, so the draft carries it automatically. */
+let _planSeq=0;
 
 function applyClimbTemplate(id){
   const t=CLIMB_TEMPLATES.find(x=>x.id===id);
   if(!t)return;
-  // Convert template to new format
-  climbSession.warmup=groupRoutes(t.warmup);
-  climbSession.blocks=[{
-    type:'routes',
-    routes:groupRoutes(t.main),
-    climbingType:'Lead',
-    wallHeight:''
-  }];
-  climbSession.cooldown=groupRoutes(t.cooldown);
+  if(climbSession.plan&&climbSession.plan.items.some(i=>i.done)
+     &&!confirm('Load a different plan? Routes you already ticked stay logged in the session.'))return;
+  climbSession.plan={
+    templateId:t.id,
+    label:`${t.grade} · ${t.type}`,
+    items:[
+      ...t.warmup.map(g=>({grade:g,section:'warmup',done:false,pid:''})),
+      ...t.main.map(g=>({grade:g,section:'main',done:false,pid:''})),
+      ...t.cooldown.map(g=>({grade:g,section:'cooldown',done:false,pid:''}))
+    ]
+  };
+  _planPickerOpen=false;
+  markDirty('climb');
+  renderClimbTemplates();
   renderClimbBlocks();
-  toast('📋 Template applied — adjust results as you climb!');
+  toast('📋 Plan loaded — tick routes as you climb');
+}
+
+// The burn a ticked route goes into: the last routes block, or a new one.
+function _currentRoutesBlock(){
+  for(let i=climbSession.blocks.length-1;i>=0;i--){
+    if(climbSession.blocks[i].type==='routes')return climbSession.blocks[i];
+  }
+  const b={type:'routes',routes:[],climbingType:'Lead',wallHeight:''};
+  climbSession.blocks.push(b);
+  return b;
+}
+// Start the next burn — inherits the previous block's type and wall height,
+// since a rest usually doesn't mean moving wall.
+function startNewBurn(){
+  const prev=[...climbSession.blocks].reverse().find(b=>b.type==='routes');
+  climbSession.blocks.push({
+    type:'routes',routes:[],
+    climbingType:prev?prev.climbingType:'Lead',
+    wallHeight:prev?prev.wallHeight:'',
+    customWallHeight:prev?prev.customWallHeight:undefined
+  });
+  markDirty('climb');
+  renderClimbTemplates();
+  renderClimbBlocks();
+  toast('🧗 New burn started');
+}
+function _removePlanEntry(pid){
+  if(!pid)return;
+  const drop=arr=>{const i=(arr||[]).findIndex(e=>e.pid===pid);if(i!==-1){arr.splice(i,1);return true;}return false;};
+  if(drop(climbSession.warmup))return;
+  if(drop(climbSession.cooldown))return;
+  for(const b of climbSession.blocks){if(b.type==='routes'&&drop(b.routes))return;}
+}
+function togglePlanItem(idx){
+  const p=climbSession.plan;
+  if(!p||!p.items[idx])return;
+  const it=p.items[idx];
+  if(it.done){
+    _removePlanEntry(it.pid);
+    it.done=false;it.pid='';
+  } else {
+    const pid='p'+(++_planSeq)+'_'+Date.now().toString(36);
+    // Default OS — one tap for the common case; change it with the ✏️ if you fell.
+    const entry={grade:it.grade,result:'OS',count:1,movements:0,climbedDown:false,angle:'',pid};
+    if(it.section==='warmup')climbSession.warmup.push(entry);
+    else if(it.section==='cooldown')climbSession.cooldown.push(entry);
+    else _currentRoutesBlock().routes.push(entry);
+    it.done=true;it.pid=pid;
+  }
+  markDirty('climb');
+  renderClimbTemplates();
+  renderClimbBlocks();
+}
+function clearClimbPlan(){
+  if(!confirm('Remove the plan? Routes you already ticked stay logged.'))return;
+  climbSession.plan=null;
+  markDirty('climb');
+  renderClimbTemplates();
+  renderClimbBlocks();
+}
+let _planPickerOpen=false;
+function togglePlanPicker(){_planPickerOpen=!_planPickerOpen;renderClimbTemplates();}
+
+const PLAN_SECTIONS=[{key:'warmup',label:'🔥 Warm-up',color:'#f97316'},{key:'main',label:'● Main',color:'var(--climb)'},{key:'cooldown',label:'❄️ Cool-down',color:'#06b6d4'}];
+function _planCardHtml(p){
+  const done=p.items.filter(i=>i.done).length;
+  const burns=climbSession.blocks.filter(b=>b.type==='routes').length;
+  const rows=PLAN_SECTIONS.map(sec=>{
+    const idxs=p.items.map((it,i)=>({it,i})).filter(x=>x.it.section===sec.key);
+    if(!idxs.length)return '';
+    return `<div style="font-size:10px;font-weight:700;color:${sec.color};text-transform:uppercase;letter-spacing:.05em;margin:8px 0 5px">${sec.label}</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">${idxs.map(({it,i})=>`
+        <button onclick="togglePlanItem(${i})" title="${it.done?'Tap to un-log':'Tap when climbed'}"
+          style="min-width:52px;padding:7px 8px;border-radius:var(--radius-sm);font-size:13px;font-weight:800;cursor:pointer;
+          border:1.5px solid ${it.done?'var(--green)':'var(--border)'};
+          background:${it.done?'rgba(21,128,61,.12)':'var(--surface2)'};
+          color:${it.done?'var(--green)':'var(--text)'}">${it.done?'✓ ':''}${it.grade}</button>`).join('')}</div>`;
+  }).join('');
+  return `<div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px">
+      <span class="card-title" style="margin:0">📋 Plan · ${p.label}</span>
+      <button class="btn-icon" title="Remove plan" onclick="clearClimbPlan()">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted)">${done}/${p.items.length} climbed${burns?` · burn ${burns}`:''} — tap a grade when you've done it</div>
+    ${rows}
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-ghost" style="flex:1;font-size:12px" onclick="togglePlanPicker()">Change plan</button>
+      <button class="btn btn-climb" style="flex:1;font-size:12px" onclick="startNewBurn()">➕ New burn</button>
+    </div>
+  </div>`;
 }
 
 function renderClimbTemplates(){
   const el=document.getElementById('climb-templates-section');
   if(!el)return;
+  // An active plan replaces the picker (reopen it with "Change plan").
+  const plan=climbSession.plan;
+  if(plan&&!_planPickerOpen){el.innerHTML=_planCardHtml(plan);return;}
   const grades=[...new Set(CLIMB_TEMPLATES.map(t=>t.grade))];
   const filtered=CLIMB_TEMPLATES.filter(t=>t.grade===_tmplGradeFilter);
   const gradeChips=grades.map(g=>`
@@ -4095,6 +4203,7 @@ function renderClimbTemplates(){
   el.innerHTML=`<div class="card" style="margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <span class="card-title" style="margin:0">📋 Session Templates</span>
+      ${plan?`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="togglePlanPicker()">Back to plan</button>`:''}
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${gradeChips}</div>
     ${tmplCards}
@@ -4236,7 +4345,12 @@ function addClimbBlock(type,climbingType){
   renderClimbBlocks();
 }
 
-function removeClimbBlock(bi){climbSession.blocks.splice(bi,1);renderClimbBlocks();}
+function removeClimbBlock(bi){
+  const b=climbSession.blocks[bi];
+  (b&&b.routes||[]).forEach(e=>_syncPlanTick(e,false));
+  climbSession.blocks.splice(bi,1);
+  renderClimbBlocks();
+}
 
 // Warm-up / cool-down each get their own wall height (2026-08-05) — Jo warms
 // up on one wall and does the blocks on another. '' = the gym's default.
@@ -4358,12 +4472,19 @@ function renderClimbBlocks(){
   // content the inline "➕ Add block" row (rendered above Cool-down) takes over.
   const addRow=document.getElementById('add-block-row');
   if(addRow)addRow.style.display=hasData?'none':'flex';
+  // Keep the plan card in step (burn counter, ticks) and make sure it clears
+  // whenever the session is reset. renderClimbTemplates never calls back here.
+  renderClimbTemplates();
+  // Saved before the early return: a loaded plan with nothing ticked yet is
+  // still worth keeping if the screen sleeps.
+  _saveDraftClimb();
   if(!hasData){
-    el.innerHTML='<div class="empty"><div class="empty-icon">🧗</div><p>Tap a block type below<br>to start logging.</p></div>';
+    el.innerHTML=climbSession.plan
+      ?'<div class="empty"><div class="empty-icon">📋</div><p>Tick a grade in the plan above<br>as you climb it.</p></div>'
+      :'<div class="empty"><div class="empty-icon">🧗</div><p>Tap a block type below<br>to start logging.</p></div>';
     document.getElementById('climb-session-summary').style.display='none';
     return;
   }
-  _saveDraftClimb();
 
   let html='';
 
@@ -4588,16 +4709,28 @@ function addRouteToBlock(bi){
   renderClimbBlocks();
 }
 
+// Deleting a route that came from the plan must un-tick it, or the plan would
+// claim it's climbed with nothing logged (and the counter would drift).
+function _syncPlanTick(entry,done){
+  const p=climbSession.plan;
+  if(!p||!entry||!entry.pid)return;
+  // The pid is kept on the item even when un-ticked, so an undo can find it.
+  const it=p.items.find(i=>i.pid===entry.pid);
+  if(it)it.done=done;
+}
+
 function removeRouteFromSection(section,ei){
   const removed=climbSession[section].splice(ei,1)[0];
+  _syncPlanTick(removed,false);
   renderClimbBlocks();
-  pushUndo('Route removed',()=>{climbSession[section].splice(ei,0,removed);renderClimbBlocks();});
+  pushUndo('Route removed',()=>{climbSession[section].splice(ei,0,removed);_syncPlanTick(removed,true);renderClimbBlocks();});
 }
 
 function removeRouteFromBlock(bi,ei){
   const removed=climbSession.blocks[bi].routes.splice(ei,1)[0];
+  _syncPlanTick(removed,false);
   renderClimbBlocks();
-  pushUndo('Route removed',()=>{climbSession.blocks[bi].routes.splice(ei,0,removed);renderClimbBlocks();});
+  pushUndo('Route removed',()=>{climbSession.blocks[bi].routes.splice(ei,0,removed);_syncPlanTick(removed,true);renderClimbBlocks();});
 }
 
 function editRouteInSection(section,ei){
@@ -4932,7 +5065,7 @@ function saveClimbSession(){
     const all=DB.climbSessions();
     const idx=all.findIndex(s=>String(s.id)===String(_editingClimbId));
     if(idx!==-1){
-      all[idx]={...all[idx],date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,startTime,endTime,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown],warmupWall:climbSession.warmupWall||'',warmupWallCustom:climbSession.warmupWallCustom||'',cooldownWall:climbSession.cooldownWall||'',cooldownWallCustom:climbSession.cooldownWallCustom||''};
+      all[idx]={...all[idx],date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,startTime,endTime,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown],warmupWall:climbSession.warmupWall||'',warmupWallCustom:climbSession.warmupWallCustom||'',cooldownWall:climbSession.cooldownWall||'',cooldownWallCustom:climbSession.cooldownWallCustom||'',plan:climbSession.plan||null};
       DB.set('climb_sessions',all);
     }
     _editingClimbId=null;
@@ -4941,7 +5074,7 @@ function saveClimbSession(){
     document.getElementById('climb-save-btn').textContent='Save Session';
     toast('✅ Session updated!');
   } else {
-    const session={id:Date.now(),date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,startTime,endTime,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown],warmupWall:climbSession.warmupWall||'',warmupWallCustom:climbSession.warmupWallCustom||'',cooldownWall:climbSession.cooldownWall||'',cooldownWallCustom:climbSession.cooldownWallCustom||''};
+    const session={id:Date.now(),date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,startTime,endTime,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown],warmupWall:climbSession.warmupWall||'',warmupWallCustom:climbSession.warmupWallCustom||'',cooldownWall:climbSession.cooldownWall||'',cooldownWallCustom:climbSession.cooldownWallCustom||'',plan:climbSession.plan||null};
     DB.saveClimb(session);
     clearDirty();
     toast('✅ Session saved!');
@@ -4979,7 +5112,8 @@ function editClimbSession(id){
       blocks:s.blocks?JSON.parse(JSON.stringify(s.blocks)):[],
       cooldown:s.cooldown?JSON.parse(JSON.stringify(s.cooldown)):[],
       warmupWall:s.warmupWall||'',warmupWallCustom:s.warmupWallCustom||'',
-      cooldownWall:s.cooldownWall||'',cooldownWallCustom:s.cooldownWallCustom||''
+      cooldownWall:s.cooldownWall||'',cooldownWallCustom:s.cooldownWallCustom||'',
+      plan:s.plan?JSON.parse(JSON.stringify(s.plan)):null
     };
   } else {
     // Migrate old formats to new structure
@@ -5063,7 +5197,7 @@ function updateClimbDuration(){
 // a start/finish time, a one-off custom wall height, or a non-default gym selection.
 function _climbDraftWorthSaving(gym,timeSet,customWall){
   return !!(climbSession.warmup.length||climbSession.blocks.length||climbSession.cooldown.length
-    ||timeSet||customWall||(gym&&gym!=='__add__'&&gym!==_DEFAULT_GYM));
+    ||climbSession.plan||timeSet||customWall||(gym&&gym!=='__add__'&&gym!==_DEFAULT_GYM));
 }
 function _saveDraftClimb(){
   if(_editingClimbId)return; // don't autosave while editing an already-saved session
@@ -5092,10 +5226,10 @@ function _restoreDraftClimb(){
   if(!draft||!draft.session){_clearDraftClimb();return;}
   const s=draft.session;
   const routeCount=(s.warmup?.length||0)+(s.cooldown?.length||0)+(s.blocks?.reduce((a,b)=>(a+(b.routes?.length||0)+(b.sets?.length||0)),0)||0);
-  const meaningful=routeCount>0||(s.blocks?.length||0)>0||draft.start||draft.end||draft.customWall||(draft.gym&&draft.gym!==_DEFAULT_GYM);
+  const meaningful=routeCount>0||(s.blocks?.length||0)>0||!!s.plan||draft.start||draft.end||draft.customWall||(draft.gym&&draft.gym!==_DEFAULT_GYM);
   if(!meaningful){_clearDraftClimb();return;}
   const when=draft.savedAt?new Date(draft.savedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
-  const label=routeCount?`${routeCount} ${routeCount===1?'entry':'entries'}`:'session in progress';
+  const label=routeCount?`${routeCount} ${routeCount===1?'entry':'entries'}`:(s.plan?`plan (${s.plan.label||'template'})`:'session in progress');
   const banner=document.getElementById('climb-draft-banner');
   if(banner){banner.style.display='flex';banner.querySelector('span').textContent=`Unsaved ${label} from ${when}. Resume?`;}
 }
