@@ -2000,6 +2000,12 @@ function renderGymOptions(selected){
 function gymWallOptions(selected){
   const gym=document.getElementById('climb-gym')?.value||'';
   const heights=gym==='custom'?[]:[...new Set(gymWalls(gym))];
+  // Keep a previously-saved height selectable even if the gym's wall list has
+  // since changed — otherwise the picker reads "Default" while the meters are
+  // still calculated from the saved height.
+  const sel=parseFloat(selected);
+  if(sel>0&&!heights.some(h=>Number(h)===sel))heights.push(sel);
+  heights.sort((a,b)=>a-b);
   let html=`<option value="">Default (${getWallHeight()}m)</option>`;
   heights.forEach(h=>{html+=`<option value="${h}"${String(selected)===String(h)?' selected':''}>${h}m</option>`;});
   html+=`<option value="custom"${selected==='custom'?' selected':''}>Custom…</option>`;
@@ -3684,11 +3690,14 @@ function showSessionDetail(type,id){
     const detDownclimbs=detRoutes.filter(r=>r.climbedDown).length;
     const detRouteTotal=detRoutes.length+detDownclimbs;
     const detSends=detRoutes.filter(r=>r.result!=='Project').length;
-    const detMeters=detRoutes.reduce((a,r)=>a+wallH*(r.climbedDown?2:1),0);
+    const detMeters=detRoutes.reduce((a,r)=>a+(r.wallH||0)*(r.climbedDown?2:1),0);
     const detMvRoutes=detRoutes.filter(r=>r.movements>0);
     const detTotalMvs=detMvRoutes.reduce((a,r)=>a+r.movements*(r.climbedDown?2:1),0);
     const detAvgMvs=detMvRoutes.length?Math.round(detTotalMvs/detMvRoutes.reduce((a,r)=>a+(r.climbedDown?2:1),0)):0;
-    html+=`<p style="color:var(--muted);font-size:13px;margin-bottom:8px">${s.gym}${s.duration?' · '+s.duration+' min':''}${wallH?' · wall '+wallH+'m':''}</p>`;
+    // A session can span several walls — list every height actually climbed.
+    const detWalls=[...new Set(detRoutes.map(r=>r.wallH).filter(h=>h>0))].sort((a,b)=>a-b);
+    const wallLabelTxt=detWalls.length?` · wall ${detWalls.join('/')}m`:(wallH?` · wall ${wallH}m`:'');
+    html+=`<p style="color:var(--muted);font-size:13px;margin-bottom:8px">${s.gym}${s.duration?' · '+s.duration+' min':''}${wallLabelTxt}</p>`;
     html+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       ${detRouteTotal?`<div class="stat-box"><div class="stat-val stat-climb">${detRouteTotal}${detDownclimbs?`<span style="font-size:11px"> (${detDownclimbs}↕)</span>`:''}</div><div class="stat-lbl">Routes</div></div>`:''}
       ${detSends?`<div class="stat-box"><div class="stat-val stat-climb">${detSends}</div><div class="stat-lbl">Sends</div></div>`:''}
@@ -3705,7 +3714,8 @@ function showSessionDetail(type,id){
       <div class="route-info">×${e.count||1}${e.movements?` · ${e.movements}mv/rt`:''}${e.climbedDown?' · ↕':''}${e.notes?` · ${e.notes}`:''}</div>
     </div>`;
     if((s.warmup||[]).length){
-      html+=`<div style="font-size:11px;font-weight:700;color:${PHASE_COLORS.warmup};text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">🔥 Warm-up</div>`;
+      const wuH=_resolveWallH(s.warmupWall,s.warmupWallCustom,wallH);
+      html+=`<div style="font-size:11px;font-weight:700;color:${PHASE_COLORS.warmup};text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">🔥 Warm-up${wuH?` · ${wuH}m`:''}</div>`;
       html+=s.warmup.map(_detRow).join('');
     }
     if(s.blocks){
@@ -3741,7 +3751,8 @@ function showSessionDetail(type,id){
         }
       }
       if((s.cooldown||[]).length){
-        html+=`<div style="font-size:11px;font-weight:700;color:${PHASE_COLORS.cooldown};text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">❄️ Cool-down</div>`;
+        const cdH=_resolveWallH(s.cooldownWall,s.cooldownWallCustom,wallH);
+        html+=`<div style="font-size:11px;font-weight:700;color:${PHASE_COLORS.cooldown};text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">❄️ Cool-down${cdH?` · ${cdH}m`:''}</div>`;
         html+=s.cooldown.map(_detRow).join('');
       }
     } else {
@@ -4227,6 +4238,14 @@ function addClimbBlock(type,climbingType){
 
 function removeClimbBlock(bi){climbSession.blocks.splice(bi,1);renderClimbBlocks();}
 
+// Warm-up / cool-down each get their own wall height (2026-08-05) — Jo warms
+// up on one wall and does the blocks on another. '' = the gym's default.
+function updateSectionWall(section,which,value){
+  climbSession[section+(which==='custom'?'WallCustom':'Wall')]=value;
+  markDirty('climb');
+  renderClimbBlocks();
+}
+
 function updateClimbBlockField(bi,field,value){
   if(climbSession.blocks[bi]){
     climbSession.blocks[bi][field]=value;
@@ -4350,7 +4369,11 @@ function renderClimbBlocks(){
 
   // WARM-UP SECTION
   html+=`<div class="card" style="margin-bottom:10px;border-top:3px solid #f97316">
-    <div style="font-size:12px;font-weight:700;color:#f97316;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">🔥 Warm-up</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;color:#f97316;text-transform:uppercase;letter-spacing:.05em">🔥 Warm-up</div>
+      <select style="font-size:12px;width:auto;max-width:150px" title="Wall height for warm-up routes" onchange="updateSectionWall('warmup','wall',this.value)">${gymWallOptions(climbSession.warmupWall)}</select>
+    </div>
+    ${climbSession.warmupWall==='custom'?`<div style="margin-bottom:10px"><input type="number" inputmode="decimal" placeholder="Height in meters" value="${climbSession.warmupWallCustom||''}" style="font-size:13px;width:100%" onchange="updateSectionWall('warmup','custom',this.value)"></div>`:''}
     <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
       <select id="wu-grade" style="flex:2;min-width:60px;font-size:13px">${GRADE_OPTS}</select>
       <select id="wu-result" style="flex:2;min-width:80px;font-size:13px">${RESULT_OPTS}</select>
@@ -4499,7 +4522,11 @@ function renderClimbBlocks(){
 
   // COOL-DOWN SECTION
   html+=`<div class="card" style="margin-bottom:10px;border-top:3px solid #06b6d4">
-    <div style="font-size:12px;font-weight:700;color:#06b6d4;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">❄️ Cool-down</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;color:#06b6d4;text-transform:uppercase;letter-spacing:.05em">❄️ Cool-down</div>
+      <select style="font-size:12px;width:auto;max-width:150px" title="Wall height for cool-down routes" onchange="updateSectionWall('cooldown','wall',this.value)">${gymWallOptions(climbSession.cooldownWall)}</select>
+    </div>
+    ${climbSession.cooldownWall==='custom'?`<div style="margin-bottom:10px"><input type="number" inputmode="decimal" placeholder="Height in meters" value="${climbSession.cooldownWallCustom||''}" style="font-size:13px;width:100%" onchange="updateSectionWall('cooldown','custom',this.value)"></div>`:''}
     <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
       <select id="cd-grade" style="flex:2;min-width:60px;font-size:13px">${GRADE_OPTS}</select>
       <select id="cd-result" style="flex:2;min-width:80px;font-size:13px">${RESULT_OPTS}</select>
@@ -4719,10 +4746,14 @@ function updateClimbSummary(){
   let totalMovements=0,routesWithMvs=0;
 
   // Process all routes from warmup, blocks, and cooldown
-  const allSections=[{routes:climbSession.warmup,wallH:defaultWallH},...climbSession.blocks.filter(b=>b.type==='routes').map(b=>({
-    routes:b.routes||[],
-    wallH:b.wallHeight==='custom'?parseFloat(b.customWallHeight)||defaultWallH:(b.wallHeight?parseFloat(b.wallHeight):defaultWallH)
-  })),{routes:climbSession.cooldown,wallH:defaultWallH}];
+  const allSections=[
+    {routes:climbSession.warmup,wallH:_resolveWallH(climbSession.warmupWall,climbSession.warmupWallCustom,defaultWallH)},
+    ...climbSession.blocks.filter(b=>b.type==='routes').map(b=>({
+      routes:b.routes||[],
+      wallH:_resolveWallH(b.wallHeight,b.customWallHeight,defaultWallH)
+    })),
+    {routes:climbSession.cooldown,wallH:_resolveWallH(climbSession.cooldownWall,climbSession.cooldownWallCustom,defaultWallH)}
+  ];
 
   for(const sec of allSections){
     for(const e of sec.routes){
@@ -4762,20 +4793,39 @@ function normResult(r){
   const map={'os':'OS','flash':'Flash','rp':'RP','repeat':'Repeat','project':'Project'};
   return map[(r||'').toLowerCase()]||r||'Repeat';
 }
+/* ── WALL HEIGHT PER ROUTE (2026-08-05) ───────────────────────────────────
+   Warm-up, each block and cool-down can each be on a different wall. Before
+   this, only the live Session Summary honoured the per-block height — every
+   saved-session meters calculation applied ONE session-level height to every
+   route, so logging and history disagreed on multi-wall sessions. Every route
+   returned by getSessionRoutes now carries the height it was actually climbed
+   at, and all meters maths reads r.wallH. */
+function _resolveWallH(v,custom,fallback){
+  if(v==='custom') return parseFloat(custom)||fallback;
+  const n=parseFloat(v);
+  return n>0?n:fallback;
+}
+// Session-level fallback: the height stored when the session was saved.
+function sessionWallH(s){return GYMS[s.gym]||s.wallHeight||0;}
+
 // Helper: get flat routes array from all formats (new warmup/blocks/cooldown, old routes[], entries[], or phases-based)
 function getSessionRoutes(s){
-  if(s.routes) return s.routes.map(r=>({...r,result:normResult(r.result),climbedDown:r.climbedDown||false,movements:r.movements||0,angle:r.angle||''}));
+  const fallbackH=sessionWallH(s);
+  if(s.routes) return s.routes.map(r=>({...r,result:normResult(r.result),climbedDown:r.climbedDown||false,movements:r.movements||0,angle:r.angle||'',wallH:fallbackH}));
   const routes=[];
 
   // New format: warmup/blocks/cooldown
   if(s.warmup||s.cooldown){
-    const allRoutes=[...(s.warmup||[]),...(s.cooldown||[])];
-    for(const b of (s.blocks||[])){
-      if(b.type==='routes'&&b.routes) allRoutes.push(...b.routes);
-    }
-    for(const e of allRoutes){
-      for(let i=0;i<(e.count||1);i++){
-        routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||''});
+    const groups=[
+      {entries:s.warmup||[],wallH:_resolveWallH(s.warmupWall,s.warmupWallCustom,fallbackH)},
+      ...(s.blocks||[]).filter(b=>b.type==='routes'&&b.routes).map(b=>({entries:b.routes,wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH)})),
+      {entries:s.cooldown||[],wallH:_resolveWallH(s.cooldownWall,s.cooldownWallCustom,fallbackH)}
+    ];
+    for(const g of groups){
+      for(const e of g.entries){
+        for(let i=0;i<(e.count||1);i++){
+          routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:g.wallH});
+        }
       }
     }
     return routes;
@@ -4787,16 +4837,16 @@ function getSessionRoutes(s){
     if(b.phases){
       for(const phase of ['warmup','main','cooldown']){
         for(const e of (b.phases[phase]||[])){
-          for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||''});
+          for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH)});
         }
       }
     } else if(b.routes){
       for(const e of b.routes){
-        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||''});
+        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH)});
       }
     } else {
       for(const e of (b.entries||[])){
-        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||''});
+        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH)});
       }
     }
   }
@@ -4882,7 +4932,7 @@ function saveClimbSession(){
     const all=DB.climbSessions();
     const idx=all.findIndex(s=>String(s.id)===String(_editingClimbId));
     if(idx!==-1){
-      all[idx]={...all[idx],date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,startTime,endTime,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown]};
+      all[idx]={...all[idx],date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,startTime,endTime,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown],warmupWall:climbSession.warmupWall||'',warmupWallCustom:climbSession.warmupWallCustom||'',cooldownWall:climbSession.cooldownWall||'',cooldownWallCustom:climbSession.cooldownWallCustom||''};
       DB.set('climb_sessions',all);
     }
     _editingClimbId=null;
@@ -4891,7 +4941,7 @@ function saveClimbSession(){
     document.getElementById('climb-save-btn').textContent='Save Session';
     toast('✅ Session updated!');
   } else {
-    const session={id:Date.now(),date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,startTime,endTime,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown]};
+    const session={id:Date.now(),date,gym:gym==='custom'?'Custom gym':gym,wallHeight:wallH,startTime,endTime,duration,warmup:[...climbSession.warmup],blocks:[...climbSession.blocks],cooldown:[...climbSession.cooldown],warmupWall:climbSession.warmupWall||'',warmupWallCustom:climbSession.warmupWallCustom||'',cooldownWall:climbSession.cooldownWall||'',cooldownWallCustom:climbSession.cooldownWallCustom||''};
     DB.saveClimb(session);
     clearDirty();
     toast('✅ Session saved!');
@@ -4927,7 +4977,9 @@ function editClimbSession(id){
     climbSession={
       warmup:s.warmup?JSON.parse(JSON.stringify(s.warmup)):[],
       blocks:s.blocks?JSON.parse(JSON.stringify(s.blocks)):[],
-      cooldown:s.cooldown?JSON.parse(JSON.stringify(s.cooldown)):[]
+      cooldown:s.cooldown?JSON.parse(JSON.stringify(s.cooldown)):[],
+      warmupWall:s.warmupWall||'',warmupWallCustom:s.warmupWallCustom||'',
+      cooldownWall:s.cooldownWall||'',cooldownWallCustom:s.cooldownWallCustom||''
     };
   } else {
     // Migrate old formats to new structure
@@ -5120,8 +5172,7 @@ function renderClimbHistory(){
     const sends=routes.filter(r=>r.result!=='Project').length;
     const downclimbs=routes.filter(r=>r.climbedDown).length;
     const totalRouteCount=routes.length+downclimbs;
-    const wallH=GYMS[s.gym]||s.wallHeight||0;
-    const meters=routes.reduce((acc,r)=>acc+wallH*(r.climbedDown?2:1),0);
+    const meters=routes.reduce((acc,r)=>acc+(r.wallH||0)*(r.climbedDown?2:1),0);
     const mvsRoutes=routes.filter(r=>r.movements>0);
     const totalMvs=mvsRoutes.reduce((a,r)=>a+r.movements*(r.climbedDown?2:1),0);
     const totalMvsCount=mvsRoutes.reduce((a,r)=>a+(r.climbedDown?2:1),0);
@@ -5169,7 +5220,6 @@ function renderPyramid(){
   let skippedNoAngle=0;
   PYRAMID.forEach(p=>{counts[p.grade]={os:0,rp:0,project:0,meters:0,moves:0,movesCount:0}});
   for(const s of DB.climbSessions()){
-    const wallH=GYMS[s.gym]||s.wallHeight||0;
     for(const r of getSessionRoutes(s)){
       if(_pyramidAngle){
         if(!r.angle){skippedNoAngle++;continue;}
@@ -5181,7 +5231,7 @@ function renderPyramid(){
       if(r.result==='RP')counts[band].rp++;
       if(r.result==='Project')counts[band].project++;
       if(['OS','Flash','RP'].includes(r.result)){
-        counts[band].meters+=wallH*(r.climbedDown?2:1);
+        counts[band].meters+=(r.wallH||0)*(r.climbedDown?2:1);
       }
       // Movements count for ALL results — reflects training effort regardless of send quality
       if(r.movements>0){counts[band].moves+=r.movements;counts[band].movesCount++;}
@@ -6094,10 +6144,9 @@ function renderWeekTotals(weekStart){
   let climbMins=0,climbRoutes=0,climbMeters=0;
   climbS.forEach(s=>{
     climbMins+=parseInt(s.duration)||0;
-    const wallH=GYMS[s.gym]||s.wallHeight||0;
     const routes=getSessionRoutes(s);
     climbRoutes+=routes.length;
-    routes.forEach(r=>{ climbMeters+=wallH*(r.climbedDown?2:1); });
+    routes.forEach(r=>{ climbMeters+=(r.wallH||0)*(r.climbedDown?2:1); });
   });
 
   // ── Fingerboard ───────────────────────────────────
@@ -6279,12 +6328,11 @@ function renderMonthlyResume(){
     let climbMins=0,climbRoutes=0,climbSends=0,climbMeters=0,climbMvs=0,climbMvsCount=0,topGradeIdx=-1;
     climbS.forEach(s=>{
       climbMins+=parseInt(s.duration)||0;
-      const wallH=GYMS[s.gym]||s.wallHeight||0;
       getSessionRoutes(s).forEach(r=>{
         const mult=r.climbedDown?2:1;
         climbRoutes+=mult;
         if(r.result!=='Project')climbSends+=mult;
-        climbMeters+=wallH*mult;
+        climbMeters+=(r.wallH||0)*mult;
         if(r.movements>0){climbMvs+=r.movements*mult;climbMvsCount+=mult;}
         if(['OS','Flash','RP'].includes(r.result)&&r.grade){
           const idx=GRADE_RANK[r.grade];
@@ -8399,14 +8447,13 @@ function getClimbingTrends(){
     const inThis=_inWindow(s.date,thisStart,thisEnd);
     const inPrev=_inWindow(s.date,prevStart,prevEnd);
     if(!inThis&&!inPrev)return;
-    const wallHeight=GYMS[s.gym]||s.wallHeight||0;
     const routes=getSessionRoutes(s);
     let routeCount=0,sendCount=0,meterCount=0;
     routes.forEach(r=>{
       const cnt=(r.count||1)*(r.climbedDown?2:1);
       routeCount+=cnt;
       if(['OS','Flash','RP'].includes(r.result))sendCount+=(r.count||1);
-      meterCount+=wallHeight*cnt;
+      meterCount+=(r.wallH||0)*cnt;
       if(inThis)thisGrades.push(r.grade);
       if(inPrev)prevGrades.push(r.grade);
     });
