@@ -4123,6 +4123,9 @@ function applyClimbTemplate(id){
     templateId:t.id,
     // `set` is the doc's Set 1–4 = one burn. 0 on warm-up/cool-down.
     label:`${t.grade} · ${t.type}`,
+    // The sessions are discipline-neutral, so the plan carries the choice and
+    // every burn it opens inherits it. Keep whatever was already picked.
+    mode:(climbSession.plan&&climbSession.plan.mode)||'Lead',
     items:[
       ...t.warmup.map(g=>({grade:g,section:'warmup',set:0,done:false,pid:''})),
       ...t.sets.flatMap((s,si)=>s.map(g=>({grade:g,section:'main',set:si+1,done:false,pid:''}))),
@@ -4141,19 +4144,33 @@ function _currentRoutesBlock(){
   for(let i=climbSession.blocks.length-1;i>=0;i--){
     if(climbSession.blocks[i].type==='routes')return climbSession.blocks[i];
   }
-  // Templates are discipline-neutral, so a new burn defaults to Lead — start a
-  // 🪨 Boulder burn yourself first if you're bouldering.
-  const b={type:'routes',routes:[],climbingType:'Lead',wallHeight:''};
+  const b={type:'routes',routes:[],climbingType:_planMode(),wallHeight:''};
   climbSession.blocks.push(b);
   return b;
 }
-// Start the next burn — inherits the previous block's type and wall height,
-// since a rest usually doesn't mean moving wall.
+// Boulder or ropes, from the plan card toggle. No plan → Lead, as before.
+function _planMode(){return (climbSession.plan&&climbSession.plan.mode)||'Lead';}
+function setPlanMode(m){
+  const p=climbSession.plan;
+  if(!p||p.mode===m)return;
+  p.mode=m;
+  // Burns holding nothing but plan-ticked routes follow the toggle as well —
+  // otherwise flipping it after the first tick would leave that burn wrong.
+  // A burn with any hand-logged route is left alone (`.every` is true when empty).
+  climbSession.blocks.forEach(b=>{
+    if(b.type==='routes'&&b.routes.every(r=>r.pid))b.climbingType=m;
+  });
+  markDirty('climb');
+  renderClimbTemplates();
+  renderClimbBlocks();
+}
+// Start the next burn — follows the plan's mode, and inherits the previous
+// block's wall height, since a rest usually doesn't mean moving wall.
 function startNewBurn(){
   const prev=[...climbSession.blocks].reverse().find(b=>b.type==='routes');
   climbSession.blocks.push({
     type:'routes',routes:[],
-    climbingType:prev?prev.climbingType:'Lead',
+    climbingType:climbSession.plan?_planMode():(prev?prev.climbingType:'Lead'),
     wallHeight:prev?prev.wallHeight:'',
     customWallHeight:prev?prev.customWallHeight:undefined
   });
@@ -4238,6 +4255,13 @@ function _planCardHtml(p){
       <button class="btn-icon" title="Remove plan" onclick="clearClimbPlan()">✕</button>
     </div>
     <div style="font-size:12px;color:var(--muted)">${done}/${p.items.length} climbed${burns?` · burn ${burns}`:''} — tap a grade when you've done it</div>
+    <div style="display:flex;gap:6px;margin-top:10px">${
+      [['Boulder','🪨 Boulder'],['Lead','🧗 Ropes']].map(([m,lbl])=>{
+        const on=(p.mode||'Lead')===m;
+        return `<button onclick="setPlanMode('${m}')" title="Which burns this plan opens"
+          style="flex:1;padding:6px 10px;border-radius:var(--radius-sm);font-size:12px;font-weight:700;cursor:pointer;
+          border:1.5px solid ${on?'var(--climb)':'var(--border)'};background:${on?'var(--climb)':'none'};color:${on?'#fff':'var(--text)'}">${lbl}</button>`;
+      }).join('')}</div>
     ${rows}
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn btn-ghost" style="flex:1;font-size:12px" onclick="togglePlanPicker()">Change plan</button>
