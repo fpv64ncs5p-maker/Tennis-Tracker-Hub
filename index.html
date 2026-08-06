@@ -4001,74 +4001,104 @@ function quickAddToSession(id){
 //  CLIMBING TAB
 // ══════════════════════════════════════════════════
 let climbSession={warmup:[],blocks:[],cooldown:[]};
-let _tmplDiscipline='Climbing';       // MyClimbing doc is split Boulder | Climbing
 let _tmplGradeFilter='6c+';           // default to nearest grade
-const _TMPL_DEFAULT_GRADE={Boulder:'6b',Climbing:'6c+'};
 // Legacy climbBlocks reference for compatibility
 let climbBlocks=[];
 
-/* ── Climbing session templates — transcribed from "MyClimbing doc Challenge" ──
-   The source doc is a 12-table grid split into TWO disciplines: the left half is
-   headed "Boulder" (grades 6a / 6b / 7a), the right half "Climbing" i.e. ropes
-   (6a+ / 6c+ / 7a). They are different grade scales, so they are NOT one ladder
-   — the picker filters by discipline first, then grade (2026-08-06).
-   Each table's middle section is split into Set 1–4, and a set is one burn, so
-   `sets` is an array of arrays rather than one flat `main` list.
-   `label` is the doc's own tag ("15x", "10x L1"); note that both 7a Power tables
-   are labelled 15x in the doc but only list 10 routes — the count shown in the
-   app is always the real number of routes. */
-const CLIMB_TEMPLATES=[
-  // ── BOULDER ───────────────────────────────────────────────────────────────
-  {id:'b-6a-base',    discipline:'Boulder',  grade:'6a', type:'Base',  label:'15x',
+const CLIMB_GRADES=['3','4a','4b','4c','5a','5a+','5b','5b+','5c','5c+','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','8a'];
+
+/* ── Climbing session templates — from "MyClimbing doc Challenge" ─────────────
+   The doc is a 12-table grid = 6 grade levels × Base/Power. The page is laid
+   out in two halves headed "Boulder" and "Climbing", but that is only the
+   printed layout — the sessions themselves are the same either way, so the app
+   presents ONE grade ladder and Jo picks boulder or ropes at the wall
+   (Jo, 2026-08-06). Jo also confirmed the second pair labelled "7a" in the doc
+   is actually **7a+**, which makes the doc's ladder:
+
+       6a · 6a+ · 6b · 6c+ · 7a · 7a+          ← six real tables
+
+   Each table's middle is split into Set 1–4, and a set is one burn, so `sets`
+   is an array of arrays rather than one flat `main` list.
+   `label` is the doc's own tag ("15x", "10x L1"); both 7a/7a+ Power tables are
+   labelled 15x but list only 10 routes, so the app always shows the REAL count.
+
+   The two gaps — 6b+ and 6c — have no table in the doc. They are DERIVED below
+   by shifting the nearest real table along CLIMB_GRADES (Jo's choice: keep the
+   session's shape, move the whole ladder). Derived templates are tagged in the
+   picker so it's always clear which came from the coach's doc. */
+const CLIMB_DOC_TEMPLATES=[
+  {id:'6a-base',   grade:'6a',  type:'Base',  label:'15x',
    warmup:['4a','4a'],
    sets:[['4a','4c','5b'],['5b','5b','5b'],['5b','4c','4a'],['4c','4c']],
    cooldown:['4a','4a']},
-  {id:'b-6a-power',   discipline:'Boulder',  grade:'6a', type:'Power', label:'15x',
+  {id:'6a-power',  grade:'6a',  type:'Power', label:'15x',
    warmup:['4c','4c'],
    sets:[['5b','6a','4c'],['5b','6a','4c'],['5b','6a','4c'],['5b','4c']],
    cooldown:['5b','4a']},
-  {id:'b-6b-base',    discipline:'Boulder',  grade:'6b', type:'Base',  label:'15x',
-   warmup:['4a','4c'],
-   sets:[['6b','4a','6a'],['5b','4c','6a'],['6a','5b','5b'],['6a','4c']],
-   cooldown:['5b','4a']},
-  {id:'b-6b-power',   discipline:'Boulder',  grade:'6b', type:'Power', label:'15x',
-   warmup:['4c','5b'],
-   sets:[['6b','6a','5b'],['6b','6a','5b'],['6b','6a','4c'],['6a','6a']],
-   cooldown:['4c','4c']},
-  {id:'b-7a-base',    discipline:'Boulder',  grade:'7a', type:'Base',  label:'10x L1',
-   warmup:['4c','5b'],
-   sets:[['6a','6b','5b'],['6c','6a','6b']],
-   cooldown:['6b','6a']},
-  {id:'b-7a-power',   discipline:'Boulder',  grade:'7a', type:'Power', label:'15x',
-   warmup:['5b','6a'],
-   sets:[['6b','6c'],['7a','6b'],['7a','6b']],
-   cooldown:['5b','6a']},
-  // ── CLIMBING (ropes) ──────────────────────────────────────────────────────
-  {id:'c-6a+-base',   discipline:'Climbing', grade:'6a+', type:'Base',  label:'15x',
+  {id:'6a+-base',  grade:'6a+', type:'Base',  label:'15x',
    warmup:['5a','5b'],
    sets:[['5b','5a','6a'],['5c','5b','6a'],['6a','5c','5c'],['6a','5b']],
    cooldown:['5c','5a']},
-  {id:'c-6a+-power',  discipline:'Climbing', grade:'6a+', type:'Power', label:'15x',
+  {id:'6a+-power', grade:'6a+', type:'Power', label:'15x',
    warmup:['5b','5c'],
    sets:[['6a','6a+','5c'],['6a','6a+','5b'],['6a+','6a+','5c'],['6a','5c']],
    cooldown:['6a','5b']},
-  {id:'c-6c+-base',   discipline:'Climbing', grade:'6c+', type:'Base',  label:'15x',
+  {id:'6b-base',   grade:'6b',  type:'Base',  label:'15x',
+   warmup:['4a','4c'],
+   sets:[['6b','4a','6a'],['5b','4c','6a'],['6a','5b','5b'],['6a','4c']],
+   cooldown:['5b','4a']},
+  {id:'6b-power',  grade:'6b',  type:'Power', label:'15x',
+   warmup:['4c','5b'],
+   sets:[['6b','6a','5b'],['6b','6a','5b'],['6b','6a','4c'],['6a','6a']],
+   cooldown:['4c','4c']},
+  {id:'6c+-base',  grade:'6c+', type:'Base',  label:'15x',
    warmup:['6a+','6b'],
    sets:[['6b','6a+','6c'],['6b+','6b','6c'],['6c','6b+','6b+'],['6c','6b']],
    cooldown:['6b+','6a+']},
-  {id:'c-6c+-power',  discipline:'Climbing', grade:'6c+', type:'Power', label:'15x',
+  {id:'6c+-power', grade:'6c+', type:'Power', label:'15x',
    warmup:['6a+','6b'],
    sets:[['6c+','6c','6b'],['6c+','6c','6b'],['6c+','6c','6b'],['6c','6c']],
    cooldown:['6a+','6b']},
-  {id:'c-7a-base',    discipline:'Climbing', grade:'7a', type:'Base',  label:'10x L1',
+  {id:'7a-base',   grade:'7a',  type:'Base',  label:'10x L1',
+   warmup:['4c','5b'],
+   sets:[['6a','6b','5b'],['6c','6a','6b']],
+   cooldown:['6b','6a']},
+  {id:'7a-power',  grade:'7a',  type:'Power', label:'15x',
+   warmup:['5b','6a'],
+   sets:[['6b','6c'],['7a','6b'],['7a','6b']],
+   cooldown:['5b','6a']},
+  {id:'7a+-base',  grade:'7a+', type:'Base',  label:'10x L1',
    warmup:['6a+','6b'],
    sets:[['6c','6c','6b'],['6c','6c','6b']],
    cooldown:['6c','6b']},
-  {id:'c-7a-power',   discipline:'Climbing', grade:'7a', type:'Power', label:'15x',
+  {id:'7a+-power', grade:'7a+', type:'Power', label:'15x',
    warmup:['6b','6b+'],
    sets:[['6c','6c'],['7a','6c'],['7a','6c']],
    cooldown:['6b','6b']},
 ];
+
+// Move one grade `steps` along the ladder, clamped at both ends.
+function shiftGrade(g,steps){
+  const i=CLIMB_GRADES.indexOf(g);
+  if(i===-1)return g;
+  return CLIMB_GRADES[Math.max(0,Math.min(CLIMB_GRADES.length-1,i+steps))];
+}
+// Build a missing grade from its nearest real table by shifting every route.
+function deriveTemplate(srcId,grade,steps){
+  const s=CLIMB_DOC_TEMPLATES.find(t=>t.id===srcId);
+  const sh=a=>a.map(g=>shiftGrade(g,steps));
+  return {id:`${grade}-${s.type.toLowerCase()}`,grade,type:s.type,label:s.label,
+    derivedFrom:s.grade,
+    warmup:sh(s.warmup),sets:s.sets.map(sh),cooldown:sh(s.cooldown)};
+}
+
+const CLIMB_TEMPLATES=[...CLIMB_DOC_TEMPLATES,
+  // 6b+ sits one above the real 6b table; 6c one below the real 6c+ table.
+  deriveTemplate('6b-base', '6b+',+1), deriveTemplate('6b-power', '6b+',+1),
+  deriveTemplate('6c+-base','6c', -1), deriveTemplate('6c+-power','6c', -1),
+].sort((a,b)=>CLIMB_GRADES.indexOf(a.grade)-CLIMB_GRADES.indexOf(b.grade)
+             ||(a.type==='Base'?-1:1));
+
 // Real route count (the doc's "15x"/"10x" label is not always accurate).
 function tmplRouteCount(t){return t.warmup.length+t.sets.reduce((n,s)=>n+s.length,0)+t.cooldown.length;}
 
@@ -4091,9 +4121,8 @@ function applyClimbTemplate(id){
      &&!confirm('Load a different plan? Routes you already ticked stay logged in the session.'))return;
   climbSession.plan={
     templateId:t.id,
-    discipline:t.discipline,
     // `set` is the doc's Set 1–4 = one burn. 0 on warm-up/cool-down.
-    label:`${t.discipline==='Boulder'?'🪨':'🧗'} ${t.grade} · ${t.type}`,
+    label:`${t.grade} · ${t.type}`,
     items:[
       ...t.warmup.map(g=>({grade:g,section:'warmup',set:0,done:false,pid:''})),
       ...t.sets.flatMap((s,si)=>s.map(g=>({grade:g,section:'main',set:si+1,done:false,pid:''}))),
@@ -4112,9 +4141,9 @@ function _currentRoutesBlock(){
   for(let i=climbSession.blocks.length-1;i>=0;i--){
     if(climbSession.blocks[i].type==='routes')return climbSession.blocks[i];
   }
-  // A Boulder plan should open a Boulder burn, not a Lead one.
-  const p=climbSession.plan;
-  const b={type:'routes',routes:[],climbingType:(p&&p.discipline==='Boulder')?'Boulder':'Lead',wallHeight:''};
+  // Templates are discipline-neutral, so a new burn defaults to Lead — start a
+  // 🪨 Boulder burn yourself first if you're bouldering.
+  const b={type:'routes',routes:[],climbingType:'Lead',wallHeight:''};
   climbSession.blocks.push(b);
   return b;
 }
@@ -4169,7 +4198,6 @@ function clearClimbPlan(){
 }
 let _planPickerOpen=false;
 function togglePlanPicker(){_planPickerOpen=!_planPickerOpen;renderClimbTemplates();}
-function setTmplDiscipline(d){_tmplDiscipline=d;renderClimbTemplates();}
 
 /* Rows of the plan card, in order: warm-up, then ONE ROW PER SET (the doc's
    Set 1–4, each of which is a burn), then cool-down. Plans saved before
@@ -4224,14 +4252,10 @@ function renderClimbTemplates(){
   // An active plan replaces the picker (reopen it with "Change plan").
   const plan=climbSession.plan;
   if(plan&&!_planPickerOpen){el.innerHTML=_planCardHtml(plan);return;}
-  // Discipline first — Boulder and rope grades are different scales.
-  const inDisc=CLIMB_TEMPLATES.filter(t=>t.discipline===_tmplDiscipline);
-  const grades=[...new Set(inDisc.map(t=>t.grade))];
-  if(!grades.includes(_tmplGradeFilter))_tmplGradeFilter=grades.includes(_TMPL_DEFAULT_GRADE[_tmplDiscipline])?_TMPL_DEFAULT_GRADE[_tmplDiscipline]:grades[0];
-  const filtered=inDisc.filter(t=>t.grade===_tmplGradeFilter);
-  const discChips=[['Boulder','🪨 Boulder'],['Climbing','🧗 Climbing']].map(([d,lbl])=>`
-    <button onclick="setTmplDiscipline('${d}')"
-      style="flex:1;padding:7px 12px;border-radius:var(--radius-sm);font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid ${d===_tmplDiscipline?'var(--climb)':'var(--border)'};background:${d===_tmplDiscipline?'var(--climb)':'none'};color:${d===_tmplDiscipline?'#fff':'var(--text)'}">${lbl}</button>`).join('');
+  // One ladder — the same sessions work for boulder or ropes (Jo, 2026-08-06).
+  const grades=[...new Set(CLIMB_TEMPLATES.map(t=>t.grade))];
+  if(!grades.includes(_tmplGradeFilter))_tmplGradeFilter='6c+';
+  const filtered=CLIMB_TEMPLATES.filter(t=>t.grade===_tmplGradeFilter);
   const gradeChips=grades.map(g=>`
     <button onclick="_tmplGradeFilter='${g}';renderClimbTemplates()"
       style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid ${g===_tmplGradeFilter?'var(--climb)':'var(--border)'};background:${g===_tmplGradeFilter?'var(--climb)':'none'};color:${g===_tmplGradeFilter?'#fff':'var(--text)'}">${g}</button>`).join('');
@@ -4241,7 +4265,7 @@ function renderClimbTemplates(){
     const setLine=t.sets.map((s,i)=>`<span style="white-space:nowrap"><span style="color:var(--climb);font-weight:700">${i+1}</span> ${s.join(' ')}</span>`).join(' &nbsp;·&nbsp; ');
     return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px">
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700;color:var(--climb);margin-bottom:4px">${t.grade} · ${t.type} <span style="font-size:11px;color:var(--muted);font-weight:400">${n} routes · ${t.sets.length} burns${t.label.includes('L1')?' · L1':''}</span></div>
+        <div style="font-size:13px;font-weight:700;color:var(--climb);margin-bottom:4px">${t.grade} · ${t.type} <span style="font-size:11px;color:var(--muted);font-weight:400">${n} routes · ${t.sets.length} burns${t.label.includes('L1')?' · L1':''}</span>${t.derivedFrom?` <span title="Not in the doc — built from the ${t.derivedFrom} session, shifted" style="font-size:10px;font-weight:700;color:var(--muted);background:var(--surface2);border-radius:10px;padding:2px 7px;margin-left:2px">from ${t.derivedFrom}</span>`:''}</div>
         <div style="font-size:11px;color:var(--muted);line-height:1.7">
           <span style="color:#ea7c3a">▲</span> ${t.warmup.join(' ')} &nbsp;
           <span style="color:#16a34a">▼</span> ${t.cooldown.join(' ')}<br>${setLine}
@@ -4256,13 +4280,11 @@ function renderClimbTemplates(){
       <span class="card-title" style="margin:0">📋 Session Templates</span>
       ${plan?`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="togglePlanPicker()">Back to plan</button>`:''}
     </div>
-    <div style="display:flex;gap:6px;margin-bottom:10px">${discChips}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${gradeChips}</div>
     ${tmplCards}
   </div>`;
 }
 
-const CLIMB_GRADES=['3','4a','4b','4c','5a','5a+','5b','5b+','5c','5c+','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','8a'];
 const BOARD_OPTIONS=['Moonboard A','Moonboard B','Spray wall','Kilter board','System wall','Custom'];
 const GRADE_OPTS=CLIMB_GRADES.map(g=>`<option value="${g}">${g}</option>`).join('');
 const RESULT_OPTS=['OS','Flash','RP','Repeat','Project'].map(r=>`<option value="${r}">${r}</option>`).join('');
