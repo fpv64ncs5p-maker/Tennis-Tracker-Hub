@@ -4139,13 +4139,24 @@ function applyClimbTemplate(id){
   toast('📋 Plan loaded — tick routes as you climb');
 }
 
-// The burn a ticked route goes into: the last routes block, or a new one.
-function _currentRoutesBlock(){
-  for(let i=climbSession.blocks.length-1;i>=0;i--){
-    if(climbSession.blocks[i].type==='routes')return climbSession.blocks[i];
-  }
-  const b={type:'routes',routes:[],climbingType:_planMode(),wallHeight:''};
-  climbSession.blocks.push(b);
+/* One SET = one BURN = one block (Jo, 2026-08-06). Ticking a Set 2 route opens
+   Block 2 on its own rather than piling every set into the current block — a
+   set in the doc IS a burn, so the log should mirror that with no manual taps.
+   The link is `planSet` on the block; blocks you add by hand have no planSet
+   and are never reused by the plan. */
+function _blockForSet(n){
+  const found=climbSession.blocks.find(b=>b.type==='routes'&&b.planSet===n);
+  if(found)return found;
+  // If you opened a burn by hand (e.g. the 🪨 Boulder button) and haven't
+  // logged anything in it yet, claim that one instead of stacking a new block.
+  const empty=climbSession.blocks.find(b=>b.type==='routes'&&!b.planSet&&!b.routes.length);
+  if(empty){empty.planSet=n;return empty;}
+  const prev=[...climbSession.blocks].reverse().find(b=>b.type==='routes');
+  const b={type:'routes',routes:[],planSet:n,climbingType:_planMode(),
+    wallHeight:prev?prev.wallHeight:'',customWallHeight:prev?prev.customWallHeight:undefined};
+  // Keep the blocks in set order even if a later set gets ticked first.
+  const at=climbSession.blocks.findIndex(x=>x.type==='routes'&&x.planSet>n);
+  if(at===-1)climbSession.blocks.push(b); else climbSession.blocks.splice(at,0,b);
   return b;
 }
 // Boulder or ropes, from the plan card toggle. No plan → Lead, as before.
@@ -4199,7 +4210,8 @@ function togglePlanItem(idx){
     const entry={grade:it.grade,result:'OS',count:1,movements:0,climbedDown:false,angle:'',pid};
     if(it.section==='warmup')climbSession.warmup.push(entry);
     else if(it.section==='cooldown')climbSession.cooldown.push(entry);
-    else _currentRoutesBlock().routes.push(entry);
+    // Legacy plans have no `set` — they keep the old single-burn behaviour.
+    else _blockForSet(it.set||1).routes.push(entry);
     it.done=true;it.pid=pid;
   }
   markDirty('climb');
@@ -4254,7 +4266,7 @@ function _planCardHtml(p){
       <span class="card-title" style="margin:0">📋 Plan · ${p.label}</span>
       <button class="btn-icon" title="Remove plan" onclick="clearClimbPlan()">✕</button>
     </div>
-    <div style="font-size:12px;color:var(--muted)">${done}/${p.items.length} climbed${burns?` · burn ${burns}`:''} — tap a grade when you've done it</div>
+    <div style="font-size:12px;color:var(--muted)">${done}/${p.items.length} climbed${burns?` · ${burns} burn${burns===1?'':'s'}`:''} — each set is its own burn</div>
     <div style="display:flex;gap:6px;margin-top:10px">${
       [['Boulder','🪨 Boulder'],['Lead','🧗 Ropes']].map(([m,lbl])=>{
         const on=(p.mode||'Lead')===m;
@@ -4628,7 +4640,7 @@ function renderClimbBlocks(){
       return `<div class="card" style="margin-bottom:10px;border-top:3px solid var(--climb)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:700;color:var(--climb);text-transform:uppercase;letter-spacing:.05em">${b.climbingType==='Boulder'?'🪨 Block '+(bi+1)+': Boulder':'🧗 Block '+(bi+1)+': Routes'}</div>
+            <div style="font-size:12px;font-weight:700;color:var(--climb);text-transform:uppercase;letter-spacing:.05em">${b.climbingType==='Boulder'?'🪨 Block '+(bi+1)+': Boulder':'🧗 Block '+(bi+1)+': Routes'}${b.planSet?` <span style="color:var(--muted)">· Set ${b.planSet}</span>`:''}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">${typeLabel} · ${wallLabel}</div>
           </div>
           <button class="btn-icon" onclick="removeClimbBlock(${bi})">✕</button>
@@ -4895,7 +4907,7 @@ function renderClimbBlocksLegacy(){
       return `<div class="card" style="margin-bottom:10px;border-top:3px solid var(--climb)">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:700;color:var(--climb);text-transform:uppercase;letter-spacing:.05em">${b.climbingType==='Boulder'?'🪨 Block '+(bi+1)+': Boulder':'🧗 Block '+(bi+1)+': Routes'}</div>
+            <div style="font-size:12px;font-weight:700;color:var(--climb);text-transform:uppercase;letter-spacing:.05em">${b.climbingType==='Boulder'?'🪨 Block '+(bi+1)+': Boulder':'🧗 Block '+(bi+1)+': Routes'}${b.planSet?` <span style="color:var(--muted)">· Set ${b.planSet}</span>`:''}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">${typeLabel} · ${wallLabel}</div>
           </div>
           <button class="btn-icon" onclick="removeClimbBlock(${bi})">✕</button>
