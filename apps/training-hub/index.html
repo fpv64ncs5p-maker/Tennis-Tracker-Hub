@@ -1209,10 +1209,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-header">
-      <div class="modal-title">➕ New Exercise</div>
-      <button class="modal-close" aria-label="Close" onclick="closeModal('modal-new-exercise')">✕</button>
+      <div class="modal-title" id="nex-title">➕ New Exercise</div>
+      <button class="modal-close" aria-label="Close" onclick="cancelNewExercise()">✕</button>
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Saved to your library — available in Add Exercise, Build Session and templates.</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px" id="nex-hint">Saved to your library — available in Add Exercise, Build Session and templates.</div>
     <div class="form-group">
       <label>Name</label>
       <input type="text" id="nex-name" placeholder="e.g. Bulgarian Split Squat" maxlength="60">
@@ -1262,8 +1262,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       </div>
     </div>
     <div class="flex-gap8">
-      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-new-exercise')">Cancel</button>
-      <button class="btn btn-gym" style="flex:2" onclick="saveNewExercise()">💾 Save to Library</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="cancelNewExercise()">Cancel</button>
+      <button class="btn btn-gym" style="flex:2" id="nex-save" onclick="saveNewExercise()">💾 Save to Library</button>
     </div>
   </div>
 </div>
@@ -1775,6 +1775,7 @@ const DB = {
   customExercises(){return this.get('custom_exercises')||[]},
   saveCustomExercise(ex){const a=this.customExercises();a.push(ex);this.set('custom_exercises',a)},
   deleteCustomExercise(name){const a=this.customExercises().filter(e=>e.name!==name);this.set('custom_exercises',a)},
+  updateCustomExercise(oldName,ex){const a=this.customExercises().map(e=>e.name===oldName?ex:e);this.set('custom_exercises',a)},
   gymTemplates(){return this.get('gym_templates')||[]},
   saveTemplate(t){const a=this.gymTemplates();a.push(t);this.set('gym_templates',a)},
   deleteTemplate(id){const a=this.gymTemplates().filter(t=>t.id!==id);this.set('gym_templates',a)},
@@ -2766,13 +2767,28 @@ function _renderCustomExBadge(ex){
   if(!el)return;
   if(!ex.custom){el.style.display='none';el.innerHTML='';return}
   el.style.display='flex';
+  const nm=esc(ex.name).replace(/'/g,"\\'");
   el.innerHTML=`<span>★ Your exercise</span>
-    <button class="btn btn-ghost" style="padding:3px 9px;font-size:11px;color:var(--muted)" onclick="removeCustomExercise('${esc(ex.name).replace(/'/g,"\\'")}')">🗑 Remove from library</button>`;
+    <button class="btn btn-ghost" style="padding:3px 9px;font-size:11px;color:var(--muted)" onclick="editCustomExercise('${nm}')">✏️ Edit</button>
+    <button class="btn btn-ghost" style="padding:3px 9px;font-size:11px;color:var(--muted)" onclick="removeCustomExercise('${nm}')">🗑 Remove from library</button>`;
+}
+
+// Name of the custom exercise currently being edited (null = creating a new one)
+let _editingCustomEx=null;
+
+// Fills the modal's category dropdown and returns it.
+function _fillNexCats(){
+  const catSel=document.getElementById('nex-cat');
+  catSel.innerHTML=CUSTOM_EX_CATS.map(c=>`<option value="${c.value}">${c.label}</option>`).join('');
+  return catSel;
 }
 
 function openNewExercise(){
-  const catSel=document.getElementById('nex-cat');
-  catSel.innerHTML=CUSTOM_EX_CATS.map(c=>`<option value="${c.value}">${c.label}</option>`).join('');
+  _editingCustomEx=null;
+  document.getElementById('nex-title').textContent='➕ New Exercise';
+  document.getElementById('nex-hint').textContent='Saved to your library — available in Add Exercise, Build Session and templates.';
+  document.getElementById('nex-save').textContent='💾 Save to Library';
+  const catSel=_fillNexCats();
   // Pre-select the category matching the active filter chip
   const AREA_TO_CAT={'Inferior':'Inferior Members','Superior':'Superior – Machine','Core':'Core','Wrist':'Wrist','Warm-up':'Warm-up','Rehab':'Rehab'};
   if(AREA_TO_CAT[exFilterArea])catSel.value=AREA_TO_CAT[exFilterArea];
@@ -2788,6 +2804,75 @@ function openNewExercise(){
   openModal('modal-new-exercise');
 }
 
+// Re-opens the same modal prefilled with an existing custom entry.
+// Only custom entries are editable — built-in library exercises are read-only.
+function editCustomExercise(name){
+  const ex=DB.customExercises().find(e=>e.name===name);
+  if(!ex){toast('Only your own exercises can be edited');return}
+  _editingCustomEx=name;
+  document.getElementById('nex-title').textContent='✏️ Edit Exercise';
+  document.getElementById('nex-hint').textContent='Changes apply to your library. Renaming can also update sessions you already logged.';
+  document.getElementById('nex-save').textContent='💾 Save changes';
+  const catSel=_fillNexCats();
+  if([...catSel.options].some(o=>o.value===ex.cat))catSel.value=ex.cat;
+  document.getElementById('nex-name').value=ex.name;
+  document.getElementById('nex-equip').value=ex.equip||'bw';
+  document.getElementById('nex-type').value=ex.cardio?'cardio':'strength';
+  document.getElementById('nex-sets').value=ex.sets||3;
+  document.getElementById('nex-reps').value=ex.reps||'';
+  document.getElementById('nex-rest').value=ex.rest||'';
+  document.getElementById('nex-dist-label').value=ex.distLabel||'';
+  document.getElementById('nex-rpm-label').value=ex.rpmLabel||'';
+  onNewExTypeChange();
+  openModal('modal-new-exercise');
+}
+
+// Counts where an exercise name is referenced outside the library.
+// gym_orm_cache is deliberately NOT counted — it is derived data, rebuilt from
+// gym_sessions on every page load (see DOMContentLoaded), so it has no say in
+// whether the rename is worth confirming.
+function _exUsage(name){
+  const sessions=DB.gymSessions().filter(s=>(s.exercises||[]).some(e=>e.name===name)).length;
+  const templates=DB.gymTemplates().filter(t=>(t.exercises||[]).some(e=>e.name===name)).length;
+  const live=(typeof gymSession==='object'&&gymSession&&(gymSession.exercises||[]).some(e=>e.name===name))?1:0;
+  return {sessions,templates,live,total:sessions+templates+live};
+}
+
+// Exercises are keyed by NAME everywhere, so a rename has to follow the name
+// into logged sessions, saved templates and the 1RM cache — otherwise the
+// history orphans and weight suggestions stop working for that exercise.
+function _renameExerciseEverywhere(oldName,newName){
+  const sessions=DB.gymSessions();
+  let touched=false;
+  sessions.forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name===oldName){e.name=newName;touched=true}}));
+  if(touched)DB.set('gym_sessions',sessions);
+
+  const templates=DB.gymTemplates();
+  let tTouched=false;
+  templates.forEach(t=>(t.exercises||[]).forEach(e=>{if(e.name===oldName){e.name=newName;tTouched=true}}));
+  if(tTouched)DB.set('gym_templates',templates);
+
+  const cache=DB.ormCache();
+  if(cache[oldName]){
+    // If the new name already has a cached 1RM, keep the higher one.
+    if(!cache[newName]||cache[oldName].orm>cache[newName].orm)cache[newName]=cache[oldName];
+    delete cache[oldName];
+    DB.saveORMCache(cache);
+  }
+
+  // The open, unsaved log too
+  if(typeof gymSession==='object'&&gymSession&&gymSession.exercises){
+    let lTouched=false;
+    gymSession.exercises.forEach(e=>{if(e.name===oldName){e.name=newName;lTouched=true}});
+    if(lTouched&&typeof renderSessionExercises==='function')renderSessionExercises();
+  }
+}
+
+function cancelNewExercise(){
+  _editingCustomEx=null;
+  closeModal('modal-new-exercise');
+}
+
 function onNewExTypeChange(){
   const isCardio=document.getElementById('nex-type').value==='cardio';
   document.getElementById('nex-cardio-labels').style.display=isCardio?'':'none';
@@ -2796,10 +2881,14 @@ function onNewExTypeChange(){
 }
 
 function saveNewExercise(){
+  const oldName=_editingCustomEx;                 // null when creating
+  const original=oldName?DB.customExercises().find(e=>e.name===oldName):null;
+  if(oldName&&!original){toast('That exercise no longer exists');_editingCustomEx=null;closeModal('modal-new-exercise');return}
   const name=document.getElementById('nex-name').value.trim();
   if(!name){toast('Give the exercise a name');return}
   if(name==='__new__'){toast('Pick a different name');return}
-  if(EXERCISES.some(e=>e.name.toLowerCase()===name.toLowerCase())){
+  // Duplicate check ignores the entry being edited (so you can fix casing/typos)
+  if(EXERCISES.some(e=>e.name.toLowerCase()===name.toLowerCase()&&e.name!==oldName)){
     toast('An exercise with that name already exists');return;
   }
   const cat=document.getElementById('nex-cat').value;
@@ -2819,15 +2908,37 @@ function saveNewExercise(){
     ex.rpmLabel=document.getElementById('nex-rpm-label').value.trim()||'Avg RPM';
   }
 
-  DB.saveCustomExercise(ex);
+  if(oldName){
+    ex.createdAt=original.createdAt||ex.createdAt;
+    if(name!==oldName){
+      const u=_exUsage(oldName);
+      if(u.total){
+        const bits=[];
+        if(u.sessions)bits.push(`${u.sessions} logged session${u.sessions>1?'s':''}`);
+        if(u.templates)bits.push(`${u.templates} template${u.templates>1?'s':''}`);
+        if(u.live)bits.push('the session you have open');
+        const where=bits.join(', ');
+        const alsoUpdate=confirm(
+          `Rename "${oldName}" → "${name}"\n\n`+
+          `Found in ${where}.\n\n`+
+          `OK  = update those too (recommended)\n`+
+          `Cancel = library only — old entries keep the old name`);
+        if(alsoUpdate)_renameExerciseEverywhere(oldName,name);
+      }
+    }
+    DB.updateCustomExercise(oldName,ex);
+  } else {
+    DB.saveCustomExercise(ex);
+  }
   syncCustomExercises();
   closeModal('modal-new-exercise');
 
-  // Refresh the picker and select the new exercise straight away
+  // Refresh the picker and select the new/edited exercise straight away
   filterExercises();
   const sel=document.getElementById('ex-name');
   if(sel&&[...sel.options].some(o=>o.value===name)){sel.value=name;onExerciseSelect();}
-  toast(`★ "${name}" added to your library`);
+  toast(oldName?`✏️ "${name}" updated`:`★ "${name}" added to your library`);
+  _editingCustomEx=null;
 }
 
 function removeCustomExercise(name){
