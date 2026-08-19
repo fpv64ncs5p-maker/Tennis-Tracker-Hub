@@ -1,5 +1,70 @@
 # Decisions & Bug Fixes
 
+## Tennis — Merge split sessions — 2026-08-19
+
+### Problem
+A training set was stopped mid-way and restarted later. The watch had already saved
+the first block, and there was no way to resume it, so the session landed in the hub
+as two separate "UNFINISHED" matches (18 Aug 26, vs Jing, 26m + 10m).
+
+### Decision: merge in the web layer, never touch the source rows
+A merge record joins two or more blocks into one displayed match. The Supabase rows
+and the localStorage matches stay exactly as they are underneath. This follows the
+existing `tennis_overlay` pattern (enrich/hide read-only watch rows) rather than
+editing or deleting data. Every merge is fully reversible.
+
+**Store:** new localStorage key `tennis_merges`, added to `DATA_KEYS` so it cloud-syncs.
+Shape, keyed by merge id (`mg_<base36 ts>`):
+`{ ids:[matchId,...], final_score, result, format, notes, createdAt }`
+
+**Engine:** `_applyTennisMerges(all)` runs inside `renderTennis()` immediately after the
+watch + local arrays are combined. It removes the member blocks and appends one
+synthetic match with `_source:'merged'`. Because this happens before the stats view is
+fed, merged sessions cannot double-count.
+
+### What is summed vs. what Jo confirms
+`_MERGE_SUM_FIELDS` adds up: duration_min, points_won, points_lost, unforced_errors,
+double_faults, service/return points won+played, sets won/lost, games won/lost,
+tiebreaks_won, tiebreak points won/lost.
+
+`final_score` and `result` are deliberately NOT summed. Games and sets are sequential —
+the second block restarted at 0-0, so "1 set + 1 set" is not "2 sets". Jo types the real
+combined score and picks Win/Loss/Unfinished in the merge modal.
+
+Date, opponent, match type, category, partner and location are inherited from the first block.
+
+### Guardrail: same day + same opponent + same match type
+`_mergeKey(m)` = `match_date | opponent_name (lowercased) | match_type`. Once the first
+block is selected, only blocks with a matching key stay tappable; the rest dim out.
+This is what stops an accidental merge from polluting the record.
+
+### UI: merge-mode toggle (chosen over per-card icon / auto-suggest)
+A dashed "Merge split sessions" button sits above the summary cards in the History view
+(hidden in Stats, and when there are fewer than 2 matches). Tapping it turns the cards
+into checkboxes. A per-card icon was rejected as permanent clutter; an auto-suggest banner
+was rejected because two genuinely separate same-day matches are normal.
+
+Merged cards show a `⛓ N blocks` chip, a `⛓` source icon, an edit button (reopens the
+modal to fix the score) and a split button. The detail sheet lists each source block with
+its own score, duration and points, plus "Split back apart".
+
+### Orphan handling
+If a source row is later deleted from the database, the merge needs at least 2 surviving
+members. Below that it is skipped and the remaining block reappears on its own, rather
+than showing half a match.
+
+### Verified 2026-08-19
+Merging the two 18 Aug blocks gives 36m, 25 pts won, 29 errors, 11/23 serve, 14/33 return.
+Guardrail rejects a different opponent/date. Unmerge restores all sources. Stats view counts
+the merged session once. No console errors.
+
+### Still open: watch-side pause/resume
+The root cause is that the Garmin app ends the session on save/exit, so a break kills the
+match. The merge tool repairs the symptom. A proper pause/resume state on the watch is the
+prevention and is NOT yet built.
+
+---
+
 ## Training Hub — Supabase Sync Migration — 2026-05-27
 
 ### Decision: Replace GitHub Gist sync with Supabase

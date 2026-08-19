@@ -1004,6 +1004,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <button class="seg-btn" data-tennis-cat="competition" onclick="tennisCatFilter('competition')">Competition</button>
         <button class="seg-btn" data-tennis-cat="training" onclick="tennisCatFilter('training')">Training</button>
       </div>
+      <div id="tennis-merge-bar" style="margin-bottom:14px"></div>
       <div id="tennis-summary" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px"></div>
       <div id="tennis-form" style="margin-bottom:16px;display:none">
         <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin-bottom:6px">RECENT FORM</div>
@@ -1835,7 +1836,7 @@ function checkDirtyBeforeNav(targetTab){
 const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'climb_sessions','climb_assessments','plan_data','rehab_data','macro_data',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
-  'gym_height','tennis_matches','tennis_overlay','custom_gyms','fb_custom_ex',
+  'gym_height','tennis_matches','tennis_overlay','tennis_merges','custom_gyms','fb_custom_ex',
   'custom_exercises'];
 
 function exportAllData(){
@@ -9186,6 +9187,87 @@ let _showHiddenTennis=false;
 let _tennisDetailCache=[];
 function toggleHiddenTennis(){_showHiddenTennis=!_showHiddenTennis;renderTennis();}
 
+// ── Match merges (join a split session back into one match) ───────────────────
+// 2026-08-19: a training set was stopped mid-way and restarted later, so the
+// watch saved it as two separate matches. A merge record joins them into one
+// card WITHOUT touching the Supabase rows or the localStorage matches — the
+// sources stay intact underneath and unmerging restores them exactly.
+// Shape, keyed by merge id:
+//   { ids:[matchId,…], final_score, result, format, notes, createdAt }
+// Synced across devices via DATA_KEYS → user_data, like tennis_overlay.
+function _getTennisMerges(){
+  try{return JSON.parse(localStorage.getItem('tennis_merges')||'{}');}catch{return{};}
+}
+function _saveTennisMerges(obj){
+  localStorage.setItem('tennis_merges',JSON.stringify(obj));
+  pushToCloud();
+}
+
+// Numeric fields that legitimately ADD UP when two blocks of one session join.
+// Note what is NOT here: final_score and result. Games and sets are sequential —
+// the second block restarted at 0-0, so scores can't be summed. Jo confirms
+// those by hand in the merge modal.
+const _MERGE_SUM_FIELDS=['duration_min','points_won','points_lost','unforced_errors',
+  'double_faults','service_points_won','service_points_played','return_points_won',
+  'return_points_played','sets_won','sets_lost','total_games_won','total_games_lost',
+  'tiebreaks_won','tiebreak_points_won','tiebreak_points_lost'];
+
+// Two matches may only be merged if they are the same day, opponent and type.
+function _mergeKey(m){
+  return [m.match_date||'',(m.opponent_name||'').trim().toLowerCase(),m.match_type||''].join('|');
+}
+
+// Replaces each merged group with one combined synthetic match.
+function _applyTennisMerges(all){
+  const merges=_getTennisMerges();
+  const ids=Object.keys(merges);
+  if(!ids.length) return all;
+  const byId={}; all.forEach(m=>{byId[m.id]=m;});
+  const consumed=new Set();
+  const built=[];
+  ids.forEach(mid=>{
+    const rec=merges[mid]||{};
+    const parts=(rec.ids||[]).map(id=>byId[id]).filter(Boolean);
+    // If a source row was deleted from the database the merge quietly falls
+    // apart rather than showing half a match.
+    if(parts.length<2) return;
+    parts.forEach(p=>consumed.add(p.id));
+    const base=parts[0];
+    const merged={...base,
+      id:mid,
+      _source:'merged',
+      _mergeId:mid,
+      _partIds:parts.map(p=>p.id),
+      _parts:parts.map(p=>({id:p.id,score:p.final_score||'',mins:p.duration_min,pts:p.points_won,src:p._source})),
+      final_score:rec.final_score||'',
+      result:rec.result||'abandoned',
+      format:rec.format||base.format,
+      notes:rec.notes||parts.map(p=>p.notes).filter(Boolean).join(' · ')||null,
+      _hidden:false
+    };
+    _MERGE_SUM_FIELDS.forEach(f=>{
+      const vals=parts.map(p=>p[f]).filter(v=>v!=null&&v!=='');
+      merged[f]=vals.length?vals.reduce((a,b)=>a+Number(b),0):null;
+    });
+    built.push(merged);
+  });
+  return all.filter(m=>!consumed.has(m.id)).concat(built);
+}
+
+// ── Merge selection mode (history list) ──────────────────────────────────────
+let _tennisMergeMode=false;
+let _tennisMergeSel=[];
+function toggleTennisMergeMode(){
+  _tennisMergeMode=!_tennisMergeMode;
+  _tennisMergeSel=[];
+  renderTennis();
+}
+function toggleMergeSel(id){
+  const i=_tennisMergeSel.indexOf(id);
+  if(i>=0) _tennisMergeSel.splice(i,1); else _tennisMergeSel.push(id);
+  renderTennis();
+}
+
 // ── Supabase matches cache ────────────────────────────────────────────────────
 let _sbMatches=[];
 let _sbFetched=false;
@@ -9283,7 +9365,8 @@ function renderTennis(){
       _hidden:  !!ov.hidden
     };
   });
-  const _allMatches=[...watchMatches,...localMatches];
+  // Merged sessions replace their source blocks with one combined match.
+  const _allMatches=_applyTennisMerges([...watchMatches,...localMatches]);
   _tennisDetailCache=_allMatches;
   const catOk=m=>_tennisCatFilter==='all'||(m.category||null)===_tennisCatFilter;
   const hiddenCount=_allMatches.filter(m=>m._hidden&&catOk(m)).length;
@@ -9328,6 +9411,27 @@ function renderTennis(){
     formDiv.style.display='none';
   }
 
+  // ── Merge bar ─────────────────────────────────────────────
+  const mergeBar=document.getElementById('tennis-merge-bar');
+  if(mergeBar){
+    if(_tennisMode!=='history'||total<2){
+      mergeBar.innerHTML='';
+      if(_tennisMergeMode){_tennisMergeMode=false;_tennisMergeSel=[];}
+    } else if(!_tennisMergeMode){
+      mergeBar.innerHTML=`<button onclick="toggleTennisMergeMode()" style="width:100%;background:none;border:1px dashed var(--border);border-radius:var(--radius-sm);color:var(--muted);font-size:12.5px;font-weight:600;cursor:pointer;padding:8px">⛓ Merge split sessions</button>`;
+    } else {
+      const n=_tennisMergeSel.length;
+      mergeBar.innerHTML=`<div class="card" style="border-left-color:var(--tennis);padding:12px 14px">
+        <div style="font-weight:800;font-size:14px;margin-bottom:2px">⛓ Merge split sessions</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Tap 2 or more blocks from the same day, opponent and match type. Stats are added up; you confirm the score. Nothing is deleted — you can split them again anytime.</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button ${n<2?'disabled':''} onclick="openMergeConfirm()" style="flex:1;background:${n<2?'var(--surface2)':'var(--tennis)'};color:${n<2?'var(--muted)':'#fff'};border:none;padding:10px;border-radius:var(--radius-sm);font-weight:800;font-size:14px;cursor:${n<2?'default':'pointer'}">Merge ${n>1?n+' blocks':''}</button>
+          <button onclick="toggleTennisMergeMode()" style="background:none;color:var(--muted);border:1px solid var(--border);padding:10px 14px;border-radius:var(--radius-sm);font-weight:700;font-size:13px;cursor:pointer">Cancel</button>
+        </div>
+      </div>`;
+    }
+  }
+
   if(_tennisMode==='stats'){
     _renderTennisStats(list,matches);
     return;
@@ -9347,6 +9451,10 @@ function renderTennis(){
   const typeLabel={'singles':'Singles','doubles':'Doubles'};
 
   const catLabel={competition:'Competition',training:'Training'};
+  // In merge mode only blocks matching the first pick (day + opponent + type)
+  // stay tappable — that is the guardrail against a nonsense merge.
+  const _mergeAnchor=_tennisMergeMode&&_tennisMergeSel.length
+    ? _tennisDetailCache.find(x=>x.id===_tennisMergeSel[0]) : null;
   let _histHtml=matches.map(m=>{
     const dateStr=m.match_date||'';
     const dateDisp=dateStr?new Date(dateStr+'T12:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}):'--';
@@ -9354,6 +9462,10 @@ function renderTennis(){
     const isUnf=m.result!=='won'&&m.result!=='lost';
     const [bTxt,bCol,bBg]=isUnf?['UNFINISHED','var(--muted)','var(--surface2)']:isWon?['WIN','var(--tennis)','var(--tennis-dim)']:['LOSS','var(--red)','#fce7e7'];
     const isWatch=m._source==='watch';
+    const isMerged=m._source==='merged';
+    const canMerge=_tennisMergeMode&&!isMerged&&!m._hidden;
+    const mergeOk=canMerge&&(!_mergeAnchor||_mergeKey(_mergeAnchor)===_mergeKey(m));
+    const mergeSel=_tennisMergeSel.includes(m.id);
     const score=esc(m.final_score||'--');
     const fmt=fmtLabel[m.format]||m.format||'';
     const type=typeLabel[m.match_type]||m.match_type||'';
@@ -9364,7 +9476,12 @@ function renderTennis(){
     const oppTxt=oppNames?`vs ${oppNames}`:'';
     const locTxt=m.location?`📍${esc(m.location)}`:'';
     const metaLine=[partnerTxt,oppTxt,locTxt].filter(Boolean).join(' · ');
-    const actBtns=isWatch
+    const actBtns=_tennisMergeMode
+      ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;border:2px solid ${mergeSel?'var(--tennis)':'var(--border)'};background:${mergeSel?'var(--tennis)':'transparent'};color:#fff;font-size:12px;font-weight:800">${mergeSel?'✓':''}</span>`
+      : isMerged
+      ? `<button onclick="event.stopPropagation();openMergeConfirm('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Edit merged score">✏️</button>`+
+        `<button onclick="event.stopPropagation();unmergeTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Split back apart">⛓️‍💥</button>`
+      : isWatch
       ? `<button onclick="event.stopPropagation();openWatchEdit('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Edit details">✏️</button>`+
         (m._hidden
           ? `<button onclick="event.stopPropagation();unhideWatchMatch('${m.id}')" style="background:none;border:none;color:var(--tennis);font-size:14px;cursor:pointer;padding:2px 4px;font-weight:700" title="Restore to tab">↩</button>`
@@ -9384,16 +9501,23 @@ function renderTennis(){
 
     const notesRow=m.notes?`<div style="margin-top:6px;font-size:12px;color:var(--muted);font-style:italic">${esc(m.notes)}</div>`:'';
 
-    return `<div class="card" onclick="openMatchDetail('${m.id}')" style="margin-bottom:10px;padding:12px 14px;border-left:4px solid ${isUnf?'var(--muted)':isWon?'var(--tennis)':'var(--red)'};cursor:pointer;${m._hidden?'opacity:.55':''}">
+    const cardClick=_tennisMergeMode
+      ? (mergeOk?`toggleMergeSel('${m.id}')`:'')
+      : `openMatchDetail('${m.id}')`;
+    const dimmed=m._hidden||(_tennisMergeMode&&!mergeOk);
+    const srcIco=isMerged?'⛓':isWatch?'⌚':'📝';
+    const srcTitle=isMerged?`Merged from ${(m._partIds||[]).length} blocks`:isWatch?'Synced from watch':'Manually logged';
+    return `<div class="card" onclick="${cardClick}" style="margin-bottom:10px;padding:12px 14px;border-left:4px solid ${mergeSel?'var(--tennis)':isUnf?'var(--muted)':isWon?'var(--tennis)':'var(--red)'};cursor:${cardClick?'pointer':'default'};${dimmed?'opacity:.45;':''}${mergeSel?'box-shadow:0 0 0 2px var(--tennis);':''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <div>
           <span style="font-weight:700;font-size:15px">${dateDisp}</span>
           ${type?`<span style="margin-left:8px;font-size:11px;background:var(--tennis-dim);color:var(--tennis);padding:2px 7px;border-radius:20px;font-weight:700">${type}</span>`:''}
           ${catBadge}
           ${fmt?`<span style="margin-left:4px;font-size:11px;color:var(--muted)">${fmt}</span>`:''}
+          ${isMerged?`<span style="margin-left:4px;font-size:11px;background:var(--surface2);color:var(--muted);padding:2px 7px;border-radius:20px;font-weight:700">⛓ ${(m._partIds||[]).length} blocks</span>`:''}
         </div>
         <div style="display:flex;align-items:center;gap:6px">
-          <span title="${isWatch?'Synced from watch':'Manually logged'}" style="font-size:12px;color:var(--muted)">${isWatch?'⌚':'📝'}</span>
+          <span title="${srcTitle}" style="font-size:12px;color:var(--muted)">${srcIco}</span>
           <span style="font-size:13px;font-weight:800;color:${bCol};background:${bBg};padding:3px 10px;border-radius:20px">${bTxt}</span>
           ${actBtns}
         </div>
@@ -9724,6 +9848,107 @@ async function deleteWatchPermanently(id){
   }
 }
 
+// ── Merge confirm / edit modal ───────────────────────────────────────────────
+let _tmgResult='abandoned';
+let _tmgEditId=null;   // set when editing an existing merge instead of creating one
+
+function openMergeConfirm(editId){
+  _tmgEditId=editId||null;
+  let parts,rec={};
+  if(_tmgEditId){
+    rec=_getTennisMerges()[_tmgEditId]||{};
+    const merged=_tennisDetailCache.find(x=>x.id===_tmgEditId);
+    if(!merged) return;
+    parts=merged._parts||[];
+  } else {
+    if(_tennisMergeSel.length<2) return;
+    parts=_tennisMergeSel.map(id=>_tennisDetailCache.find(x=>x.id===id)).filter(Boolean);
+    if(parts.length<2) return;
+  }
+  // Preview the totals so Jo can sanity-check before committing.
+  const srcs=_tmgEditId
+    ? (_getTennisMerges()[_tmgEditId].ids||[]).map(id=>_tennisRawById(id)).filter(Boolean)
+    : parts;
+  const sum=f=>{const v=srcs.map(p=>p[f]).filter(x=>x!=null&&x!=='');return v.length?v.reduce((a,b)=>a+Number(b),0):null;};
+  const row=(l,v)=>v==null?'':`<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--muted)">${l}</span><strong>${v}</strong></div>`;
+  const head=srcs[0]||{};
+  const srvW=sum('service_points_won'),srvP=sum('service_points_played');
+  const retW=sum('return_points_won'),retP=sum('return_points_played');
+  const dur=sum('duration_min');
+  document.getElementById('tmg-summary').innerHTML=
+    `<div style="font-weight:800;margin-bottom:6px">${srcs.length} blocks · ${esc(head.match_date||'')}${head.opponent_name?' · vs '+esc(head.opponent_name):''}</div>`+
+    `<div style="font-size:11px;color:var(--muted);margin-bottom:6px">${srcs.map(p=>`${esc(p.final_score||'--')}${p.duration_min?' ('+p.duration_min+'m)':''}`).join('  +  ')}</div>`+
+    row('Duration', dur!=null?dur+' min':null)+
+    row('Points won', sum('points_won'))+
+    row('Points lost', sum('points_lost'))+
+    row('Unforced errors', sum('unforced_errors'))+
+    row('Double faults', sum('double_faults'))+
+    row('Serve points', srvW!=null?`${srvW} / ${srvP??'–'}`:null)+
+    row('Return points', retW!=null?`${retW} / ${retP??'–'}`:null);
+  document.getElementById('tmg-score').value=_tmgEditId
+    ? (rec.final_score||'')
+    : srcs.map(p=>p.final_score).filter(s=>s&&s!=='--').join(', ');
+  document.getElementById('tmg-notes').value=rec.notes||'';
+  document.getElementById('tmg-format').value=rec.format||head.format||'single_set';
+  _tmgResult=rec.result||'abandoned';
+  _syncTmgResult();
+  document.getElementById('tmg-title').textContent=_tmgEditId?'Edit merged match':'Merge into one match';
+  document.getElementById('tmg-save').textContent=_tmgEditId?'Save changes':'Merge blocks';
+  openModal('modal-tennis-merge');
+}
+
+// Raw (pre-merge) lookup — the detail cache only holds the combined card.
+function _tennisRawById(id){
+  const ov=_getTennisOverlay()[id]||{};
+  const sb=_sbMatches.find(x=>x.id===id);
+  if(sb) return {...sb,
+    opponent_name:(ov.opponent_name!=null&&ov.opponent_name!=='')?ov.opponent_name:sb.opponent_name};
+  return _getTennisMatches().find(x=>x.id===id)||null;
+}
+
+function setTmgResult(v){_tmgResult=v;_syncTmgResult();}
+function _syncTmgResult(){
+  document.querySelectorAll('[data-tmg-res]').forEach(b=>{
+    const on=b.dataset.tmgRes===_tmgResult;
+    b.classList.toggle('active',on);
+    b.style.background=on?'var(--tennis)':'';
+    b.style.color=on?'#fff':'';
+    b.style.borderColor=on?'var(--tennis)':'';
+  });
+}
+
+function saveTennisMerge(){
+  const merges=_getTennisMerges();
+  const payload={
+    final_score:document.getElementById('tmg-score').value.trim(),
+    result:_tmgResult,
+    format:document.getElementById('tmg-format').value,
+    notes:document.getElementById('tmg-notes').value.trim()
+  };
+  if(_tmgEditId){
+    merges[_tmgEditId]={...merges[_tmgEditId],...payload};
+  } else {
+    if(_tennisMergeSel.length<2) return;
+    const mid='mg_'+Date.now().toString(36);
+    merges[mid]={ids:[..._tennisMergeSel],...payload,createdAt:Date.now()};
+  }
+  _saveTennisMerges(merges);
+  _tennisMergeMode=false; _tennisMergeSel=[];
+  const wasEdit=!!_tmgEditId; _tmgEditId=null;
+  closeModal('modal-tennis-merge');
+  renderTennis();
+  showToast(wasEdit?'Merge updated':'Merged into one match');
+}
+
+function unmergeTennisMatch(mid){
+  if(!confirm('Split this back into separate matches?\n\nThe original blocks come back exactly as they were — nothing has been deleted.')) return;
+  const merges=_getTennisMerges();
+  delete merges[mid];
+  _saveTennisMerges(merges);
+  renderTennis();
+  showToast('Split back apart');
+}
+
 // ── Per-match detail sheet ────────────────────────────────────────────────────
 function openMatchDetail(id){
   const m=_tennisDetailCache.find(x=>x.id===id);
@@ -9758,8 +9983,18 @@ function openMatchDetail(id){
     ? `<div class="card" style="margin:12px 0;padding:6px 14px">${rows.join('')}</div>`
     : `<div style="margin:14px 0;text-align:center;color:var(--muted);font-size:13px">No detailed stats recorded for this match.</div>`;
 
+  const isMerged=m._source==='merged';
+  const partsHtml=isMerged?`<div class="card" style="margin:12px 0;padding:10px 14px;background:var(--surface2)">
+    <div style="font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.05em;margin-bottom:6px">MERGED FROM ${(m._parts||[]).length} BLOCKS</div>
+    ${(m._parts||[]).map((p,i)=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span style="color:var(--muted)">Block ${i+1} ${p.src==='watch'?'⌚':'📝'}</span><span>${esc(p.score||'--')}${p.mins?` · ${p.mins}m`:''}${p.pts!=null?` · ${p.pts} pts`:''}</span></div>`).join('')}
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Originals are untouched — splitting restores them.</div>
+  </div>`:'';
+
   let actions;
-  if(isWatch){
+  if(isMerged){
+    actions = `<button class="btn" onclick="closeModal('modal-tennis-detail');openMergeConfirm('${m.id}')" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:11px;border-radius:var(--radius-sm);font-weight:800;font-size:14px">✏️ Edit merged score</button>`
+      + `<button class="btn" onclick="closeModal('modal-tennis-detail');unmergeTennisMatch('${m.id}')" style="width:100%;background:none;color:var(--tennis);border:1px solid var(--tennis);padding:9px;border-radius:var(--radius-sm);font-weight:700;font-size:13px;margin-top:6px">⛓️‍💥 Split back apart</button>`;
+  } else if(isWatch){
     actions = `<button class="btn" onclick="closeModal('modal-tennis-detail');openWatchEdit('${m.id}')" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:11px;border-radius:var(--radius-sm);font-weight:800;font-size:14px">✏️ Edit details</button>`
       + (m._hidden
           ? `<button class="btn" onclick="closeModal('modal-tennis-detail');unhideWatchMatch('${m.id}')" style="width:100%;background:none;color:var(--tennis);border:1px solid var(--tennis);padding:9px;border-radius:var(--radius-sm);font-weight:700;font-size:13px;margin-top:6px">↩ Restore to tab</button>`
@@ -9775,9 +10010,10 @@ function openMatchDetail(id){
       <div style="font-weight:800;font-size:17px">${dateDisp}</div>
       <span style="font-size:13px;font-weight:800;color:${bCol};background:${bBg};padding:3px 12px;border-radius:20px">${bTxt}</span>
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">${typeLabel[m.match_type]||m.match_type||''}${(m.category&&catLabel[m.category])?' · '+catLabel[m.category]:''}${(m.format&&(fmtLabel[m.format]||m.format))?' · '+(fmtLabel[m.format]||m.format):''} · ${isWatch?'⌚ watch':'📝 manual'}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">${typeLabel[m.match_type]||m.match_type||''}${(m.category&&catLabel[m.category])?' · '+catLabel[m.category]:''}${(m.format&&(fmtLabel[m.format]||m.format))?' · '+(fmtLabel[m.format]||m.format):''} · ${isMerged?'⛓ merged':isWatch?'⌚ watch':'📝 manual'}</div>
     <div style="font-size:22px;font-weight:800;letter-spacing:.02em">${esc(m.final_score||'--')}${m.duration_min?`<span style="font-size:13px;color:var(--muted);font-weight:400"> · ${m.duration_min}m</span>`:''}</div>
     ${metaBits?`<div style="margin-top:4px;font-size:13px;color:var(--muted)">${metaBits}</div>`:''}
+    ${partsHtml}
     ${statsHtml}
     ${m.notes?`<div style="font-size:13px;color:var(--muted);font-style:italic;margin-bottom:12px">"${esc(m.notes)}"</div>`:''}
     ${actions}
@@ -10661,6 +10897,52 @@ window.addEventListener('pagehide',tsSaveDraft);
     <button class="btn" onclick="saveWatchOverlay()" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:12px;border-radius:var(--radius-sm);font-weight:800;font-size:15px;margin-top:4px">Save details</button>
     <button class="btn" onclick="removeWatchFromModal()" style="width:100%;background:none;color:var(--red);border:1px solid var(--red);padding:10px;border-radius:var(--radius-sm);font-weight:700;font-size:14px;margin-top:8px">Remove from tab</button>
     <button onclick="deleteWatchPermanently()" style="width:100%;background:none;color:var(--red);border:none;padding:8px;font-weight:600;font-size:12.5px;margin-top:6px;cursor:pointer;text-decoration:underline">Delete permanently from database</button>
+  </div>
+</div>
+
+<!-- MERGE SPLIT SESSIONS MODAL -->
+<div class="modal-overlay" role="dialog" aria-modal="true" id="modal-tennis-merge">
+  <div class="modal" style="max-height:90vh;overflow-y:auto">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title" id="tmg-title">Merge into one match</div>
+      <button class="modal-close" aria-label="Close" onclick="closeModal('modal-tennis-merge')">✕</button>
+    </div>
+    <div id="tmg-summary" style="font-size:13px;background:var(--surface2);padding:10px 12px;border-radius:var(--radius-sm);margin-bottom:8px"></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px">Stats above are added up automatically. The score can't be — the second block restarted at 0-0 — so set the real result below.</div>
+
+    <div class="form-group">
+      <label>Final score</label>
+      <input type="text" id="tmg-score" placeholder="e.g. 6-4 or 4-2, 3-1" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+    </div>
+
+    <div class="form-group">
+      <label>Result</label>
+      <div style="display:flex;gap:6px">
+        <button class="pill-toggle" data-tmg-res="won" onclick="setTmgResult('won')">Win</button>
+        <button class="pill-toggle" data-tmg-res="lost" onclick="setTmgResult('lost')">Loss</button>
+        <button class="pill-toggle" data-tmg-res="abandoned" onclick="setTmgResult('abandoned')">Unfinished</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Format</label>
+      <select id="tmg-format" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+        <option value="single_set">1 Set</option>
+        <option value="best_of_3">Best of 3</option>
+        <option value="best_of_3_st">Best of 3+ST</option>
+        <option value="super_tb">Super TB</option>
+        <option value="tiebreak">Tiebreak</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="tmg-notes" placeholder="e.g. set stopped for rain, resumed after 20 min" rows="2" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px;resize:none;font-family:inherit"></textarea>
+    </div>
+
+    <button class="btn" id="tmg-save" onclick="saveTennisMerge()" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:12px;border-radius:var(--radius-sm);font-weight:800;font-size:15px;margin-top:4px">Merge blocks</button>
+    <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">Nothing is deleted — the original blocks stay in the database and you can split them apart again anytime.</div>
   </div>
 </div>
 
