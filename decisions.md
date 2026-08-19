@@ -58,6 +58,33 @@ Merging the two 18 Aug blocks gives 36m, 25 pts won, 29 errors, 11/23 serve, 14/
 Guardrail rejects a different opponent/date. Unmerge restores all sources. Stats view counts
 the merged session once. No console errors.
 
+### Auto-proposed score — added same day
+`_proposeMergeScore(srcs)` now pre-fills the score field instead of leaving it blank.
+
+What the watch actually stores (verified in `TennisMatchEngine.mc` / `SupabaseSync.mc`):
+- `setHistory` only gets an entry when a set **completes** (`TennisMatchEngine.mc:378`).
+  An abandoned mid-set match therefore uploads `final_score = ""` — which is why both
+  18 Aug blocks show `--`.
+- `total_games_won` / `total_games_lost` are built as *current set games + all completed
+  set games* (`SupabaseSync.mc:142-150`), so the in-progress set's games survive even
+  when the set never finished.
+
+Three cases:
+| case | detection | proposed score | format |
+|---|---|---|---|
+| **sets** — every block finished its set | all blocks have a non-empty `final_score` | scores joined: `6-4, 3-6` | bumped to Best of 3 when 2+ sets total |
+| **continued** — no block finished a set | `sets_won + sets_lost == 0` across all blocks | games added: `5-3` | unchanged |
+| **mixed** — some finished, some didn't | anything else | blank + red warning | unchanged |
+
+The mixed case can't be solved from the current data: a completed set's games are folded
+into the same `total_games` number and can't be separated back out. **Fix is watch-side** —
+`SupabaseSync.buildSetScoresJson()` already exists but was dropped from `buildPayload()`
+(it is still present in `apps/garmin/V.1 POJ007_Garmin App files/`). Restoring the
+`set_scores` column to the payload would make every case exact. NOT done.
+
+Result (Win/Loss/Unfinished) is deliberately still manual — guessing it from set counts
+would be wrong for an abandoned best-of-3.
+
 ### Still open: watch-side pause/resume
 The root cause is that the Garmin app ends the session on save/exit, so a break kills the
 match. The merge tool repairs the symptom. A proper pause/resume state on the watch is the

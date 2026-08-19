@@ -9852,6 +9852,36 @@ async function deleteWatchPermanently(id){
 let _tmgResult='abandoned';
 let _tmgEditId=null;   // set when editing an existing merge instead of creating one
 
+// Works out what the combined score should be, from what the watch actually
+// stored. The watch only writes a set into setHistory once that set FINISHES,
+// but total_games_won/lost always include the in-progress set — so an
+// unfinished set still has a usable game count. Three cases:
+//   sets      — every block finished its set → join the scores end to end
+//   continued — no block finished a set → it is one set, so games add up
+//   mixed     — some did, some didn't → a finished set's games are folded into
+//               the same total_games number and can't be separated back out,
+//               so we can't be exact. (Fixable watch-side by restoring the
+//               set_scores field to SupabaseSync.buildPayload — the helper
+//               buildSetScoresJson() is already written but unused.)
+function _proposeMergeScore(srcs){
+  const sum=f=>{const v=srcs.map(p=>p[f]).filter(x=>x!=null&&x!=='');return v.length?v.reduce((a,b)=>a+Number(b),0):null;};
+  const scores=srcs.map(p=>(p.final_score||'').trim()).filter(s=>s&&s!=='--');
+  const setsIn=p=>(Number(p.sets_won)||0)+(Number(p.sets_lost)||0);
+  const totalSets=srcs.reduce((a,p)=>a+setsIn(p),0);
+  if(scores.length===srcs.length&&scores.length>0){
+    return {score:scores.join(', '),format:totalSets>=2?'best_of_3':null,
+      note:'Each block finished its set, so the scores are joined end to end.'};
+  }
+  if(totalSets===0){
+    const gw=sum('total_games_won'),gl=sum('total_games_lost');
+    if(gw!=null&&gl!=null) return {score:gw+'-'+gl,format:null,
+      note:'No set was completed, so this reads as one continued set — games added together.'};
+    return {score:'',format:null,note:'No game data was recorded — type the score yourself.'};
+  }
+  return {score:'',format:null,
+    note:"Mixed: one block finished a set and another didn't. The watch doesn't upload per-set scores yet, so this one needs typing by hand."};
+}
+
 function openMergeConfirm(editId){
   _tmgEditId=editId||null;
   let parts,rec={};
@@ -9885,11 +9915,17 @@ function openMergeConfirm(editId){
     row('Double faults', sum('double_faults'))+
     row('Serve points', srvW!=null?`${srvW} / ${srvP??'–'}`:null)+
     row('Return points', retW!=null?`${retW} / ${retP??'–'}`:null);
-  document.getElementById('tmg-score').value=_tmgEditId
-    ? (rec.final_score||'')
-    : srcs.map(p=>p.final_score).filter(s=>s&&s!=='--').join(', ');
+  const prop=_proposeMergeScore(srcs);
+  document.getElementById('tmg-score').value=_tmgEditId?(rec.final_score||''):prop.score;
+  const hint=document.getElementById('tmg-hint');
+  if(hint){
+    hint.textContent=prop.note;
+    hint.style.color=prop.score?'var(--muted)':'var(--red)';
+  }
   document.getElementById('tmg-notes').value=rec.notes||'';
-  document.getElementById('tmg-format').value=rec.format||head.format||'single_set';
+  document.getElementById('tmg-format').value=_tmgEditId
+    ? (rec.format||head.format||'single_set')
+    : (prop.format||head.format||'single_set');
   _tmgResult=rec.result||'abandoned';
   _syncTmgResult();
   document.getElementById('tmg-title').textContent=_tmgEditId?'Edit merged match':'Merge into one match';
@@ -10909,11 +10945,12 @@ window.addEventListener('pagehide',tsSaveDraft);
       <button class="modal-close" aria-label="Close" onclick="closeModal('modal-tennis-merge')">✕</button>
     </div>
     <div id="tmg-summary" style="font-size:13px;background:var(--surface2);padding:10px 12px;border-radius:var(--radius-sm);margin-bottom:8px"></div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px">Stats above are added up automatically. The score can't be — the second block restarted at 0-0 — so set the real result below.</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px">Stats above are added up automatically. The score is worked out from what the watch stored — check it, and set the result below.</div>
 
     <div class="form-group">
       <label>Final score</label>
       <input type="text" id="tmg-score" placeholder="e.g. 6-4 or 4-2, 3-1" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+      <div id="tmg-hint" style="font-size:11px;color:var(--muted);margin-top:5px"></div>
     </div>
 
     <div class="form-group">
