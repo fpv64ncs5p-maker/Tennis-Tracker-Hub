@@ -84,6 +84,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-
 .form-row{display:grid;gap:8px;margin-bottom:10px}
 .form-row.cols2{grid-template-columns:1fr 1fr}
 .form-row.cols3{grid-template-columns:1fr 1fr 1fr}
+.aex-prefilled{border-style:dashed!important;color:var(--muted)!important;font-style:italic}
 label{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
 input,select,textarea{width:100%;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 11px;color:var(--text);font-size:14px;outline:none;transition:border-color .15s}
 input:focus,select:focus,textarea:focus{border-color:var(--climb)}
@@ -2210,9 +2211,8 @@ function suggestWeightFull(exName, intensity){
   // Helper: round to nearest 0.25 kg
   const r4 = v => Math.round(v * 4) / 4;
 
-  // PR reference (best-ever Epley 1RM, still updated on save) — label only
-  const pr = DB.ormCache()[exName] || null;
-  const prNote = pr ? ` · PR 1RM ${pr.orm} kg (${pr.date})` : '';
+  // (2026-09-11: the best-ever Epley "PR 1RM" note was removed from these labels —
+  //  it read as a second, conflicting 1RM next to the RIR-based Current 1RM.)
 
   // 1. Current 1RM (2026-09-11): newest RIR-logged set vs newest assessment.
   const cur = currentORM(exName);
@@ -2225,7 +2225,7 @@ function suggestWeightFull(exName, intensity){
       source: cur.source,
       label: (cur.source==='assessment'
         ? `📋 Assessment ${cur.date} · 1RM ${orm} kg`
-        : `📊 Current 1RM ${orm} kg · ${cur.date} (${cur.weight} kg × ${cur.reps} @ RIR ${cur.rir})`) + prNote,
+        : `📊 Current 1RM ${orm} kg · ${cur.date} (${cur.weight} kg × ${cur.reps} @ RIR ${cur.rir})`),
       stale: cur.source==='assessment' && weeksDiff > 4
     };
   }
@@ -2256,7 +2256,7 @@ function suggestWeightFull(exName, intensity){
       weight: r4(sess.orm * (intensity/100)),
       orm,
       source: 'session',
-      label: `📊 Rough estimate ${sess.date} · 1RM ~${orm} kg (from ${sess.method}) · add RIR to track your real 1RM` + prNote,
+      label: `📊 Rough estimate ${sess.date} · 1RM ~${orm} kg (from ${sess.method}) · add RIR to track your real 1RM`,
       stale: false
     };
   }
@@ -8342,7 +8342,8 @@ function renderAssessModal(){
     if(ex.type==='strength'){
       // orm field: use stored orm, or compute from legacy weight×reps, or blank
       const ormVal=ex.orm||(ex.weight&&ex.reps?Math.round(Number(ex.weight)*(1+Number(ex.reps)/30)*10)/10:'')||'';
-      inputs=`<input type="text" inputmode="decimal" id="aex-orm-${i}" value="${ormVal}" placeholder="kg" step="0.25" ${is}> <span style="color:var(--muted)">kg (1RM)</span>`;
+      const pre=ex.prefill&&String(ormVal)===String(ex.prefill.orm);
+      inputs=`<input type="text" inputmode="decimal" id="aex-orm-${i}" value="${ormVal}" placeholder="kg" step="0.25" ${is}${pre?' class="aex-prefilled" oninput="this.classList.remove(\'aex-prefilled\');const n=document.getElementById(\'aex-pre-'+i+'\');if(n)n.remove()"':''}> <span style="color:var(--muted)">kg (1RM)</span>`;
     } else if(ex.type==='timed'){
       inputs=`<input type="text" inputmode="decimal" id="aex-v-${i}" value="${ex.value||''}" placeholder="sec" min="1" ${is}> <span style="color:var(--muted)">sec</span>`;
     } else if(ex.type==='reps'){
@@ -8354,6 +8355,7 @@ function renderAssessModal(){
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ex.name}</div>
         <div class="text-xxs-muted">${ex.area}</div>
+        ${(ex.type==='strength'&&ex.prefill&&String(ex.orm)===String(ex.prefill.orm))?`<div id="aex-pre-${i}" class="text-xxs-muted" style="color:var(--yellow)">✎ pre-filled · Current 1RM (${ex.prefill.source==='session'?'session':'assessment'} ${esc(ex.prefill.date)})</div>`:''}
       </div>
       <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">${inputs}</div>
       <button onclick="removeAssessEx(${i})" style="background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:2px 5px;flex-shrink:0;line-height:1">✕</button>
@@ -8369,6 +8371,7 @@ function renderAssessModal(){
       <div class="form-group" style="margin-bottom:0"><label>Body weight (kg)</label><input type="text" inputmode="decimal" id="ga-bw" value="${_assessBw}" placeholder="49.0" step="0.1"></div>
     </div>
     <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Best set per exercise</div>
+    ${assessExercises.some(ex=>ex.type==='strength'&&ex.prefill&&String(ex.orm)===String(ex.prefill.orm))?'<div class="text-xs-muted" style="margin-bottom:6px">Dashed values are pre-filled from your Current 1RM — overwrite them with what you actually test, or clear them.</div>':''}
     <div>${exRows||'<p style="color:var(--muted);font-size:12px;padding:6px 0">No exercises yet</p>'}</div>
     <div style="display:flex;gap:6px;margin-top:10px;align-items:center">
       <select id="assess-ex-pick" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:12px">
@@ -8408,11 +8411,18 @@ function removeAssessEx(i){
 
 function openAddGymAssessment(){
   _editingAssessId=null;
-  const ormCache=DB.ormCache();
+  // 2026-09-11 (Jo): pre-fill from Current 1RM, NOT the best-ever Epley cache.
+  // The old pre-fill put July strength-block peaks into a Hypertrophy test that
+  // was saved untouched → the newest assessment won → 70% suggestions too heavy.
+  // Pre-filled values are marked in the form until Jo overwrites them.
+  const cur=currentORMMap();
   assessExercises=ASSESS_DEFAULTS.map(d=>{
     const ex={...d};
-    if(ex.type==='strength'&&ormCache[ex.name]){
-      ex.orm=String(ormCache[ex.name].orm);
+    const c=ex.type==='strength'?cur[ex.name]:null;
+    if(c){
+      const v=String(Math.round(c.orm*10)/10);
+      ex.orm=v;
+      ex.prefill={orm:v,source:c.source,date:c.date};
     }
     return ex;
   });
