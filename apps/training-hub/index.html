@@ -483,9 +483,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           <label class="btn btn-ghost btn-sm" style="flex:1;cursor:pointer">📂 Restore Backup<input type="file" accept=".json" style="display:none" onchange="importAllData(this)"></label>
         </div>
         <div class="flex-gap8" style="margin-top:8px">
-          <button class="btn btn-ghost btn-sm" style="flex:1" onclick="pushToCloud()">☁️ Push to Cloud</button>
+          <button class="btn btn-ghost btn-sm" style="flex:1" onclick="pushToCloud(true)">☁️ Push to Cloud</button>
           <button class="btn btn-ghost btn-sm" style="flex:1" onclick="pullFromCloud()">⬇️ Pull from Cloud</button>
         </div>
+        <div id="sync-backup-notice"></div>
         <div id="home-storage-info" style="font-size:11px;color:var(--muted);margin-top:6px;text-align:center"></div>
       </div>
 
@@ -1004,6 +1005,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <button class="seg-btn" data-tennis-cat="competition" onclick="tennisCatFilter('competition')">Competition</button>
         <button class="seg-btn" data-tennis-cat="training" onclick="tennisCatFilter('training')">Training</button>
       </div>
+      <div id="tennis-merge-bar" style="margin-bottom:14px"></div>
       <div id="tennis-summary" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px"></div>
       <div id="tennis-form" style="margin-bottom:16px;display:none">
         <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin-bottom:6px">RECENT FORM</div>
@@ -1150,23 +1152,28 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           </div>
           <div>
             <label>Reps / Time <span class="auto-badge">⚡ auto</span></label>
-            <input id="ex-reps" style="color:var(--yellow)">
+            <input id="ex-reps" style="color:var(--yellow)" oninput="renderRirPreview('ex')">
           </div>
           <div>
             <label>Rest <span class="auto-badge">⚡ auto</span></label>
             <input id="ex-rest" style="color:var(--yellow)">
           </div>
         </div>
-        <div class="form-row cols2">
+        <div class="form-row cols3">
           <div>
             <label>Intensity %</label>
             <input type="number" inputmode="decimal" id="ex-intensity" value="85" min="50" max="100" step="5" oninput="calcSuggestedWeight()">
           </div>
           <div>
             <label>Weight Used (kg)</label>
-            <input type="text" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*" id="ex-weight" placeholder="kg or bw" oninput="onExWeightChange()">
+            <input type="text" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*" id="ex-weight" placeholder="kg or bw" oninput="onExWeightChange();renderRirPreview('ex')">
+          </div>
+          <div>
+            <label>RIR</label>
+            <input type="text" inputmode="decimal" id="ex-rir" placeholder="0–5" oninput="renderRirPreview('ex')">
           </div>
         </div>
+        <div id="ex-rir-preview" class="text-xs-muted" style="margin:-6px 0 8px">RIR = reps left in the tank (0 = failure). Fill it in to update your 1RM.</div>
         <div id="ex-suggest" class="suggest-box" style="display:none"></div>
       </div>
       <!-- CARDIO fields -->
@@ -1340,12 +1347,14 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div id="edit-hist-strength">
       <div class="form-row cols2">
         <div class="form-group"><label>Sets</label><input type="number" inputmode="decimal" id="edit-hist-sets" min="1"></div>
-        <div class="form-group"><label>Reps</label><input type="text" inputmode="numeric" pattern="[0-9'”\\s×x]*" id="edit-hist-reps" placeholder="e.g. 12"></div>
+        <div class="form-group"><label>Reps</label><input type="text" inputmode="numeric" pattern="[0-9'”\\s×x]*" id="edit-hist-reps" placeholder="e.g. 12" oninput="renderRirPreview('edit-hist')"></div>
       </div>
       <div class="form-row cols2">
-        <div class="form-group"><label>Weight (kg)</label><input type="text" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*" id="edit-hist-weight" oninput="_normalizeKgInput(this.value)&&(this.value=_normalizeKgInput(this.value))"></div>
+        <div class="form-group"><label>Weight (kg)</label><input type="text" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*" id="edit-hist-weight" oninput="_normalizeKgInput(this.value)&&(this.value=_normalizeKgInput(this.value));renderRirPreview('edit-hist')"></div>
         <div class="form-group"><label>Intensity %</label><input type="number" inputmode="decimal" id="edit-hist-intensity" min="50" max="100" step="5" oninput="recalcEditWeight()"></div>
       </div>
+      <div class="form-group"><label>RIR <span class="text-xs-muted">— reps left in the tank (0 = failure)</span></label><input type="text" inputmode="decimal" id="edit-hist-rir" placeholder="0–5 · fill in to update your 1RM" oninput="renderRirPreview('edit-hist')"></div>
+      <div id="edit-hist-rir-preview" class="text-xs-muted" style="margin:-6px 0 10px"></div>
       <div id="edit-hist-suggest" class="suggest-box" style="display:none;font-size:11px;padding:8px;background:rgba(21,128,61,.06);border-radius:6px;margin:-6px 0 10px;color:var(--muted)"></div>
       <div class="form-group"><label>Rest</label><input type="text" id="edit-hist-rest" placeholder="e.g. 2'"></div>
     </div>
@@ -1766,9 +1775,23 @@ const WEEK_TEMPLATE = [
 // ══════════════════════════════════════════════════
 //  STORAGE
 // ══════════════════════════════════════════════════
+// ── Sync bookkeeping (per device, never uploaded) — safe sync 2026-09-11 ──
+//  _local_modified : time of this device's last real change
+//  _sync_dirty     : '1' while this device has changes not yet uploaded
+//  _cloud_seen     : the cloud last_modified this device last downloaded or uploaded
+//  _sync_force     : '1' after "Restore Backup" → next startup uploads unconditionally
+//  _sync_backup    : this device's unsynced data, saved just before a cloud download replaced it
+// Captured BEFORE any startup code runs, so startup writes can't make stale data look new.
+const _BOOT_LOCAL_TS=parseInt(localStorage.getItem('_local_modified')||'0')||0;
+let _syncReady=false; // uploads wait until the startup sync has decided who is newer
+function _markLocalChange(){
+  localStorage.setItem('_local_modified',Date.now().toString());
+  localStorage.setItem('_sync_dirty','1');
+}
+
 const DB = {
   get(k){try{return JSON.parse(localStorage.getItem(k))||null}catch{return null}},
-  set(k,v){localStorage.setItem(k,JSON.stringify(v));localStorage.setItem('_local_modified',Date.now().toString());_syncKeyToCloud(k);},
+  set(k,v){localStorage.setItem(k,JSON.stringify(v));_markLocalChange();_syncKeyToCloud(k);},
   gymSessions(){return this.get('gym_sessions')||[]},
   saveGym(s){const a=this.gymSessions();a.unshift(s);this.set('gym_sessions',a)},
   updateGym(s){const a=this.gymSessions().map(x=>String(x.id)===String(s.id)?s:x);this.set('gym_sessions',a)},
@@ -1803,7 +1826,10 @@ const DB = {
   saveGymAssessment(a){const arr=this.gymAssessments();arr.unshift(a);this.set('gym_assessments',arr)},
   deleteGymAssessment(id){const arr=this.gymAssessments().filter(a=>String(a.id)!==String(id));this.set('gym_assessments',arr)},
   ormCache(){return this.get('gym_orm_cache')||{}},
-  saveORMCache(d){this.set('gym_orm_cache',d)},
+  // Derived data (rebuilt on every load, not in DATA_KEYS) → plain write, NOT a change.
+  // 2026-09-11: going through set() here bumped _local_modified on every app open, so
+  // every device — even one with months-old data — uploaded over the cloud on startup.
+  saveORMCache(d){localStorage.setItem('gym_orm_cache',JSON.stringify(d))},
   stretchSessions(){return this.get('stretch_sessions')||[]},
   saveStretch(s){const arr=this.stretchSessions();arr.unshift(s);this.set('stretch_sessions',arr)},
   deleteStretch(id){const arr=this.stretchSessions().filter(s=>String(s.id)!==String(id));this.set('stretch_sessions',arr)},
@@ -1835,7 +1861,7 @@ function checkDirtyBeforeNav(targetTab){
 const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'climb_sessions','climb_assessments','plan_data','rehab_data','macro_data',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
-  'gym_height','tennis_matches','tennis_overlay','custom_gyms','fb_custom_ex',
+  'gym_height','tennis_matches','tennis_overlay','tennis_merges','custom_gyms','fb_custom_ex',
   'custom_exercises'];
 
 function exportAllData(){
@@ -1873,6 +1899,8 @@ function importAllData(inputEl){
         DATA_KEYS.forEach(k=>{
           if(data[k]!==undefined) localStorage.setItem(k,data[k]);
         });
+        _markLocalChange();
+        localStorage.setItem('_sync_force','1'); // explicit restore: upload it even if the cloud changed
         toast('✅ Data restored! Reloading…');
         setTimeout(()=>location.reload(),1200);
       }catch(err){
@@ -2108,6 +2136,64 @@ function suggestWeight(exName, intensity){
   return ref.w;
 }
 
+// ── Current 1RM from logged sets (Jo 2026-09-11) ────────────────────────────
+// A set's 1RM = weight × (1 + (reps + RIR)/30)   (Epley on reps-to-failure)
+// RIR = reps in reserve (0 = to failure, 2 = two more reps were possible).
+// Plain Epley on a set NOT taken to failure under-reads the 1RM; adding RIR
+// corrects that. Blank RIR → the set does NOT change the 1RM (Jo's choice),
+// so easy sets can't slowly drag the estimate down.
+// Only plain rep counts convert ("10" ✓ · "8-12", "30''", "1'" ✗).
+const RIR_MAX=5, ORM_MAX_TOTAL_REPS=20;
+function ormFromSet(e){
+  if(!e||e.type==='cardio')return null;
+  const w=parseFloat(_normalizeKgInput(e.weight));
+  if(!(w>0))return null;
+  if(e.rir===undefined||e.rir===null||String(e.rir).trim()==='')return null;
+  const rir=parseFloat(_normalizeKgInput(e.rir));
+  if(isNaN(rir)||rir<0||rir>RIR_MAX)return null;
+  const repsStr=String(e.reps==null?'':e.reps).trim();
+  if(!/^\d+$/.test(repsStr))return null;
+  const reps=parseInt(repsStr,10);
+  if(reps<1)return null;
+  const total=reps+rir;
+  if(total>ORM_MAX_TOTAL_REPS)return null;
+  return total<=1?w:w*(1+total/30);
+}
+
+// Latest 1RM per exercise: newest RIR-logged session set vs newest assessment
+// (newer date wins, tie → session). Up AND down — the latest session always wins.
+// Derived on the fly (never stored), so editing/deleting a session updates it.
+function currentORMMap(){
+  const map={};
+  const consider=(name,cand)=>{
+    const cur=map[name];
+    if(!cur||cand.date>cur.date||(cand.date===cur.date&&(
+        (cand.source==='session'&&cur.source==='assessment')||
+        (cand.source===cur.source&&cand.orm>cur.orm)))){
+      map[name]=cand;
+    }
+  };
+  for(const s of DB.gymSessions()){
+    for(const e of (s.exercises||[])){
+      const orm=ormFromSet(e);
+      if(orm==null)continue;
+      consider(e.name,{orm,date:s.date||'',source:'session',
+        weight:parseFloat(_normalizeKgInput(e.weight)),reps:parseInt(e.reps,10),rir:parseFloat(_normalizeKgInput(e.rir))});
+    }
+  }
+  for(const a of DB.gymAssessments()){
+    for(const entry of (a.exercises||[])){
+      if(entry.type!=='strength')continue;
+      let orm=null;
+      if(entry.orm)orm=parseFloat(entry.orm);
+      else if(entry.weight&&entry.reps){const w=parseFloat(entry.weight),r=parseFloat(entry.reps);if(w>0&&r>0)orm=w*(1+r/30);}
+      if(orm&&!isNaN(orm)&&orm>0)consider(entry.name,{orm,date:a.date||'',source:'assessment'});
+    }
+  }
+  return map;
+}
+function currentORM(exName){return currentORMMap()[exName]||null;}
+
 // ── Weight suggestion: LATEST DATA WINS (2026-07-17) ───────────────────────
 // Returns {weight, orm, source, label, stale}
 //   source = 'assessment' | 'session' | 'ref'
@@ -2128,19 +2214,25 @@ function suggestWeightFull(exName, intensity){
   const pr = DB.ormCache()[exName] || null;
   const prNote = pr ? ` · PR 1RM ${pr.orm} kg (${pr.date})` : '';
 
-  // Most recent logged session entry for this exercise (by session date).
-  //
-  // 1RM derivation, in priority order:
-  //   a) stored effort %  → orm = weight ÷ (intensity/100)   ← exact and STABLE
-  //   b) Epley from reps  → orm = weight × (1 + reps/30)     ← fallback only
-  //
-  // Why (a) first: working sets are prescribed at a target %1RM and are NOT
-  // taken to failure, so Epley under-reads them. Feeding that estimate back in
-  // each session multiplies it by intensity×(1+reps/30) — 0.933 per session in
-  // hypertrophy, 0.800 in deload — so the suggestion ratchets downward over a
-  // macrocycle (100 kg → ~20 kg in one full cycle). Dividing by the effort %
-  // the set was actually performed at returns the same 1RM every time, while
-  // still following any weight change Jo makes in-session.
+  // 1. Current 1RM (2026-09-11): newest RIR-logged set vs newest assessment.
+  const cur = currentORM(exName);
+  if(cur){
+    const orm = Math.round(cur.orm*10)/10;
+    const weeksDiff = cur.date ? (Date.now() - new Date(cur.date+'T12:00:00')) / (1000*60*60*24*7) : 0;
+    return {
+      weight: r4(cur.orm * (intensity/100)),
+      orm,
+      source: cur.source,
+      label: (cur.source==='assessment'
+        ? `📋 Assessment ${cur.date} · 1RM ${orm} kg`
+        : `📊 Current 1RM ${orm} kg · ${cur.date} (${cur.weight} kg × ${cur.reps} @ RIR ${cur.rir})`) + prNote,
+      stale: cur.source==='assessment' && weeksDiff > 4
+    };
+  }
+
+  // 2. No RIR sets and no assessment yet → rough estimate from the latest logged set.
+  //   a) stored effort %  → orm = weight ÷ (intensity/100)   (drift-free, 2026-07-29)
+  //   b) Epley from reps  → orm = weight × (1 + reps/30)     (older entries without effort %)
   let sess = null;
   for(const s of DB.gymSessions()){
     if(sess && (s.date||'') <= sess.date) continue;
@@ -2158,38 +2250,14 @@ function suggestWeightFull(exName, intensity){
       break;
     }
   }
-
-  // Most recent assessment containing this exercise (by assessment date)
-  let assess = null;
-  for(const a of DB.gymAssessments()){
-    if(assess && (a.date||'') <= assess.date) continue;
-    const entry = (a.exercises||[]).find(e=>e.name===exName && e.type==='strength');
-    if(!entry) continue;
-    // new format: orm stored directly; legacy: compute from weight×reps
-    let orm=null;
-    if(entry.orm) orm=parseFloat(entry.orm);
-    else if(entry.weight&&entry.reps){const w=parseFloat(entry.weight),r=parseFloat(entry.reps);if(!isNaN(w)&&!isNaN(r)&&w>0&&r>0)orm=w*(1+r/30);}
-    if(orm&&!isNaN(orm)&&orm>0) assess = { orm, date: a.date||'' };
-  }
-
-  // Newest wins (tie → session, it reflects actual training)
-  let pick=null, source=null;
-  if(sess && assess){ if(assess.date > sess.date){pick=assess;source='assessment';} else {pick=sess;source='session';} }
-  else if(sess){ pick=sess; source='session'; }
-  else if(assess){ pick=assess; source='assessment'; }
-
-  if(pick){
-    const orm = Math.round(pick.orm*10)/10;
-    const working = r4(pick.orm * (intensity/100));
-    const weeksDiff = pick.date ? (Date.now() - new Date(pick.date+'T12:00:00')) / (1000*60*60*24*7) : 0;
+  if(sess){
+    const orm = Math.round(sess.orm*10)/10;
     return {
-      weight: working,
+      weight: r4(sess.orm * (intensity/100)),
       orm,
-      source,
-      label: (source==='assessment'
-        ? `📋 Assessment ${pick.date} · est. 1RM ${orm} kg`
-        : `📊 Last logged ${pick.date} · est. 1RM ${orm} kg (from ${pick.method})`) + prNote,
-      stale: source==='assessment' && weeksDiff > 4
+      source: 'session',
+      label: `📊 Rough estimate ${sess.date} · 1RM ~${orm} kg (from ${sess.method}) · add RIR to track your real 1RM` + prNote,
+      stale: false
     };
   }
 
@@ -2575,7 +2643,7 @@ function loadPlanIntoLog(plan,intensity,phaseId){
       };
     }
     const suggested=suggestWeightFull(ex.name,intensity);
-    const suggestedWeight=suggested?String(suggested.weight):(ex.weight||'');
+    const suggestedWeight=(suggested&&suggested.weight!=null)?String(suggested.weight):(ex.weight||'');
     return {
       name:ex.name,cat:ex.cat,type:'strength',
       sets:phDef?phDef.sets:ex.sets,
@@ -2670,6 +2738,9 @@ function openAddExercise(){
   // Seed effort % from the current macro phase (deload 60 · hypertrophy 70 · strength 85 · power 90)
   const _intEl=document.getElementById('ex-intensity');
   if(_intEl)_intEl.value=currentPhaseIntensity();
+  const _rirEl=document.getElementById('ex-rir');
+  if(_rirEl)_rirEl.value='';
+  renderRirPreview('ex');
   filterExercises();
   document.getElementById('ex-autofill').style.display='none';
   document.getElementById('ex-suggest').style.display='none';
@@ -2994,6 +3065,7 @@ function addExerciseToSession(){
       rest:document.getElementById('ex-rest').value||ex.rest,
       intensity:document.getElementById('ex-intensity').value,
       weight:_normalizeKgInput(document.getElementById('ex-weight').value),
+      rir:_normalizeKgInput(document.getElementById('ex-rir').value),
       notes:document.getElementById('ex-notes').value,
     };
   }
@@ -3010,6 +3082,7 @@ function addExerciseToSession(){
       // reset fields
       document.getElementById('ex-name').value='';
       document.getElementById('ex-weight').value='';
+      document.getElementById('ex-rir').value='';
       document.getElementById('ex-notes').value='';
       document.getElementById('ex-cardio-duration').value='';
       document.getElementById('ex-cardio-level').value='';
@@ -3039,6 +3112,7 @@ function addExerciseToSession(){
   // reset
   document.getElementById('ex-name').value='';
   document.getElementById('ex-weight').value='';
+  document.getElementById('ex-rir').value='';
   document.getElementById('ex-notes').value='';
   document.getElementById('ex-cardio-duration').value='';
   document.getElementById('ex-cardio-level').value='';
@@ -3086,6 +3160,7 @@ function _renderExRow(e,i){
         `⏱ ${e.rest}`,
         e.weight?`<span class="meta-pill weight">${e.weight} kg</span>`:'',
         e.intensity?`<span class="meta-pill intensity">${e.intensity}%</span>`:'',
+        (e.rir!=null&&String(e.rir).trim()!=='')?`RIR ${esc(e.rir)}`:'',
       ].filter(Boolean);
 
   let setsHtml='';
@@ -3778,7 +3853,7 @@ function showSessionDetail(type,id){
         if(e.rpm)parts.push(`${e.rpm} ${e.rpmLabel||'rpm'}`);
         metaHtml=parts.map(p=>`<span>${p}</span>`).join('');
       } else {
-        metaHtml=`<span>📦 ${e.sets}×${e.reps}</span><span>⏱ ${e.rest}</span>${e.weight?`<span class="meta-pill weight">${e.weight} kg`+`</span>`:''}${e.intensity?`<span class="meta-pill intensity">${e.intensity}%</span>`:''}`;
+        metaHtml=`<span>📦 ${e.sets}×${e.reps}</span><span>⏱ ${e.rest}</span>${e.weight?`<span class="meta-pill weight">${e.weight} kg`+`</span>`:''}${e.intensity?`<span class="meta-pill intensity">${e.intensity}%</span>`:''}${(e.rir!=null&&String(e.rir).trim()!=='')?`<span>RIR ${esc(e.rir)}</span>`:''}`;
       }
       return `<div class="ex-row">
       <div class="ex-row-info">
@@ -3935,6 +4010,8 @@ function _fillEditHistModal(e){
     }
     document.getElementById('edit-hist-weight').value = weightVal;
     document.getElementById('edit-hist-intensity').value = intensityVal;
+    document.getElementById('edit-hist-rir').value = (e.rir==null?'':e.rir);
+    renderRirPreview('edit-hist');
 
     // Source label / staleness hint
     const box = document.getElementById('edit-hist-suggest');
@@ -3998,6 +4075,25 @@ function onExWeightChange(){
   }
 }
 
+// Live "new 1RM" preview under the RIR field. prefix = 'ex' (add modal) | 'edit-hist' (edit modal)
+function renderRirPreview(prefix){
+  const box=document.getElementById(prefix+'-rir-preview');
+  if(!box)return;
+  const val=id=>{const el=document.getElementById(prefix+'-'+id);return el?el.value:'';};
+  const rirRaw=val('rir');
+  const hint='RIR = reps left in the tank (0 = failure). Fill it in to update your 1RM.';
+  if(String(rirRaw).trim()===''){box.textContent=hint;return;}
+  const orm=ormFromSet({type:'strength',weight:val('weight'),reps:val('reps'),rir:rirRaw});
+  if(orm==null){
+    const r=parseFloat(_normalizeKgInput(rirRaw));
+    box.textContent=(isNaN(r)||r<0||r>RIR_MAX)?`RIR must be 0–${RIR_MAX}.`
+      :!(parseFloat(_normalizeKgInput(val('weight')))>0)?'Add the weight to calculate the 1RM.'
+      :'1RM needs a plain rep count (e.g. 10) — ranges or times can\'t be converted.';
+    return;
+  }
+  box.innerHTML=`🎯 New 1RM ≈ <strong>${Math.round(orm*10)/10} kg</strong> — updates when saved`;
+}
+
 function openEditSessionExercise(i){
   const e=gymSession.exercises[i];
   if(!e)return;
@@ -4035,6 +4131,7 @@ function saveEditHistoryExercise(){
       e.reps=document.getElementById('edit-hist-reps').value;
       e.weight=_normalizeKgInput(document.getElementById('edit-hist-weight').value);
       e.intensity=document.getElementById('edit-hist-intensity').value;
+      e.rir=_normalizeKgInput(document.getElementById('edit-hist-rir').value);
       e.rest=document.getElementById('edit-hist-rest').value;
     }
     e.notes=document.getElementById('edit-hist-notes').value;
@@ -4061,6 +4158,7 @@ function saveEditHistoryExercise(){
     e.reps=document.getElementById('edit-hist-reps').value;
     e.weight=_normalizeKgInput(document.getElementById('edit-hist-weight').value);
     e.intensity=document.getElementById('edit-hist-intensity').value;
+    e.rir=_normalizeKgInput(document.getElementById('edit-hist-rir').value);
     e.rest=document.getElementById('edit-hist-rest').value;
   }
   e.notes=document.getElementById('edit-hist-notes').value;
@@ -8388,14 +8486,54 @@ function deleteGymAssessmentEntry(id){
   pushUndo('Assessment deleted',()=>{DB.saveGymAssessment(backup);renderGymAssessments();});
 }
 
+// "Current 1RM" card — auto-updated from RIR-logged sets (2026-09-11). Formal tests below stay untouched.
+function currentORMCardHtml(){
+  const map=currentORMMap();
+  // latest formal test per exercise, for the ▲/▼ comparison
+  const tested={};
+  for(const a of DB.gymAssessments()){
+    for(const e of (a.exercises||[])){
+      if(e.type!=='strength')continue;
+      let v=e.orm?parseFloat(e.orm):(e.weight&&e.reps?parseFloat(e.weight)*(1+parseFloat(e.reps)/30):null);
+      if(v>0&&(!tested[e.name]||(a.date||'')>tested[e.name].date))tested[e.name]={orm:v,date:a.date||''};
+    }
+  }
+  const names=Object.keys(map).sort((a,b)=>(map[b].date||'').localeCompare(map[a].date||'')||a.localeCompare(b));
+  const rows=names.map(n=>{
+    const c=map[n], orm=Math.round(c.orm*10)/10;
+    let src, delta='';
+    if(c.source==='session'){
+      src=`📊 ${fmtDate(c.date)} · ${c.weight} kg × ${c.reps} @ RIR ${c.rir}`;
+      const t=tested[n];
+      if(t){
+        const d=Math.round((c.orm-t.orm)*10)/10;
+        delta=Math.abs(d)<0.05?`<span class="month-delta eq">→</span>`
+          :`<span class="month-delta ${d>0?'up':'dn'}" title="vs test ${t.date}">${d>0?'▲':'▼'} ${Math.abs(d)}</span>`;
+      }
+    }else{
+      src=`📋 Assessment ${fmtDate(c.date)}`;
+    }
+    return `<div class="month-metric-row" style="align-items:flex-start">
+      <span class="month-metric-lbl">${esc(n)}<br><span class="text-xs-muted">${src}</span></span>
+      <span class="month-metric-val">${orm} kg ${delta}</span>
+    </div>`;
+  }).join('');
+  return `<div class="card" style="margin-bottom:12px">
+    <div class="card-title">🎯 Current 1RM</div>
+    <div class="text-xs-muted" style="margin-bottom:8px">Updates automatically when you log a set with weight, reps and RIR. Weight suggestions use these values.</div>
+    ${rows||'<p class="text-xs-muted">Nothing yet — add RIR (reps left in the tank) when you log a set and your 1RM appears here.</p>'}
+  </div>`;
+}
+
 function renderGymAssessments(){
   const list=document.getElementById('gym-assess-list');
   const assessments=DB.gymAssessments();
+  const currentCard=currentORMCardHtml();
   if(!assessments.length){
-    list.innerHTML=`<div class="empty"><div class="empty-icon">📋</div><p>No assessments yet.<br>Record your best set per exercise at the end of each training phase.</p></div>`;
+    list.innerHTML=currentCard+`<div class="empty"><div class="empty-icon">📋</div><p>No assessments yet.<br>Record your best set per exercise at the end of each training phase.</p></div>`;
     return;
   }
-  list.innerHTML=assessments.map((a,idx)=>{
+  list.innerHTML=currentCard+assessments.map((a,idx)=>{
     const prev=assessments[idx+1];
     const prevByName=prev?Object.fromEntries((prev.exercises||[]).map(e=>[e.name,e])):{};
     const exRows=(a.exercises||[]).map(ex=>{
@@ -9016,22 +9154,62 @@ function _sbSyncHeaders(){
   };
 }
 
-async function _pushToSupabase(){
-  if(_pushInProgress)return;
+function _collectLocalData(){
+  const data={};
+  DATA_KEYS.forEach(k=>{const v=localStorage.getItem(k);if(v!==null)data[k]=JSON.parse(v);});
+  return data;
+}
+
+// Upload this device's data.
+// Normal uploads are a compare-and-swap: the PATCH only matches if the cloud is still
+// at the version this device last saw (_cloud_seen). If another device uploaded in
+// between, nothing is written and we return 'conflict' — an old device can no longer
+// overwrite newer data. {force:true} skips the check (first upload, Restore Backup,
+// or Jo explicitly confirming an overwrite).
+// Returns 'ok' | 'conflict' | 'busy'.
+async function _pushToSupabase(opts={}){
+  if(_pushInProgress)return 'busy';
   _pushInProgress=true;
   try{
-    const data={};
-    DATA_KEYS.forEach(k=>{const v=localStorage.getItem(k);if(v!==null)data[k]=JSON.parse(v);});
-    const ts=parseInt(localStorage.getItem('_local_modified')||'0')||Date.now();
+    const data=_collectLocalData();
+    const changeMark=localStorage.getItem('_local_modified');
+    const seenRaw=localStorage.getItem('_cloud_seen');
+    const seen=seenRaw===null?null:(parseInt(seenRaw)||0);
+    const ts=Math.max(Date.now(),(seen||0)+1); // always moves forward, even with clock skew
+    if(seen!==null&&!opts.force){
+      const res=await fetch(`${_SB_URL}/rest/v1/user_data?id=eq.${_SB_ROW_ID}&last_modified=eq.${seen}&select=id`,{
+        method:'PATCH',
+        headers:{..._sbSyncHeaders(),'Prefer':'return=representation'},
+        body:JSON.stringify({data,last_modified:ts})
+      });
+      if(!res.ok){const t=await res.text();throw new Error(`HTTP ${res.status}: ${t}`);}
+      const rows=await res.json();
+      if(!rows.length){
+        const row=await _pullFromSupabase();
+        if(row)return 'conflict'; // cloud moved on since we last synced
+        // row doesn't exist at all → fall through to a plain insert below
+      }else{
+        _afterPush(ts,changeMark);
+        return 'ok';
+      }
+    }
     const res=await fetch(`${_SB_URL}/rest/v1/user_data`,{
       method:'POST',
       headers:_sbSyncHeaders(),
       body:JSON.stringify({id:_SB_ROW_ID,data,last_modified:ts})
     });
     if(!res.ok){const t=await res.text();throw new Error(`HTTP ${res.status}: ${t}`);}
+    _afterPush(ts,changeMark);
+    return 'ok';
   }finally{
     _pushInProgress=false;
   }
+}
+function _afterPush(ts,changeMark){
+  localStorage.setItem('_cloud_seen',String(ts));
+  localStorage.removeItem('_sync_force');
+  // Only clear dirty if nothing changed while the upload was in flight
+  if(localStorage.getItem('_local_modified')===changeMark)localStorage.setItem('_sync_dirty','0');
 }
 
 async function _pullFromSupabase(){
@@ -9044,29 +9222,55 @@ async function _pullFromSupabase(){
   return rows.length?rows[0]:null;
 }
 
+// Replace local data with the cloud copy. If this device had unsynced changes,
+// they are kept in _sync_backup first (restorable from Home → Data).
+function _applyCloudRow(row,{backup}={}){
+  if(backup){
+    try{localStorage.setItem('_sync_backup',JSON.stringify({savedAt:new Date().toISOString(),data:_collectLocalData()}));}
+    catch(e){console.warn('sync backup failed (storage full?)',e);}
+  }
+  let changed=false;
+  DATA_KEYS.forEach(k=>{
+    if(row.data[k]!==undefined){localStorage.setItem(k,JSON.stringify(row.data[k]));changed=true;}
+  });
+  localStorage.setItem('_cloud_seen',String(row.last_modified||0));
+  localStorage.setItem('_local_modified',String(Date.now()));
+  localStorage.setItem('_sync_dirty','0');
+  localStorage.removeItem('_sync_force');
+  if(changed){
+    syncCustomExercises(); // pulled library entries may differ from local
+    const activeNav=document.querySelector('.nav-btn.active');
+    const tab=activeNav?activeNav.classList[1]:'home';
+    switchTab(tab);
+  }
+  renderSyncBackupNotice();
+  return changed;
+}
+
+// Cloud changed underneath us → download it (backing up our unsynced changes).
+async function _resolveConflict(){
+  const row=await _pullFromSupabase();
+  if(!row||!row.data)return;
+  const hadChanges=localStorage.getItem('_sync_dirty')==='1';
+  _applyCloudRow(row,{backup:hadChanges});
+  toast(hadChanges
+    ?'☁️ Newer data from another device loaded — this device\'s unsaved changes were kept as a backup (Home → Data)'
+    :'🟢 Updated from cloud!');
+}
+
 async function syncFromCloud(){
   if(!_isOnline){_setSyncStatus('offline');toast('🔴 Offline — sync when back online');return;}
   _setSyncStatus('syncing');
   try{
     const row=await _pullFromSupabase();
     if(!row||!row.data||Object.keys(row.data).length===0){
-      await _pushToSupabase();
+      await _pushToSupabase({force:true});
       _setSyncStatus('ok');
       toast('🟢 Data uploaded to cloud!');
       return;
     }
-    let changed=false;
-    DATA_KEYS.forEach(k=>{
-      if(row.data[k]!==undefined){localStorage.setItem(k,JSON.stringify(row.data[k]));changed=true;}
-    });
-    if(row.last_modified){localStorage.setItem('_local_modified',row.last_modified.toString());}
+    _applyCloudRow(row,{backup:localStorage.getItem('_sync_dirty')==='1'});
     _setSyncStatus('ok');
-    if(changed){
-      syncCustomExercises(); // pulled library entries may differ from local
-      const activeNav=document.querySelector('.nav-btn.active');
-      const tab=activeNav?activeNav.classList[1]:'home';
-      switchTab(tab);
-    }
     toast('🟢 Synced!');
   }catch(e){
     _setSyncStatus('error');
@@ -9076,70 +9280,133 @@ async function syncFromCloud(){
 }
 
 function _syncKeyToCloud(){
-  if(!_isOnline||_pushInProgress)return;
+  if(!_isOnline||!_syncReady)return; // before startup sync: _sbInit uploads afterwards if needed
   clearTimeout(_syncTimer);
   _syncTimer=setTimeout(async()=>{
-    try{await _pushToSupabase();_setSyncStatus('ok');}
+    try{
+      const r=await _pushToSupabase();
+      if(r==='busy'){_syncKeyToCloud();return;}
+      if(r==='conflict'){await _resolveConflict();}
+      else if(localStorage.getItem('_sync_dirty')==='1'){_syncKeyToCloud();} // changed mid-upload
+      _setSyncStatus('ok');
+    }
     catch(e){_setSyncStatus('error');console.warn('Push error:',e);}
   },3000);
 }
 
-async function pushToCloud(){
-  localStorage.setItem('_local_modified',Date.now().toString());
+// manual=true → the "☁️ Push to Cloud" button: on conflict Jo may choose to overwrite.
+async function pushToCloud(manual){
+  _markLocalChange();
+  if(!_syncReady){return;} // startup sync will upload it
   _setSyncStatus('syncing');
-  try{await _pushToSupabase();_setSyncStatus('ok');toast('☁️ Pushed to cloud!');}
+  try{
+    let r=await _pushToSupabase();
+    if(r==='busy'){_syncKeyToCloud();return;}
+    if(r==='conflict'){
+      if(manual===true&&confirm('Another device uploaded newer data since this device last synced.\n\nOK = overwrite the cloud with THIS device\'s data\nCancel = download the newer cloud data instead (this device\'s changes are kept as a backup)')){
+        r=await _pushToSupabase({force:true});
+      }else{
+        await _resolveConflict();
+        _setSyncStatus('ok');
+        return;
+      }
+    }
+    _setSyncStatus('ok');
+    toast('☁️ Pushed to cloud!');
+  }
   catch(e){_setSyncStatus('error');toast('⚠️ Push failed: '+e.message);}
 }
 async function pullFromCloud(){
   await syncFromCloud();
 }
 
-// Startup sync: timestamp-based merge, cloud wins if newer
+// Startup sync.
+//  • Device already on safe sync (_cloud_seen set):
+//      cloud unchanged + local changes → upload · cloud changed → download (backup if we had changes)
+//  • First run of safe sync on this device: compare the cloud timestamp with this
+//    device's timestamp from BEFORE startup code ran (_BOOT_LOCAL_TS); newer wins.
 async function _sbInit(){
   _setSyncStatus('syncing');
   try{
-    const localTs=parseInt(localStorage.getItem('_local_modified')||'0');
     const row=await _pullFromSupabase();
 
     if(!row||!row.data||Object.keys(row.data).length===0){
       // Nothing in Supabase yet → seed from local data
-      await _pushToSupabase();
+      await _pushToSupabase({force:true});
       _setSyncStatus('ok');
       return;
     }
 
     const cloudTs=row.last_modified||0;
+    const seenRaw=localStorage.getItem('_cloud_seen');
+    const dirty=localStorage.getItem('_sync_dirty')==='1';
 
-    if(cloudTs>localTs){
-      // Cloud is newer → pull
-      DATA_KEYS.forEach(k=>{
-        if(row.data[k]!==undefined)localStorage.setItem(k,JSON.stringify(row.data[k]));
-      });
-      localStorage.setItem('_local_modified',cloudTs.toString());
-      _setSyncStatus('ok');
-      toast('🟢 Updated from cloud!');
-      const activeNav=document.querySelector('.nav-btn.active');
-      const tab=activeNav?activeNav.classList[1]:'home';
-      switchTab(tab);
-    }else if(localTs>cloudTs){
-      // Local is newer → push
-      await _pushToSupabase();
-      _setSyncStatus('ok');
-    }else{
-      // Already in sync
-      _setSyncStatus('ok');
+    if(localStorage.getItem('_sync_force')==='1'){
+      await _pushToSupabase({force:true});            // Restore Backup → upload as-is
+    }else if(seenRaw===null){
+      if(_BOOT_LOCAL_TS>cloudTs){
+        await _pushToSupabase({force:true});          // this device is newer
+      }else{
+        _applyCloudRow(row,{backup:true});            // cloud is newer (keep a backup, just in case)
+        toast('🟢 Updated from cloud!');
+      }
+    }else if(cloudTs!==(parseInt(seenRaw)||0)){
+      _applyCloudRow(row,{backup:dirty});
+      toast(dirty
+        ?'☁️ Newer data from another device loaded — this device\'s unsaved changes were kept as a backup (Home → Data)'
+        :'🟢 Updated from cloud!');
+    }else if(dirty){
+      const r=await _pushToSupabase();
+      if(r==='conflict')await _resolveConflict();
     }
+    _setSyncStatus('ok');
   }catch(e){
     _setSyncStatus('error');
     console.warn('_sbInit sync error:',e);
+  }finally{
+    _syncReady=true;
+    if(localStorage.getItem('_sync_dirty')==='1')_syncKeyToCloud(); // changes made during startup
+    renderSyncBackupNotice();
   }
 }
 
-window.addEventListener('online',async()=>{
+// ── Sync backup (unsynced changes saved before a download) ─────────────────
+function renderSyncBackupNotice(){
+  const el=document.getElementById('sync-backup-notice');
+  if(!el)return;
+  let b=null;
+  try{b=JSON.parse(localStorage.getItem('_sync_backup')||'null');}catch(e){}
+  if(!b||!b.data){el.innerHTML='';return;}
+  const when=(b.savedAt||'').replace('T',' ').slice(0,16);
+  el.innerHTML=`<div style="margin-top:8px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--muted)">
+    ↩️ Backup of this device's unsynced data from ${esc(when)} (saved before newer cloud data was loaded).
+    <div class="flex-gap8" style="margin-top:6px">
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="restoreSyncBackup()">Restore it</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="discardSyncBackup()">Discard</button>
+    </div></div>`;
+}
+function restoreSyncBackup(){
+  let b=null;
+  try{b=JSON.parse(localStorage.getItem('_sync_backup')||'null');}catch(e){}
+  if(!b||!b.data)return;
+  if(!confirm('Restore the backup? It REPLACES the current data on this device and in the cloud.'))return;
+  DATA_KEYS.forEach(k=>{if(b.data[k]!==undefined)localStorage.setItem(k,JSON.stringify(b.data[k]));});
+  localStorage.removeItem('_sync_backup');
+  _markLocalChange();
+  localStorage.setItem('_sync_force','1');
+  toast('✅ Backup restored! Reloading…');
+  setTimeout(()=>location.reload(),1200);
+}
+function discardSyncBackup(){
+  if(!confirm('Delete this backup?'))return;
+  localStorage.removeItem('_sync_backup');
+  renderSyncBackupNotice();
+}
+
+window.addEventListener('online',()=>{
   _isOnline=true;
-  _setSyncStatus('syncing');
-  try{await _pushToSupabase();_setSyncStatus('ok');}
-  catch(e){_setSyncStatus('error');};
+  if(localStorage.getItem('_sync_dirty')==='1')_syncKeyToCloud();
+  else _setSyncStatus('ok');
 });
 window.addEventListener('offline',()=>{
   _isOnline=false;
@@ -9185,6 +9452,87 @@ function _saveTennisOverlay(obj){
 let _showHiddenTennis=false;
 let _tennisDetailCache=[];
 function toggleHiddenTennis(){_showHiddenTennis=!_showHiddenTennis;renderTennis();}
+
+// ── Match merges (join a split session back into one match) ───────────────────
+// 2026-08-19: a training set was stopped mid-way and restarted later, so the
+// watch saved it as two separate matches. A merge record joins them into one
+// card WITHOUT touching the Supabase rows or the localStorage matches — the
+// sources stay intact underneath and unmerging restores them exactly.
+// Shape, keyed by merge id:
+//   { ids:[matchId,…], final_score, result, format, notes, createdAt }
+// Synced across devices via DATA_KEYS → user_data, like tennis_overlay.
+function _getTennisMerges(){
+  try{return JSON.parse(localStorage.getItem('tennis_merges')||'{}');}catch{return{};}
+}
+function _saveTennisMerges(obj){
+  localStorage.setItem('tennis_merges',JSON.stringify(obj));
+  pushToCloud();
+}
+
+// Numeric fields that legitimately ADD UP when two blocks of one session join.
+// Note what is NOT here: final_score and result. Games and sets are sequential —
+// the second block restarted at 0-0, so scores can't be summed. Jo confirms
+// those by hand in the merge modal.
+const _MERGE_SUM_FIELDS=['duration_min','points_won','points_lost','unforced_errors',
+  'double_faults','service_points_won','service_points_played','return_points_won',
+  'return_points_played','sets_won','sets_lost','total_games_won','total_games_lost',
+  'tiebreaks_won','tiebreak_points_won','tiebreak_points_lost'];
+
+// Two matches may only be merged if they are the same day, opponent and type.
+function _mergeKey(m){
+  return [m.match_date||'',(m.opponent_name||'').trim().toLowerCase(),m.match_type||''].join('|');
+}
+
+// Replaces each merged group with one combined synthetic match.
+function _applyTennisMerges(all){
+  const merges=_getTennisMerges();
+  const ids=Object.keys(merges);
+  if(!ids.length) return all;
+  const byId={}; all.forEach(m=>{byId[m.id]=m;});
+  const consumed=new Set();
+  const built=[];
+  ids.forEach(mid=>{
+    const rec=merges[mid]||{};
+    const parts=(rec.ids||[]).map(id=>byId[id]).filter(Boolean);
+    // If a source row was deleted from the database the merge quietly falls
+    // apart rather than showing half a match.
+    if(parts.length<2) return;
+    parts.forEach(p=>consumed.add(p.id));
+    const base=parts[0];
+    const merged={...base,
+      id:mid,
+      _source:'merged',
+      _mergeId:mid,
+      _partIds:parts.map(p=>p.id),
+      _parts:parts.map(p=>({id:p.id,score:p.final_score||'',mins:p.duration_min,pts:p.points_won,src:p._source})),
+      final_score:rec.final_score||'',
+      result:rec.result||'abandoned',
+      format:rec.format||base.format,
+      notes:rec.notes||parts.map(p=>p.notes).filter(Boolean).join(' · ')||null,
+      _hidden:false
+    };
+    _MERGE_SUM_FIELDS.forEach(f=>{
+      const vals=parts.map(p=>p[f]).filter(v=>v!=null&&v!=='');
+      merged[f]=vals.length?vals.reduce((a,b)=>a+Number(b),0):null;
+    });
+    built.push(merged);
+  });
+  return all.filter(m=>!consumed.has(m.id)).concat(built);
+}
+
+// ── Merge selection mode (history list) ──────────────────────────────────────
+let _tennisMergeMode=false;
+let _tennisMergeSel=[];
+function toggleTennisMergeMode(){
+  _tennisMergeMode=!_tennisMergeMode;
+  _tennisMergeSel=[];
+  renderTennis();
+}
+function toggleMergeSel(id){
+  const i=_tennisMergeSel.indexOf(id);
+  if(i>=0) _tennisMergeSel.splice(i,1); else _tennisMergeSel.push(id);
+  renderTennis();
+}
 
 // ── Supabase matches cache ────────────────────────────────────────────────────
 let _sbMatches=[];
@@ -9283,7 +9631,8 @@ function renderTennis(){
       _hidden:  !!ov.hidden
     };
   });
-  const _allMatches=[...watchMatches,...localMatches];
+  // Merged sessions replace their source blocks with one combined match.
+  const _allMatches=_applyTennisMerges([...watchMatches,...localMatches]);
   _tennisDetailCache=_allMatches;
   const catOk=m=>_tennisCatFilter==='all'||(m.category||null)===_tennisCatFilter;
   const hiddenCount=_allMatches.filter(m=>m._hidden&&catOk(m)).length;
@@ -9328,6 +9677,27 @@ function renderTennis(){
     formDiv.style.display='none';
   }
 
+  // ── Merge bar ─────────────────────────────────────────────
+  const mergeBar=document.getElementById('tennis-merge-bar');
+  if(mergeBar){
+    if(_tennisMode!=='history'||total<2){
+      mergeBar.innerHTML='';
+      if(_tennisMergeMode){_tennisMergeMode=false;_tennisMergeSel=[];}
+    } else if(!_tennisMergeMode){
+      mergeBar.innerHTML=`<button onclick="toggleTennisMergeMode()" style="width:100%;background:none;border:1px dashed var(--border);border-radius:var(--radius-sm);color:var(--muted);font-size:12.5px;font-weight:600;cursor:pointer;padding:8px">⛓ Merge split sessions</button>`;
+    } else {
+      const n=_tennisMergeSel.length;
+      mergeBar.innerHTML=`<div class="card" style="border-left-color:var(--tennis);padding:12px 14px">
+        <div style="font-weight:800;font-size:14px;margin-bottom:2px">⛓ Merge split sessions</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Tap 2 or more blocks from the same day, opponent and match type. Stats are added up; you confirm the score. Nothing is deleted — you can split them again anytime.</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button ${n<2?'disabled':''} onclick="openMergeConfirm()" style="flex:1;background:${n<2?'var(--surface2)':'var(--tennis)'};color:${n<2?'var(--muted)':'#fff'};border:none;padding:10px;border-radius:var(--radius-sm);font-weight:800;font-size:14px;cursor:${n<2?'default':'pointer'}">Merge ${n>1?n+' blocks':''}</button>
+          <button onclick="toggleTennisMergeMode()" style="background:none;color:var(--muted);border:1px solid var(--border);padding:10px 14px;border-radius:var(--radius-sm);font-weight:700;font-size:13px;cursor:pointer">Cancel</button>
+        </div>
+      </div>`;
+    }
+  }
+
   if(_tennisMode==='stats'){
     _renderTennisStats(list,matches);
     return;
@@ -9347,6 +9717,10 @@ function renderTennis(){
   const typeLabel={'singles':'Singles','doubles':'Doubles'};
 
   const catLabel={competition:'Competition',training:'Training'};
+  // In merge mode only blocks matching the first pick (day + opponent + type)
+  // stay tappable — that is the guardrail against a nonsense merge.
+  const _mergeAnchor=_tennisMergeMode&&_tennisMergeSel.length
+    ? _tennisDetailCache.find(x=>x.id===_tennisMergeSel[0]) : null;
   let _histHtml=matches.map(m=>{
     const dateStr=m.match_date||'';
     const dateDisp=dateStr?new Date(dateStr+'T12:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}):'--';
@@ -9354,6 +9728,10 @@ function renderTennis(){
     const isUnf=m.result!=='won'&&m.result!=='lost';
     const [bTxt,bCol,bBg]=isUnf?['UNFINISHED','var(--muted)','var(--surface2)']:isWon?['WIN','var(--tennis)','var(--tennis-dim)']:['LOSS','var(--red)','#fce7e7'];
     const isWatch=m._source==='watch';
+    const isMerged=m._source==='merged';
+    const canMerge=_tennisMergeMode&&!isMerged&&!m._hidden;
+    const mergeOk=canMerge&&(!_mergeAnchor||_mergeKey(_mergeAnchor)===_mergeKey(m));
+    const mergeSel=_tennisMergeSel.includes(m.id);
     const score=esc(m.final_score||'--');
     const fmt=fmtLabel[m.format]||m.format||'';
     const type=typeLabel[m.match_type]||m.match_type||'';
@@ -9364,7 +9742,12 @@ function renderTennis(){
     const oppTxt=oppNames?`vs ${oppNames}`:'';
     const locTxt=m.location?`📍${esc(m.location)}`:'';
     const metaLine=[partnerTxt,oppTxt,locTxt].filter(Boolean).join(' · ');
-    const actBtns=isWatch
+    const actBtns=_tennisMergeMode
+      ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;border:2px solid ${mergeSel?'var(--tennis)':'var(--border)'};background:${mergeSel?'var(--tennis)':'transparent'};color:#fff;font-size:12px;font-weight:800">${mergeSel?'✓':''}</span>`
+      : isMerged
+      ? `<button onclick="event.stopPropagation();openMergeConfirm('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Edit merged score">✏️</button>`+
+        `<button onclick="event.stopPropagation();unmergeTennisMatch('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Split back apart">⛓️‍💥</button>`
+      : isWatch
       ? `<button onclick="event.stopPropagation();openWatchEdit('${m.id}')" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px" title="Edit details">✏️</button>`+
         (m._hidden
           ? `<button onclick="event.stopPropagation();unhideWatchMatch('${m.id}')" style="background:none;border:none;color:var(--tennis);font-size:14px;cursor:pointer;padding:2px 4px;font-weight:700" title="Restore to tab">↩</button>`
@@ -9384,16 +9767,23 @@ function renderTennis(){
 
     const notesRow=m.notes?`<div style="margin-top:6px;font-size:12px;color:var(--muted);font-style:italic">${esc(m.notes)}</div>`:'';
 
-    return `<div class="card" onclick="openMatchDetail('${m.id}')" style="margin-bottom:10px;padding:12px 14px;border-left:4px solid ${isUnf?'var(--muted)':isWon?'var(--tennis)':'var(--red)'};cursor:pointer;${m._hidden?'opacity:.55':''}">
+    const cardClick=_tennisMergeMode
+      ? (mergeOk?`toggleMergeSel('${m.id}')`:'')
+      : `openMatchDetail('${m.id}')`;
+    const dimmed=m._hidden||(_tennisMergeMode&&!mergeOk);
+    const srcIco=isMerged?'⛓':isWatch?'⌚':'📝';
+    const srcTitle=isMerged?`Merged from ${(m._partIds||[]).length} blocks`:isWatch?'Synced from watch':'Manually logged';
+    return `<div class="card" onclick="${cardClick}" style="margin-bottom:10px;padding:12px 14px;border-left:4px solid ${mergeSel?'var(--tennis)':isUnf?'var(--muted)':isWon?'var(--tennis)':'var(--red)'};cursor:${cardClick?'pointer':'default'};${dimmed?'opacity:.45;':''}${mergeSel?'box-shadow:0 0 0 2px var(--tennis);':''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <div>
           <span style="font-weight:700;font-size:15px">${dateDisp}</span>
           ${type?`<span style="margin-left:8px;font-size:11px;background:var(--tennis-dim);color:var(--tennis);padding:2px 7px;border-radius:20px;font-weight:700">${type}</span>`:''}
           ${catBadge}
           ${fmt?`<span style="margin-left:4px;font-size:11px;color:var(--muted)">${fmt}</span>`:''}
+          ${isMerged?`<span style="margin-left:4px;font-size:11px;background:var(--surface2);color:var(--muted);padding:2px 7px;border-radius:20px;font-weight:700">⛓ ${(m._partIds||[]).length} blocks</span>`:''}
         </div>
         <div style="display:flex;align-items:center;gap:6px">
-          <span title="${isWatch?'Synced from watch':'Manually logged'}" style="font-size:12px;color:var(--muted)">${isWatch?'⌚':'📝'}</span>
+          <span title="${srcTitle}" style="font-size:12px;color:var(--muted)">${srcIco}</span>
           <span style="font-size:13px;font-weight:800;color:${bCol};background:${bBg};padding:3px 10px;border-radius:20px">${bTxt}</span>
           ${actBtns}
         </div>
@@ -9724,6 +10114,143 @@ async function deleteWatchPermanently(id){
   }
 }
 
+// ── Merge confirm / edit modal ───────────────────────────────────────────────
+let _tmgResult='abandoned';
+let _tmgEditId=null;   // set when editing an existing merge instead of creating one
+
+// Works out what the combined score should be, from what the watch actually
+// stored. The watch only writes a set into setHistory once that set FINISHES,
+// but total_games_won/lost always include the in-progress set — so an
+// unfinished set still has a usable game count. Three cases:
+//   sets      — every block finished its set → join the scores end to end
+//   continued — no block finished a set → it is one set, so games add up
+//   mixed     — some did, some didn't → a finished set's games are folded into
+//               the same total_games number and can't be separated back out,
+//               so we can't be exact. (Fixable watch-side by restoring the
+//               set_scores field to SupabaseSync.buildPayload — the helper
+//               buildSetScoresJson() is already written but unused.)
+function _proposeMergeScore(srcs){
+  const sum=f=>{const v=srcs.map(p=>p[f]).filter(x=>x!=null&&x!=='');return v.length?v.reduce((a,b)=>a+Number(b),0):null;};
+  const scores=srcs.map(p=>(p.final_score||'').trim()).filter(s=>s&&s!=='--');
+  const setsIn=p=>(Number(p.sets_won)||0)+(Number(p.sets_lost)||0);
+  const totalSets=srcs.reduce((a,p)=>a+setsIn(p),0);
+  if(scores.length===srcs.length&&scores.length>0){
+    return {score:scores.join(', '),format:totalSets>=2?'best_of_3':null,
+      note:'Each block finished its set, so the scores are joined end to end.'};
+  }
+  if(totalSets===0){
+    const gw=sum('total_games_won'),gl=sum('total_games_lost');
+    if(gw!=null&&gl!=null) return {score:gw+'-'+gl,format:null,
+      note:'No set was completed, so this reads as one continued set — games added together.'};
+    return {score:'',format:null,note:'No game data was recorded — type the score yourself.'};
+  }
+  return {score:'',format:null,
+    note:"Mixed: one block finished a set and another didn't. The watch doesn't upload per-set scores yet, so this one needs typing by hand."};
+}
+
+function openMergeConfirm(editId){
+  _tmgEditId=editId||null;
+  let parts,rec={};
+  if(_tmgEditId){
+    rec=_getTennisMerges()[_tmgEditId]||{};
+    const merged=_tennisDetailCache.find(x=>x.id===_tmgEditId);
+    if(!merged) return;
+    parts=merged._parts||[];
+  } else {
+    if(_tennisMergeSel.length<2) return;
+    parts=_tennisMergeSel.map(id=>_tennisDetailCache.find(x=>x.id===id)).filter(Boolean);
+    if(parts.length<2) return;
+  }
+  // Preview the totals so Jo can sanity-check before committing.
+  const srcs=_tmgEditId
+    ? (_getTennisMerges()[_tmgEditId].ids||[]).map(id=>_tennisRawById(id)).filter(Boolean)
+    : parts;
+  const sum=f=>{const v=srcs.map(p=>p[f]).filter(x=>x!=null&&x!=='');return v.length?v.reduce((a,b)=>a+Number(b),0):null;};
+  const row=(l,v)=>v==null?'':`<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--muted)">${l}</span><strong>${v}</strong></div>`;
+  const head=srcs[0]||{};
+  const srvW=sum('service_points_won'),srvP=sum('service_points_played');
+  const retW=sum('return_points_won'),retP=sum('return_points_played');
+  const dur=sum('duration_min');
+  document.getElementById('tmg-summary').innerHTML=
+    `<div style="font-weight:800;margin-bottom:6px">${srcs.length} blocks · ${esc(head.match_date||'')}${head.opponent_name?' · vs '+esc(head.opponent_name):''}</div>`+
+    `<div style="font-size:11px;color:var(--muted);margin-bottom:6px">${srcs.map(p=>`${esc(p.final_score||'--')}${p.duration_min?' ('+p.duration_min+'m)':''}`).join('  +  ')}</div>`+
+    row('Duration', dur!=null?dur+' min':null)+
+    row('Points won', sum('points_won'))+
+    row('Points lost', sum('points_lost'))+
+    row('Unforced errors', sum('unforced_errors'))+
+    row('Double faults', sum('double_faults'))+
+    row('Serve points', srvW!=null?`${srvW} / ${srvP??'–'}`:null)+
+    row('Return points', retW!=null?`${retW} / ${retP??'–'}`:null);
+  const prop=_proposeMergeScore(srcs);
+  document.getElementById('tmg-score').value=_tmgEditId?(rec.final_score||''):prop.score;
+  const hint=document.getElementById('tmg-hint');
+  if(hint){
+    hint.textContent=prop.note;
+    hint.style.color=prop.score?'var(--muted)':'var(--red)';
+  }
+  document.getElementById('tmg-notes').value=rec.notes||'';
+  document.getElementById('tmg-format').value=_tmgEditId
+    ? (rec.format||head.format||'single_set')
+    : (prop.format||head.format||'single_set');
+  _tmgResult=rec.result||'abandoned';
+  _syncTmgResult();
+  document.getElementById('tmg-title').textContent=_tmgEditId?'Edit merged match':'Merge into one match';
+  document.getElementById('tmg-save').textContent=_tmgEditId?'Save changes':'Merge blocks';
+  openModal('modal-tennis-merge');
+}
+
+// Raw (pre-merge) lookup — the detail cache only holds the combined card.
+function _tennisRawById(id){
+  const ov=_getTennisOverlay()[id]||{};
+  const sb=_sbMatches.find(x=>x.id===id);
+  if(sb) return {...sb,
+    opponent_name:(ov.opponent_name!=null&&ov.opponent_name!=='')?ov.opponent_name:sb.opponent_name};
+  return _getTennisMatches().find(x=>x.id===id)||null;
+}
+
+function setTmgResult(v){_tmgResult=v;_syncTmgResult();}
+function _syncTmgResult(){
+  document.querySelectorAll('[data-tmg-res]').forEach(b=>{
+    const on=b.dataset.tmgRes===_tmgResult;
+    b.classList.toggle('active',on);
+    b.style.background=on?'var(--tennis)':'';
+    b.style.color=on?'#fff':'';
+    b.style.borderColor=on?'var(--tennis)':'';
+  });
+}
+
+function saveTennisMerge(){
+  const merges=_getTennisMerges();
+  const payload={
+    final_score:document.getElementById('tmg-score').value.trim(),
+    result:_tmgResult,
+    format:document.getElementById('tmg-format').value,
+    notes:document.getElementById('tmg-notes').value.trim()
+  };
+  if(_tmgEditId){
+    merges[_tmgEditId]={...merges[_tmgEditId],...payload};
+  } else {
+    if(_tennisMergeSel.length<2) return;
+    const mid='mg_'+Date.now().toString(36);
+    merges[mid]={ids:[..._tennisMergeSel],...payload,createdAt:Date.now()};
+  }
+  _saveTennisMerges(merges);
+  _tennisMergeMode=false; _tennisMergeSel=[];
+  const wasEdit=!!_tmgEditId; _tmgEditId=null;
+  closeModal('modal-tennis-merge');
+  renderTennis();
+  showToast(wasEdit?'Merge updated':'Merged into one match');
+}
+
+function unmergeTennisMatch(mid){
+  if(!confirm('Split this back into separate matches?\n\nThe original blocks come back exactly as they were — nothing has been deleted.')) return;
+  const merges=_getTennisMerges();
+  delete merges[mid];
+  _saveTennisMerges(merges);
+  renderTennis();
+  showToast('Split back apart');
+}
+
 // ── Per-match detail sheet ────────────────────────────────────────────────────
 function openMatchDetail(id){
   const m=_tennisDetailCache.find(x=>x.id===id);
@@ -9758,8 +10285,18 @@ function openMatchDetail(id){
     ? `<div class="card" style="margin:12px 0;padding:6px 14px">${rows.join('')}</div>`
     : `<div style="margin:14px 0;text-align:center;color:var(--muted);font-size:13px">No detailed stats recorded for this match.</div>`;
 
+  const isMerged=m._source==='merged';
+  const partsHtml=isMerged?`<div class="card" style="margin:12px 0;padding:10px 14px;background:var(--surface2)">
+    <div style="font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.05em;margin-bottom:6px">MERGED FROM ${(m._parts||[]).length} BLOCKS</div>
+    ${(m._parts||[]).map((p,i)=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span style="color:var(--muted)">Block ${i+1} ${p.src==='watch'?'⌚':'📝'}</span><span>${esc(p.score||'--')}${p.mins?` · ${p.mins}m`:''}${p.pts!=null?` · ${p.pts} pts`:''}</span></div>`).join('')}
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Originals are untouched — splitting restores them.</div>
+  </div>`:'';
+
   let actions;
-  if(isWatch){
+  if(isMerged){
+    actions = `<button class="btn" onclick="closeModal('modal-tennis-detail');openMergeConfirm('${m.id}')" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:11px;border-radius:var(--radius-sm);font-weight:800;font-size:14px">✏️ Edit merged score</button>`
+      + `<button class="btn" onclick="closeModal('modal-tennis-detail');unmergeTennisMatch('${m.id}')" style="width:100%;background:none;color:var(--tennis);border:1px solid var(--tennis);padding:9px;border-radius:var(--radius-sm);font-weight:700;font-size:13px;margin-top:6px">⛓️‍💥 Split back apart</button>`;
+  } else if(isWatch){
     actions = `<button class="btn" onclick="closeModal('modal-tennis-detail');openWatchEdit('${m.id}')" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:11px;border-radius:var(--radius-sm);font-weight:800;font-size:14px">✏️ Edit details</button>`
       + (m._hidden
           ? `<button class="btn" onclick="closeModal('modal-tennis-detail');unhideWatchMatch('${m.id}')" style="width:100%;background:none;color:var(--tennis);border:1px solid var(--tennis);padding:9px;border-radius:var(--radius-sm);font-weight:700;font-size:13px;margin-top:6px">↩ Restore to tab</button>`
@@ -9775,9 +10312,10 @@ function openMatchDetail(id){
       <div style="font-weight:800;font-size:17px">${dateDisp}</div>
       <span style="font-size:13px;font-weight:800;color:${bCol};background:${bBg};padding:3px 12px;border-radius:20px">${bTxt}</span>
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">${typeLabel[m.match_type]||m.match_type||''}${(m.category&&catLabel[m.category])?' · '+catLabel[m.category]:''}${(m.format&&(fmtLabel[m.format]||m.format))?' · '+(fmtLabel[m.format]||m.format):''} · ${isWatch?'⌚ watch':'📝 manual'}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">${typeLabel[m.match_type]||m.match_type||''}${(m.category&&catLabel[m.category])?' · '+catLabel[m.category]:''}${(m.format&&(fmtLabel[m.format]||m.format))?' · '+(fmtLabel[m.format]||m.format):''} · ${isMerged?'⛓ merged':isWatch?'⌚ watch':'📝 manual'}</div>
     <div style="font-size:22px;font-weight:800;letter-spacing:.02em">${esc(m.final_score||'--')}${m.duration_min?`<span style="font-size:13px;color:var(--muted);font-weight:400"> · ${m.duration_min}m</span>`:''}</div>
     ${metaBits?`<div style="margin-top:4px;font-size:13px;color:var(--muted)">${metaBits}</div>`:''}
+    ${partsHtml}
     ${statsHtml}
     ${m.notes?`<div style="font-size:13px;color:var(--muted);font-style:italic;margin-bottom:12px">"${esc(m.notes)}"</div>`:''}
     ${actions}
@@ -10661,6 +11199,53 @@ window.addEventListener('pagehide',tsSaveDraft);
     <button class="btn" onclick="saveWatchOverlay()" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:12px;border-radius:var(--radius-sm);font-weight:800;font-size:15px;margin-top:4px">Save details</button>
     <button class="btn" onclick="removeWatchFromModal()" style="width:100%;background:none;color:var(--red);border:1px solid var(--red);padding:10px;border-radius:var(--radius-sm);font-weight:700;font-size:14px;margin-top:8px">Remove from tab</button>
     <button onclick="deleteWatchPermanently()" style="width:100%;background:none;color:var(--red);border:none;padding:8px;font-weight:600;font-size:12.5px;margin-top:6px;cursor:pointer;text-decoration:underline">Delete permanently from database</button>
+  </div>
+</div>
+
+<!-- MERGE SPLIT SESSIONS MODAL -->
+<div class="modal-overlay" role="dialog" aria-modal="true" id="modal-tennis-merge">
+  <div class="modal" style="max-height:90vh;overflow-y:auto">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title" id="tmg-title">Merge into one match</div>
+      <button class="modal-close" aria-label="Close" onclick="closeModal('modal-tennis-merge')">✕</button>
+    </div>
+    <div id="tmg-summary" style="font-size:13px;background:var(--surface2);padding:10px 12px;border-radius:var(--radius-sm);margin-bottom:8px"></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px">Stats above are added up automatically. The score is worked out from what the watch stored — check it, and set the result below.</div>
+
+    <div class="form-group">
+      <label>Final score</label>
+      <input type="text" id="tmg-score" placeholder="e.g. 6-4 or 4-2, 3-1" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+      <div id="tmg-hint" style="font-size:11px;color:var(--muted);margin-top:5px"></div>
+    </div>
+
+    <div class="form-group">
+      <label>Result</label>
+      <div style="display:flex;gap:6px">
+        <button class="pill-toggle" data-tmg-res="won" onclick="setTmgResult('won')">Win</button>
+        <button class="pill-toggle" data-tmg-res="lost" onclick="setTmgResult('lost')">Loss</button>
+        <button class="pill-toggle" data-tmg-res="abandoned" onclick="setTmgResult('abandoned')">Unfinished</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Format</label>
+      <select id="tmg-format" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px">
+        <option value="single_set">1 Set</option>
+        <option value="best_of_3">Best of 3</option>
+        <option value="best_of_3_st">Best of 3+ST</option>
+        <option value="super_tb">Super TB</option>
+        <option value="tiebreak">Tiebreak</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="tmg-notes" placeholder="e.g. set stopped for rain, resumed after 20 min" rows="2" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px;resize:none;font-family:inherit"></textarea>
+    </div>
+
+    <button class="btn" id="tmg-save" onclick="saveTennisMerge()" style="width:100%;background:var(--tennis);color:#fff;border:none;padding:12px;border-radius:var(--radius-sm);font-weight:800;font-size:15px;margin-top:4px">Merge blocks</button>
+    <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">Nothing is deleted — the original blocks stay in the database and you can split them apart again anytime.</div>
   </div>
 </div>
 
