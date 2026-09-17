@@ -885,6 +885,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 
         <!-- FB LOG -->
         <div id="fb-log">
+          <div id="fb-edit-banner" style="display:none;background:var(--warn,#f59e0b);color:#000;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:13px;font-weight:600;text-align:center">✏️ Editing saved session — changes will overwrite the original <button onclick="cancelFBEdit()" style="background:#fff3;border:none;border-radius:4px;padding:2px 8px;margin-left:8px;cursor:pointer;font-size:12px">Cancel</button></div>
           <div class="card">
             <div class="form-row cols2">
               <div class="form-group"><label>Date</label><input type="date" id="fb-date"></div>
@@ -7647,6 +7648,8 @@ const FB_PRESETS=[
   {name:"Small Finger Pinch Block",sets:5,reps:1,time:7,restRep:"3'",restSet:"5'"},
 ];
 let fbSession={exercises:[]};
+let fbEditId=null;      // id of the saved session being edited (null = new session)
+let _fbHistEdit=null;   // {sid,i,e} per-exercise edit in the history modal
 let addExContext='gym'; // kept for the shared gym add-exercise modal
 
 function _fbCustomEx(){return DB.get('fb_custom_ex')||[];}
@@ -7826,6 +7829,7 @@ function repeatLastFBSession(){
   const ss=_fbV2Sessions().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   if(!ss.length){toast('No previous session to repeat');return;}
   if(fbSession.exercises.length&&!confirm('Replace current exercises with last session?'))return;
+  _fbResetEditUI();
   fbSession.exercises=ss[0].exercises.map(e=>({
     ...e,
     loads:[...(e.loads||[])],
@@ -7861,8 +7865,10 @@ function saveFBSession(){
     const [eh,em]=endTime.split(':').map(Number);
     let d=(eh*60+em)-(sh*60+sm);if(d<0)d+=1440;durationMins=d;
   }
-  const session={id:Date.now(),fbv:2,date,bodyWeight:bw,startTime,endTime,durationMins,exercises:[...fbSession.exercises]};
-  DB.saveFB(session);
+  const editing=fbEditId!==null;
+  const session={id:editing?fbEditId:Date.now(),fbv:2,date,bodyWeight:bw,startTime,endTime,durationMins,exercises:[...fbSession.exercises]};
+  if(editing)DB.updateFB(session);else DB.saveFB(session);
+  _fbResetEditUI();
   clearDirty();
   fbSession={exercises:[]};
   renderFBExercises();
@@ -7871,7 +7877,7 @@ function saveFBSession(){
   document.getElementById('fb-start').value='';
   document.getElementById('fb-end').value='';
   document.getElementById('fb-duration-display').style.display='none';
-  toast('✅ Climbing Gym session saved!');
+  toast(editing?'✅ Session updated':'✅ Climbing Gym session saved!');
 }
 
 // ── FB History ────────────────────────────────────
@@ -7926,7 +7932,10 @@ function showFBSessionDetail(id){
     return `<div class="card" style="margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
         <div style="font-weight:700;font-size:13px">${esc(e.name)}</div>
-        <button class="btn btn-ghost" style="padding:2px 8px;font-size:13px;color:var(--red)" onclick="deleteFBHistoryEx('${s.id}',${i})">🗑</button>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-ghost" style="padding:2px 8px;font-size:13px" aria-label="Edit exercise" onclick="fbEditHistEx('${s.id}',${i})">✏️</button>
+          <button class="btn btn-ghost" style="padding:2px 8px;font-size:13px;color:var(--red)" onclick="deleteFBHistoryEx('${s.id}',${i})">🗑</button>
+        </div>
       </div>
       <div class="text-xs-muted" style="margin-bottom:4px">${e.sets}×${e.reps}×${e.time}s · rest ${esc(e.restRep||'')}/${esc(e.restSet||'')}${e.rpe?` · RPE ${esc(String(e.rpe))}/10`:''}</div>
       <div style="font-size:12px;margin-bottom:4px">${setStr}</div>
@@ -7934,15 +7943,135 @@ function showFBSessionDetail(id){
       ${e.notes?`<div class="text-xs-muted" style="margin-top:4px">${esc(e.notes)}</div>`:''}
     </div>`;
   }).join('');
-  html+=`<button class="btn btn-ghost btn-block" style="margin-top:8px" onclick="closeModal('modal-session-detail');fbLoadSessionIntoLog('${s.id}')">🔁 Load into Log</button>`;
+  html+=`<div class="flex-gap8" style="margin-top:8px">
+    <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-session-detail');fbLoadSessionIntoLog('${s.id}')">🔁 Load into Log</button>
+    <button class="btn btn-gym" style="flex:1" onclick="editFBSession('${s.id}')">✏️ Edit Session</button>
+  </div>`;
   document.getElementById('session-detail-content').innerHTML=html+'<div style="height:8px"></div>';
   openModal('modal-session-detail');
+}
+
+// ── Edit a saved session (Option A: reopen in Log) ─────
+function editFBSession(id){
+  const s=DB.fbSessions().find(x=>String(x.id)===String(id));
+  if(!s)return;
+  if(fbSession.exercises.length&&fbEditId===null&&!confirm('Replace the exercises currently in the Log with this saved session?'))return;
+  closeModal('modal-session-detail');
+  fbEditId=s.id;
+  fbSession.exercises=JSON.parse(JSON.stringify(s.exercises||[])); // deep copy, done-ticks kept
+  document.getElementById('fb-date').value=s.date||today();
+  document.getElementById('fb-bw').value=s.bodyWeight||'';
+  document.getElementById('fb-start').value=s.startTime||'';
+  document.getElementById('fb-end').value=s.endTime||'';
+  updateFBDuration();
+  document.getElementById('fb-edit-banner').style.display='';
+  document.getElementById('btn-save-fb').textContent='💾 Update Session';
+  fbMode('log');renderFBExercises();
+  window.scrollTo({top:0,behavior:'smooth'});
+  toast('✏️ Editing session — make changes and tap Update');
+}
+function _fbResetEditUI(){
+  fbEditId=null;
+  const b=document.getElementById('fb-edit-banner');if(b)b.style.display='none';
+  const btn=document.getElementById('btn-save-fb');if(btn)btn.textContent='Save Session';
+}
+function cancelFBEdit(){
+  if(!confirm('Discard changes and go back?'))return;
+  _fbResetEditUI();clearDirty();
+  fbSession={exercises:[]};renderFBExercises();
+  document.getElementById('fb-date').value=today();
+  ['fb-bw','fb-start','fb-end'].forEach(k=>document.getElementById(k).value='');
+  document.getElementById('fb-duration-display').style.display='none';
+  toast('Edit cancelled');
+}
+
+// ── Edit one exercise inside History (Option B) ────────
+function fbEditHistEx(sid,i){
+  const s=DB.fbSessions().find(x=>String(x.id)===String(sid));
+  if(!s||!s.exercises[i])return;
+  _fbHistEdit={sid,i,e:JSON.parse(JSON.stringify(s.exercises[i]))};
+  _renderFBHistEdit(s);
+}
+function _fbHistIn(label,field,val,w,mode){
+  return `<div style="display:flex;flex-direction:column;gap:2px">
+    <span style="font-size:10px;color:var(--muted);font-weight:600">${label}</span>
+    <input type="text" ${mode?`inputmode="${mode}"`:''} value="${esc(String(val??''))}" style="width:${w}px;text-align:center;padding:6px 2px" onfocus="this.select()" onchange="fbHistEdField('${field}',this.value)">
+  </div>`;
+}
+function _renderFBHistEdit(s){
+  const e=_fbHistEdit.e;
+  if(!e.loads)e.loads=Array(e.sets||1).fill('');
+  if(!e.done)e.done=Array(e.loads.length).fill(false);
+  let html=`<div class="modal-header"><div class="modal-title">✏️ ${esc(e.name)}</div><button class="modal-close" aria-label="Close" onclick="closeModal('modal-session-detail')">✕</button></div>
+  <p class="text-xs-muted" style="margin-bottom:10px">${fmtDate(s.date)} · 🤌 Fingerboard</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    ${_fbHistIn('SETS','sets',e.sets,44,'numeric')}
+    ${_fbHistIn('REPS','reps',e.reps,44,'numeric')}
+    ${_fbHistIn('TIME (S)','time',e.time,56,'numeric')}
+    ${_fbHistIn('REST REP','restRep',e.restRep,60)}
+    ${_fbHistIn('REST SET','restSet',e.restSet,60)}
+    ${_fbHistIn('RPE /10','rpe',e.rpe,50,'numeric')}
+  </div>
+  <div style="font-size:10px;color:var(--muted);font-weight:600;margin-bottom:4px">LOAD PER SET (±KG) · TAP DOT = DONE</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+    ${e.loads.map((v,si)=>`<div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <input type="text" value="${esc(String(v??''))}" style="width:54px;text-align:center;padding:6px 2px" onfocus="this.select()" onchange="fbHistEdLoad(${si},this.value)">
+      <button onclick="fbHistEdDone(${si})" aria-label="Set ${si+1} done" style="width:16px;height:16px;border-radius:50%;border:2px solid var(--gym);background:${e.done[si]?'var(--gym)':'transparent'};padding:0;cursor:pointer"></button>
+    </div>`).join('')}
+  </div>
+  <input type="text" value="${esc(e.notes||'')}" placeholder="Notes (grip, edge, feel…)" style="width:100%;padding:6px 8px;font-size:12px;margin-bottom:10px" onchange="fbHistEdField('notes',this.value)">
+  <button class="btn btn-gym btn-block" onclick="fbSaveHistEx()">💾 Save</button>
+  <button class="btn btn-ghost btn-block" style="margin-top:6px" onclick="_fbHistEditBack()">Cancel</button>
+  <div style="height:8px"></div>`;
+  document.getElementById('session-detail-content').innerHTML=html;
+  openModal('modal-session-detail');
+}
+function _fbHistEditRerender(){
+  const s=DB.fbSessions().find(x=>String(x.id)===String(_fbHistEdit.sid));
+  if(s)_renderFBHistEdit(s);
+}
+function fbHistEdField(field,val){
+  if(!_fbHistEdit)return;
+  const e=_fbHistEdit.e;
+  if(field==='sets'){
+    const n=Math.max(1,Math.min(12,parseInt(val)||1));
+    e.sets=n;
+    e.loads=(e.loads||[]).slice(0,n);while(e.loads.length<n)e.loads.push('');
+    e.done=(e.done||[]).slice(0,n);while(e.done.length<n)e.done.push(false);
+    _fbHistEditRerender();
+  }else if(field==='reps'||field==='time'){
+    const n=parseInt(val);e[field]=isNaN(n)?val:n;
+  }else e[field]=val;
+}
+function fbHistEdLoad(si,val){if(_fbHistEdit)_fbHistEdit.e.loads[si]=String(val).replace(',','.').trim();}
+function fbHistEdDone(si){
+  if(!_fbHistEdit)return;
+  const d=_fbHistEdit.e.done;d[si]=!d[si];
+  _fbHistEditRerender();
+}
+function _fbHistEditBack(){
+  const sid=_fbHistEdit&&_fbHistEdit.sid;_fbHistEdit=null;
+  if(sid)showFBSessionDetail(sid);
+}
+function fbSaveHistEx(){
+  if(!_fbHistEdit)return;
+  const s=DB.fbSessions().find(x=>String(x.id)===String(_fbHistEdit.sid));
+  if(!s){_fbHistEdit=null;return;}
+  s.exercises[_fbHistEdit.i]=_fbHistEdit.e;
+  DB.updateFB(s);
+  // keep an open edit of the same session in the Log in step
+  if(fbEditId!==null&&String(fbEditId)===String(s.id)){fbSession.exercises=JSON.parse(JSON.stringify(s.exercises));renderFBExercises();}
+  const sid=s.id;_fbHistEdit=null;
+  toast('✅ Exercise updated');
+  showFBSessionDetail(sid);
+  if(document.getElementById('fb-history')?.style.display!=='none')renderFBHistory();
 }
 
 function fbLoadSessionIntoLog(id){
   const s=DB.fbSessions().find(x=>String(x.id)===String(id));
   if(!s)return;
   if(fbSession.exercises.length&&!confirm('Replace current exercises with this session?'))return;
+  _fbResetEditUI();
   fbSession.exercises=s.exercises.map(e=>({...e,loads:[...(e.loads||[])],done:Array((e.loads||[]).length).fill(false)}));
   fbMode('log');markDirty('fb');renderFBExercises();
   toast('🔁 Loaded — adjust loads and go');
