@@ -6608,6 +6608,41 @@ function fmtMins(m){
   return h>0?(mn>0?`${h}h ${mn}min`:`${h}h`):`${mn}min`;
 }
 
+// ── Planner data sources (2026-10-05) ────────────────────────────────────────
+// Week Totals / Monthly Resume used to take tennis + rehab from PLANNER ENTRIES
+// only, so real logged matches and logged rehab sessions never showed up there
+// (while Home read them) — and board/ARC blocks were invisible everywhere.
+// These helpers are the single source for all three.
+
+// Logged tennis matches: watch (Supabase) + manual, overlay-hidden dropped,
+// split sessions merged. Dates are 'YYYY-MM-DD'.
+function _loggedTennisMatches(){
+  try{
+    const overlay=_getTennisOverlay();
+    const watch=_sbMatches.filter(m=>!(overlay[m.id]&&overlay[m.id].hidden));
+    const local=_getTennisMatches();
+    return _applyTennisMerges([...watch,...local])
+      .filter(m=>m&&!m._hidden&&(m.match_date||'').length>=10)
+      .map(m=>({date:(m.match_date||'').slice(0,10),mins:parseInt(m.duration_min)||0}));
+  }catch(e){return [];}
+}
+// Logged rehab sessions (rehab_data v2). Read directly — never force a migration.
+function _loggedRehabSessions(){
+  const d=DB.rehabData();
+  if(!d||!Array.isArray(d.sessions))return [];
+  return d.sessions.filter(x=>x&&x.date).map(x=>({date:x.date}));
+}
+// Board moves (reps×moves) and ARC minutes in a climb session — getSessionRoutes()
+// only returns 'routes' blocks, so these were counted nowhere outside the live log.
+function _climbBoardMoves(s){
+  return (s.blocks||[]).filter(b=>b.type==='board')
+    .reduce((a,b)=>a+(b.sets||[]).reduce((x,t)=>x+(parseInt(t.reps)||0)*(parseInt(t.moves)||0),0),0);
+}
+function _climbArcMins(s){
+  return (s.blocks||[]).filter(b=>b.type==='arc')
+    .reduce((a,b)=>a+(parseInt(b.arcDuration)||0),0);
+}
+
 function renderWeekTotals(weekStart){
   const el=document.getElementById('planner-week-totals');
   if(!el)return;
@@ -6629,11 +6664,14 @@ function renderWeekTotals(weekStart){
   // ── Climbing ──────────────────────────────────────
   const climbS=DB.climbSessions().filter(s=>s.date&&inWeek(s.date));
   let climbMins=0,climbRoutes=0,climbMeters=0;
+  let boardMoves=0,arcMins=0;
   climbS.forEach(s=>{
     climbMins+=parseInt(s.duration)||0;
     const routes=getSessionRoutes(s);
     climbRoutes+=routes.length;
     routes.forEach(r=>{ climbMeters+=(r.wallH||0)*(r.climbedDown?2:1); });
+    boardMoves+=_climbBoardMoves(s);
+    arcMins+=_climbArcMins(s);
   });
 
   // ── Fingerboard ───────────────────────────────────
@@ -6644,24 +6682,49 @@ function renderWeekTotals(weekStart){
   // ── Planner-only sports (Tennis, Golf, Active) ────
   // These have no dedicated log tab — duration/RPE come from the planner entries
   const plannerDays=(DB.planData()[weekStart])||[];
-  const plannerSessions=plannerDays.flatMap(d=>(d.sessions||[]).filter(s=>s&&s.trainingType));
+  const plannerSessions=plannerDays.flatMap((d,di)=>(d.sessions||[])
+    .filter(s=>s&&s.trainingType)
+    .map(s=>({...s,_date:d.date||addDays(weekStart,di)})));
 
-  function plannerSport(type){
-    const ss=plannerSessions.filter(s=>s.trainingType===type&&(parseInt(s.duration)||0)>0);
+  function plannerSport(type,skipDates){
+    const ss=plannerSessions.filter(s=>s.trainingType===type&&(parseInt(s.duration)||0)>0
+      &&!(skipDates&&skipDates.has(s._date)));
     const mins=ss.reduce((acc,s)=>acc+(parseInt(s.duration)||0),0);
     const rpes=ss.map(s=>parseFloat(s.rpe)).filter(r=>r>0);
     const avgRpe=rpes.length?Math.round(rpes.reduce((a,b)=>a+b,0)/rpes.length*10)/10:null;
     return {ss,mins,avgRpe};
   }
-  const tennis=plannerSport('tennis');
+
+  // ── Tennis + Rehab: logged data first, planner entries only for days with none
+  // (de-dup, Jo's choice 2026-10-05 — a match typed into the planner AND logged
+  //  on the watch is one session, not two).
+  const tMatches=_loggedTennisMatches().filter(m=>inWeek(m.date));
+  const tDays=new Set(tMatches.map(m=>m.date));
+  const tennisPlan=plannerSport('tennis',tDays);
+  const tennis={
+    ss:[...tMatches,...tennisPlan.ss],
+    mins:tMatches.reduce((a,m)=>a+m.mins,0)+tennisPlan.mins,
+    avgRpe:tennisPlan.avgRpe, // only planner entries carry an RPE
+    logged:tMatches.length
+  };
+
+  const rSessions=_loggedRehabSessions().filter(r=>inWeek(r.date));
+  const rDays=new Set(rSessions.map(r=>r.date));
+  const rehabPlan=plannerSport('rehab',rDays);
+  const rehab={
+    ss:[...rSessions,...rehabPlan.ss],
+    mins:rehabPlan.mins,
+    logged:rSessions.length
+  };
+
   const golf=plannerSport('golf');
   const active=plannerSport('active');
 
   // ── Total (logged + planner-sourced) ──────────────
-  const totalMins=gymMins+climbMins+fbMins+tennis.mins+golf.mins+active.mins;
+  const totalMins=gymMins+climbMins+fbMins+tennis.mins+golf.mins+active.mins+rehab.mins;
 
   // No data at all → hide widget
-  const hasData=gymS.length||climbS.length||fbS.length||tennis.ss.length||golf.ss.length||active.ss.length;
+  const hasData=gymS.length||climbS.length||fbS.length||tennis.ss.length||golf.ss.length||active.ss.length||rehab.ss.length;
   if(!hasData){ el.innerHTML=''; return; }
 
   // Build stat blocks
@@ -6686,6 +6749,8 @@ function renderWeekTotals(weekStart){
       fmtMins(climbMins)?`⏱ ${fmtMins(climbMins)}`:'',
       climbRoutes>0?`🪨 ${climbRoutes} routes`:'',
       climbMeters>0?`📏 ${climbMeters>=1000?(climbMeters/1000).toFixed(1)+'km':climbMeters+'m'} climbed`:'',
+      boardMoves>0?`🟫 ${boardMoves} board moves`:'',
+      arcMins>0?`🔁 ${fmtMins(arcMins)} ARC`:'',
     ]);
   }
   if(fbS.length){
@@ -6697,6 +6762,7 @@ function renderWeekTotals(weekStart){
   if(tennis.ss.length){
     blocks+=statBlock('🎾 Tennis','#a78bfa',[
       `<strong>${tennis.ss.length}</strong> session${tennis.ss.length>1?'s':''}`,
+      tennis.logged?`🎾 ${tennis.logged} logged match${tennis.logged>1?'es':''}`:'',
       fmtMins(tennis.mins)?`⏱ ${fmtMins(tennis.mins)}`:'',
       tennis.avgRpe?`RPE ${tennis.avgRpe}`:'',
     ]);
@@ -6713,6 +6779,13 @@ function renderWeekTotals(weekStart){
       `<strong>${active.ss.length}</strong> session${active.ss.length>1?'s':''}`,
       fmtMins(active.mins)?`⏱ ${fmtMins(active.mins)}`:'',
       active.avgRpe?`RPE ${active.avgRpe}`:'',
+    ]);
+  }
+  if(rehab.ss.length){
+    blocks+=statBlock('🦵 Rehab','#f59e0b',[
+      `<strong>${rehab.ss.length}</strong> session${rehab.ss.length>1?'s':''}`,
+      rehab.logged?`🦵 ${rehab.logged} logged`:'',
+      fmtMins(rehab.mins)?`⏱ ${fmtMins(rehab.mins)}`:'',
     ]);
   }
 
@@ -6767,6 +6840,8 @@ function renderMonthlyResume(){
   DB.gymSessions().forEach(s=>addDate(s.date));
   DB.climbSessions().forEach(s=>addDate(s.date));
   DB.fbSessions().forEach(s=>addDate(s.date));
+  _loggedTennisMatches().forEach(m=>addDate(m.date));
+  _loggedRehabSessions().forEach(r=>addDate(r.date));
   Object.keys(DB.planData()).forEach(wk=>addDate(wk));
 
   const months=[...monthSet].sort().reverse();
@@ -6783,6 +6858,8 @@ function renderMonthlyResume(){
   DB.gymSessions().forEach(s=>addAct(s.date,'gym'));
   DB.climbSessions().forEach(s=>addAct(s.date,'climb'));
   DB.fbSessions().forEach(s=>addAct(s.date,'fb'));
+  _loggedTennisMatches().forEach(m=>addAct(m.date,'tennis'));
+  _loggedRehabSessions().forEach(r=>addAct(r.date,'rehab'));
   const planData=DB.planData();
   Object.keys(planData).forEach(weekKey=>{
     (planData[weekKey]||[]).forEach((d,di)=>{
@@ -6813,8 +6890,11 @@ function renderMonthlyResume(){
 
     const climbS=DB.climbSessions().filter(s=>inMonth(s.date));
     let climbMins=0,climbRoutes=0,climbSends=0,climbMeters=0,climbMvs=0,climbMvsCount=0,topGradeIdx=-1;
+    let boardMoves=0,arcMins=0;
     climbS.forEach(s=>{
       climbMins+=parseInt(s.duration)||0;
+      boardMoves+=_climbBoardMoves(s);
+      arcMins+=_climbArcMins(s);
       getSessionRoutes(s).forEach(r=>{
         const mult=r.climbedDown?2:1;
         climbRoutes+=mult;
@@ -6835,7 +6915,15 @@ function renderMonthlyResume(){
     let fbMins=0;
     fbS.forEach(s=>fbMins+=s.durationMins||0);
 
-    let tennisSess=0,tennisMins=0,golfSess=0,golfMins=0,activeSess=0,activeMins=0,rehabSess=0;
+    // Logged tennis matches + logged rehab sessions in this month; planner entries
+    // on those same days are skipped so one session is never counted twice.
+    const mMatches=_loggedTennisMatches().filter(m=>inMonth(m.date));
+    const mTennisDays=new Set(mMatches.map(m=>m.date));
+    const mRehab=_loggedRehabSessions().filter(r=>inMonth(r.date));
+    const mRehabDays=new Set(mRehab.map(r=>r.date));
+    let tennisSess=mMatches.length,tennisMins=mMatches.reduce((a,m)=>a+m.mins,0);
+    let tennisLogged=mMatches.length,rehabLogged=mRehab.length;
+    let golfSess=0,golfMins=0,activeSess=0,activeMins=0,rehabSess=mRehab.length;
     const activeDaySet=new Set();
     Object.keys(planData).forEach(weekKey=>{
       (planData[weekKey]||[]).forEach((d,di)=>{
@@ -6844,10 +6932,10 @@ function renderMonthlyResume(){
         (d.sessions||[]).forEach(ps=>{
           if(!ps||!ps.trainingType)return;
           const mins=parseInt(ps.duration)||0;
-          if(ps.trainingType==='tennis'){tennisSess++;tennisMins+=mins;}
+          if(ps.trainingType==='tennis'){if(mTennisDays.has(dayDate))return;tennisSess++;tennisMins+=mins;}
           else if(ps.trainingType==='golf'){golfSess++;golfMins+=mins;}
           else if(ps.trainingType==='active'){activeSess++;activeMins+=mins;}
-          else if(ps.trainingType==='rehab')rehabSess++;
+          else if(ps.trainingType==='rehab'){if(mRehabDays.has(dayDate))return;rehabSess++;}
         });
         const hasAct=gymS.some(s=>s.date===dayDate)||climbS.some(s=>s.date===dayDate)||fbS.some(s=>s.date===dayDate)||
           (d.sessions||[]).some(ps=>ps&&ps.trainingType&&ps.trainingType!=='rest');
@@ -6857,12 +6945,13 @@ function renderMonthlyResume(){
     gymS.forEach(s=>{if(s.date)activeDaySet.add(s.date);});
     climbS.forEach(s=>{if(s.date)activeDaySet.add(s.date);});
     fbS.forEach(s=>{if(s.date)activeDaySet.add(s.date);});
+    mMatches.forEach(m=>activeDaySet.add(m.date)); // rehab stays out of Active days (2026-07-17)
 
     const totalDays=new Date(y,m,0).getDate();
     const activeDays=activeDaySet.size;
     const totalTrainMins=gymMins+climbMins+fbMins+tennisMins+golfMins+activeMins;
     const totalSessions=gymS.length+climbS.length+fbS.length+tennisSess+golfSess+activeSess;
-    return {ym,gymS:gymS.length,gymMins,gymVol,climbS:climbS.length,climbMins,climbRoutes,climbSends,sendRate,climbMeters,climbMvs,avgMvs,topGrade,fbS:fbS.length,fbMins,tennisSess,tennisMins,golfSess,golfMins,activeSess,activeMins,rehabSess,activeDays,totalDays,totalTrainMins,totalSessions};
+    return {ym,gymS:gymS.length,gymMins,gymVol,climbS:climbS.length,climbMins,climbRoutes,climbSends,sendRate,climbMeters,climbMvs,avgMvs,topGrade,boardMoves,arcMins,fbS:fbS.length,fbMins,tennisSess,tennisMins,tennisLogged,golfSess,golfMins,activeSess,activeMins,rehabSess,rehabLogged,activeDays,totalDays,totalTrainMins,totalSessions};
   }
 
   const allStats=months.map(statsForMonth);
@@ -7021,6 +7110,8 @@ function renderMonthlyResume(){
         ${st.climbMeters?`<div class="month-metric-row"><span class="month-metric-lbl">Meters</span><span class="month-metric-val">${mLabel}${delta(st.climbMeters,prev?.climbMeters)}</span></div>`:''}
         ${st.climbMvs?`<div class="month-metric-row"><span class="month-metric-lbl">Movements</span><span class="month-metric-val">${st.climbMvs}${delta(st.climbMvs,prev?.climbMvs)}</span></div>`:''}
         ${st.avgMvs?`<div class="month-metric-row"><span class="month-metric-lbl">Avg mv/rt</span><span class="month-metric-val">~${st.avgMvs}${delta(st.avgMvs,prev?.avgMvs)}</span></div>`:''}
+        ${st.boardMoves?`<div class="month-metric-row"><span class="month-metric-lbl">🟫 Board moves</span><span class="month-metric-val">${st.boardMoves}${delta(st.boardMoves,prev?.boardMoves)}</span></div>`:''}
+        ${st.arcMins?`<div class="month-metric-row"><span class="month-metric-lbl">🔁 ARC</span><span class="month-metric-val">${fmtMins(st.arcMins)}${delta(st.arcMins,prev?.arcMins)}</span></div>`:''}
         ${st.topGrade?`<div class="month-metric-row"><span class="month-metric-lbl">Top grade</span><span class="month-metric-val" style="color:#388bfd">${st.topGrade}</span></div>`:''}
       </div>`;
     }
@@ -7043,10 +7134,10 @@ function renderMonthlyResume(){
     const hasCross=st.tennisSess||st.golfSess||st.activeSess||st.rehabSess;
     if(hasCross){
       let r='';
-      if(st.tennisSess)r+=`<div class="month-metric-row"><span class="month-metric-lbl">🎾 Tennis</span><span class="month-metric-val">${st.tennisSess}×${st.tennisMins?` · ${fmtMins(st.tennisMins)}`:''}${delta(st.tennisSess,prev?.tennisSess)}</span></div>`;
+      if(st.tennisSess)r+=`<div class="month-metric-row"><span class="month-metric-lbl">🎾 Tennis${st.tennisLogged?` <span class="text-xxs-muted">(${st.tennisLogged} logged)</span>`:''}</span><span class="month-metric-val">${st.tennisSess}×${st.tennisMins?` · ${fmtMins(st.tennisMins)}`:''}${delta(st.tennisSess,prev?.tennisSess)}</span></div>`;
       if(st.golfSess)r+=`<div class="month-metric-row"><span class="month-metric-lbl">⛳ Golf</span><span class="month-metric-val">${st.golfSess}×${st.golfMins?` · ${fmtMins(st.golfMins)}`:''}${delta(st.golfSess,prev?.golfSess)}</span></div>`;
       if(st.activeSess)r+=`<div class="month-metric-row"><span class="month-metric-lbl">🏃 Active</span><span class="month-metric-val">${st.activeSess}×${st.activeMins?` · ${fmtMins(st.activeMins)}`:''}${delta(st.activeSess,prev?.activeSess)}</span></div>`;
-      if(st.rehabSess)r+=`<div class="month-metric-row"><span class="month-metric-lbl">🦵 Rehab</span><span class="month-metric-val">${st.rehabSess}×</span></div>`;
+      if(st.rehabSess)r+=`<div class="month-metric-row"><span class="month-metric-lbl">🦵 Rehab${st.rehabLogged?` <span class="text-xxs-muted">(${st.rehabLogged} logged)</span>`:''}</span><span class="month-metric-val">${st.rehabSess}×</span></div>`;
       blocks+=`<div class="month-metric-block"><div class="month-metric-title" style="color:var(--muted)">⚡ Other Activity</div>${r}</div>`;
     }
     blocks+=`<div class="month-metric-block" style="grid-column:1/-1">
@@ -9759,6 +9850,11 @@ async function _fetchSbMatches(){
     // repaint once the rows land — otherwise a fresh page load always showed
     // "No tennis data yet" until the Tennis tab had been opened at least once.
     renderHome();
+    // 2026-10-05: the Planner reads matches too, so it must repaint as well —
+    // otherwise Week Totals shows 0 tennis until the Tennis tab has been opened.
+    if(document.getElementById('tab-plan')?.classList.contains('active')){
+      _plannerView==='monthly'?renderMonthlyResume():renderPlanner();
+    }
   }catch(e){/* silent fail — offline or network error */}
   finally{_sbFetching=false;}
 }
