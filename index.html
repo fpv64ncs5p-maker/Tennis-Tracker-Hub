@@ -3930,10 +3930,11 @@ function showSessionDetail(type,id){
           }
         }
         if(b.type==='board'){
-          html+=`<div style="font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">🟫 ${b.board}</div>`;
-          html+=b.sets.map(s=>`<div class="route-item">
+          const bMeta=[b.angle?`${esc(String(b.angle))}°`:'',b.restSet?`rest ${esc(String(b.restSet))} between sets`:''].filter(Boolean).join(' · ');
+          html+=`<div style="font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">🟫 ${b.board}${bMeta?` · ${bMeta}`:''}</div>`;
+          html+=(b.sets||[]).map(s=>`<div class="route-item">
             <div class="route-grade" style="color:#7c3aed">${s.reps}×${s.moves}</div>
-            <div class="route-info">${s.reps*s.moves} moves</div>
+            <div class="route-info">${s.reps*s.moves} moves${s.rest?` · rest ${esc(String(s.rest))}`:''}</div>
           </div>`).join('');
         }
         if(b.type==='arc'){
@@ -4659,7 +4660,7 @@ function addClimbBlock(type,climbingType){
     block.climbingType=climbingType||'Lead';
     block.wallHeight='';
   }
-  if(type==='board'){block.board='Moonboard B';block.sets=[];}
+  if(type==='board'){block.board='Moonboard B';block.sets=[];block.angle='';block.restSet='';}
   if(type==='arc'){block.arcDuration='';block.intensity='Low (conversational)';}
   climbSession.blocks.push(block);
   renderClimbBlocks();
@@ -4763,22 +4764,42 @@ function removeRouteEntry(bi,phase,ei){
   pushUndo('Route removed',()=>{climbBlocks[bi].phases[phase].splice(ei,0,removed);renderClimbBlocks();});
 }
 
+// Board sets live on climbSession.blocks — the legacy `climbBlocks` array this
+// used to write to is always empty, so Add/✕ silently threw (fixed 2026-10-05).
 function addBoardSet(bi){
+  const b=climbSession.blocks[bi];
+  if(!b)return;
+  if(!b.sets)b.sets=[];
   const reps=parseInt(document.getElementById('block-reps-'+bi).value)||1;
   const moves=parseInt(document.getElementById('block-moves-'+bi).value)||0;
+  const restEl=document.getElementById('block-rest-'+bi);
+  const rest=restEl?restEl.value.trim():'';
   if(!moves){toast('Enter move count');return;}
-  climbBlocks[bi].sets.push({reps,moves});
+  b.sets.push({reps,moves,rest});
   document.getElementById('block-reps-'+bi).value='';
   document.getElementById('block-moves-'+bi).value='';
+  // the add-row rest field re-renders prefilled from the last set, so repeating a rest is one less thing to type
+  markDirty('climb');
   renderClimbBlocks();
 }
 
 function removeBoardSet(bi,si){
-  const removed=climbBlocks[bi].sets.splice(si,1)[0];
+  const b=climbSession.blocks[bi];
+  if(!b||!b.sets)return;
+  const removed=b.sets.splice(si,1)[0];
+  markDirty('climb');
   renderClimbBlocks();
-  pushUndo('Set removed',()=>{climbBlocks[bi].sets.splice(si,0,removed);renderClimbBlocks();});
+  pushUndo('Set removed',()=>{b.sets.splice(si,0,removed);markDirty('climb');renderClimbBlocks();});
 }
 function updateBlockBoard(bi,val){climbBlocks[bi].board=val;}
+// Board block fields — no re-render, so the field keeps focus while typing
+function updateBoardField(bi,field,val){
+  const b=climbSession.blocks[bi];
+  if(!b)return;
+  b[field]=String(val).trim();
+  markDirty('climb');
+  renderClimbBlocks();
+}
 function updateBlockARC(bi,field,val){climbBlocks[bi][field]=val;}
 
 function renderClimbBlocks(){
@@ -4903,22 +4924,34 @@ function renderClimbBlocks(){
       const boardOpts=BOARD_OPTIONS.map(o=>`<option value="${o}"${b.board===o?' selected':''}>${o}</option>`).join('');
       const totalMoves=b.sets.reduce((a,s)=>a+(s.reps||0)*(s.moves||0),0);
       return `<div class="card" style="margin-bottom:10px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span style="font-size:12px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">🟫 Board</span>
           <select style="flex:1;font-size:13px;font-weight:600" onchange="updateClimbBlockField(${bi},'board',this.value)">${boardOpts}</select>
           <button class="btn-icon" onclick="removeClimbBlock(${bi})">✕</button>
         </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:10px;color:var(--muted);font-weight:600">ANGLE (°)</span>
+            <input type="text" inputmode="numeric" value="${esc(String(b.angle??''))}" placeholder="35" style="width:62px;text-align:center;padding:6px 2px" onfocus="this.select()" onchange="updateBoardField(${bi},'angle',this.value)">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:10px;color:var(--muted);font-weight:600">REST BETWEEN SETS</span>
+            <input type="text" value="${esc(String(b.restSet??''))}" placeholder="5'" style="width:76px;text-align:center;padding:6px 2px" onfocus="this.select()" onchange="updateBoardField(${bi},'restSet',this.value)">
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);font-weight:600;margin-bottom:4px">ADD A SET — REPS × MOVES · REST BETWEEN REPS</div>
         <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
           <input type="number" inputmode="decimal" id="block-reps-${bi}" placeholder="reps" min="1" style="width:60px;font-size:13px">
           <span class="text-sm-muted">×</span>
           <input type="number" inputmode="decimal" id="block-moves-${bi}" placeholder="moves" min="1" style="width:65px;font-size:13px">
           <span class="text-xs-muted">moves</span>
+          <input type="text" id="block-rest-${bi}" value="${esc(String((b.sets[b.sets.length-1]||{}).rest||''))}" placeholder="rest 2'" style="width:72px;font-size:13px" onfocus="this.select()">
           <button class="btn" style="padding:6px 12px;font-size:12px;background:#7c3aed;color:#fff;border:none" onclick="addBoardSet(${bi})">Add</button>
         </div>
         <div>${b.sets.length?b.sets.map((s,si)=>`
           <div class="route-item">
             <div class="route-grade" style="color:#7c3aed">${s.reps}×${s.moves}</div>
-            <div class="route-info">${s.reps*s.moves} moves total</div>
+            <div class="route-info">${s.reps*s.moves} moves total${s.rest?` · rest ${esc(String(s.rest))}`:''}</div>
             <button class="btn-icon" onclick="removeBoardSet(${bi},${si})">✕</button>
           </div>`).join(''):'<div style="color:var(--muted2);font-size:12px;font-style:italic;padding:4px 0">No sets yet — tap Add</div>'}
         </div>
@@ -5644,7 +5677,7 @@ function renderClimbHistory(){
     if(totalMvs>0) meta+=` · ${totalMvs} mv (~${avgMvs}/rt)`;
     if(s.blocks){
       const boards=s.blocks.filter(b=>b.type==='board');
-      if(boards.length) meta+=' · '+boards.map(b=>b.board).join(', ');
+      if(boards.length) meta+=' · '+boards.map(b=>b.board+(b.angle?` ${b.angle}°`:'')).join(', ');
       const arcs=s.blocks.filter(b=>b.type==='arc');
       if(arcs.length) meta+=' · ARC '+arcs.map(b=>b.arcDuration||'?').join('+')+' min';
     }
