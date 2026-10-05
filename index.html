@@ -846,6 +846,16 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           <div class="card-title">Stats by Grade</div>
           <div id="pyramid-stats"></div>
         </div>
+        <div class="card" style="margin-top:8px">
+          <div class="card-title">🟫 Board Training</div>
+          <div class="segment" style="margin-bottom:10px">
+            <button class="seg-btn active" data-board-view="max" onclick="boardView('max')">Max moves</button>
+            <button class="seg-btn" data-board-view="volume" onclick="boardView('volume')">Volume</button>
+          </div>
+          <select id="board-group-sel" onchange="renderBoardProgress()" style="margin-bottom:10px"></select>
+          <div id="board-progress-chart"></div>
+          <div id="board-bests" style="margin-top:12px"></div>
+        </div>
       </div>
 
       <!-- CLIMB HISTORY -->
@@ -5697,6 +5707,96 @@ function renderClimbHistory(){
     +`<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:6px">${sessions.length} total sessions</div>`;
 }
 
+// ══════════════════════════════════════════════════
+//  BOARD TRAINING PROGRESS (Pyramid tab, 2026-10-05)
+//  Grouped by BOARD + ANGLE (Jo's choice) — "Spray wall 35°" is its own
+//  series, separate from "Spray wall 45°" and from any other board.
+//  NOTE: the app never ranks angles by their number. Jo's 35° is harder than
+//  her 45°; which angle is hard is a property of her wall, not arithmetic.
+//  Two views: "Max moves" = longest rep (moves in one go) per session, the
+//  progression signal; "Volume" = total moves (reps×moves) that session.
+// ══════════════════════════════════════════════════
+let _boardView='max';
+function _boardGroupKey(b){
+  const ang=String(b.angle??'').trim();
+  return (b.board||'Board')+(ang?` ${ang}°`:'');
+}
+// → { key: [ {date, sessionId, volume, maxRep, label}, ... sorted by date ] }
+function boardGroups(){
+  const g={};
+  DB.climbSessions().forEach(s=>{
+    (s.blocks||[]).filter(b=>b.type==='board').forEach(b=>{
+      const sets=(b.sets||[]).filter(t=>(parseInt(t.moves)||0)>0);
+      if(!sets.length)return;
+      const key=_boardGroupKey(b);
+      const volume=sets.reduce((a,t)=>a+(parseInt(t.reps)||0)*(parseInt(t.moves)||0),0);
+      const maxRep=Math.max(...sets.map(t=>parseInt(t.moves)||0));
+      const label=sets.map(t=>`${parseInt(t.reps)||0}×${parseInt(t.moves)||0}`).join(' · ');
+      (g[key]=g[key]||[]).push({date:s.date||'',sessionId:s.id,volume,maxRep,label});
+    });
+  });
+  Object.keys(g).forEach(k=>g[k].sort((a,b)=>(a.date||'').localeCompare(b.date||'')));
+  return g;
+}
+function boardView(v){
+  _boardView=v;
+  document.querySelectorAll('[data-board-view]').forEach(b=>b.classList.toggle('active',b.dataset.boardView===v));
+  renderBoardProgress();
+}
+function renderBoardProgress(){
+  const sel=document.getElementById('board-group-sel');
+  const chart=document.getElementById('board-progress-chart');
+  const bests=document.getElementById('board-bests');
+  if(!sel||!chart||!bests)return;
+  const g=boardGroups();
+  const keys=Object.keys(g).sort((a,b)=>g[b].length-g[a].length||a.localeCompare(b));
+  if(!keys.length){
+    sel.style.display='none';
+    chart.innerHTML='<div class="empty"><div class="empty-icon">🟫</div><p>No board sets logged yet.<br>Add a Board block in a climbing session.</p></div>';
+    bests.innerHTML='';
+    return;
+  }
+  sel.style.display='';
+  const current=keys.includes(sel.value)?sel.value:keys[0];
+  sel.innerHTML=keys.map(k=>`<option value="${esc(k)}"${k===current?' selected':''}>${esc(k)} · ${g[k].length} session${g[k].length>1?'s':''}</option>`).join('');
+  const pts=g[current];
+  const val=p=>_boardView==='max'?p.maxRep:p.volume;
+  const unit=_boardView==='max'?'moves in a row':'moves total';
+  const vals=pts.map(val);
+  const lo=Math.min(...vals),hi=Math.max(...vals);
+  chart.innerHTML=`<div class="text-xs-muted" style="margin-bottom:8px">${_boardView==='max'?'Longest single rep per session':'Total moves per session'} — ${esc(current)}</div>`
+    +pts.slice(-12).map((p,i,arr)=>{
+      const v=val(p);
+      const pct=hi===lo?100:Math.round(15+((v-lo)/(hi-lo))*85);
+      const prev=i>0?val(arr[i-1]):null;
+      const d=prev!==null&&v!==prev?`<span style="color:${v>prev?'var(--gym)':'var(--red)'};font-weight:600;font-size:11px"> ${v>prev?'▲':'▼'}${Math.abs(v-prev)}</span>`:'';
+      return `<div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+          <span style="font-weight:600">${fmtDate(p.date)}</span>
+          <span style="color:#7c3aed;font-weight:700">${v} <span style="color:var(--muted);font-weight:400">${unit}</span>${d}</span>
+        </div>
+        <div style="height:6px;background:var(--surface2);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:#7c3aed;border-radius:3px;transition:width .4s"></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(p.label)}</div>
+      </div>`;
+    }).join('')
+    +(pts.length>12?`<div class="text-xxs-muted" style="text-align:center">showing the last 12 of ${pts.length} sessions</div>`:'');
+
+  // Personal bests — one row per board+angle, no ranking between angles
+  bests.innerHTML=`<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Personal bests</div>`
+    +keys.map(k=>{
+      const arr=g[k];
+      const best=arr.reduce((a,b)=>b.maxRep>a.maxRep?b:a,arr[0]);
+      const totalVol=arr.reduce((a,b)=>a+b.volume,0);
+      const last=arr[arr.length-1];
+      return `<div class="route-item">
+        <div class="route-grade" style="color:#7c3aed;white-space:nowrap">${esc(k)}</div>
+        <div class="route-info">best ${best.maxRep} moves · ${fmtDate(best.date)} · ${totalVol} moves total · last ${fmtDate(last.date)}</div>
+      </div>`;
+    }).join('');
+}
+
 // Pyramid wall-angle filter ('' = all). Routes logged without an angle only
 // appear under "All" — same convention as uncategorised tennis matches.
 let _pyramidAngle='';
@@ -5709,6 +5809,7 @@ function pyramidAngleFilter(a){
 }
 
 function renderPyramid(){
+  renderBoardProgress(); // 🟫 Board Training card at the bottom of this tab
   // Count OS/Flash/RP/Project per grade band from all climb sessions
   const counts={};
   let skippedNoAngle=0;
@@ -9100,6 +9201,12 @@ function renderHomeMotivation(){
           ${climb.thisMonth.meters}m <span class="motivation-delta ${climb.delta.meters.dir}">${climb.delta.meters.text}</span>
         </span>
       </div>
+      ${climb.thisMonth.boardMoves||climb.lastMonth.boardMoves?`<div class="motivation-metric">
+        <span class="motivation-metric-label">🟫 Board mvs</span>
+        <span class="motivation-metric-value">
+          ${climb.thisMonth.boardMoves} <span class="motivation-delta ${climb.delta.boardMoves.dir}">${climb.delta.boardMoves.text}</span>
+        </span>
+      </div>`:''}
       <div class="motivation-metric">
         <span class="motivation-metric-label">Top Grade</span>
         <span class="motivation-metric-value">${climb.thisMonth.topGrade||'—'}</span>
@@ -9207,8 +9314,8 @@ function getClimbingTrends(){
   if(!sessions.length) return null;
   const{thisStart,thisEnd,prevStart,prevEnd}=_rollingWindow();
 
-  let thisData={routes:0,sends:0,meters:0,topGrade:null};
-  let prevData={routes:0,sends:0,meters:0,topGrade:null};
+  let thisData={routes:0,sends:0,meters:0,boardMoves:0,topGrade:null};
+  let prevData={routes:0,sends:0,meters:0,boardMoves:0,topGrade:null};
   const thisGrades=[],prevGrades=[];
 
   sessions.forEach(s=>{
@@ -9225,8 +9332,9 @@ function getClimbingTrends(){
       if(inThis)thisGrades.push(r.grade);
       if(inPrev)prevGrades.push(r.grade);
     });
-    if(inThis){thisData.routes+=routeCount;thisData.sends+=sendCount;thisData.meters+=meterCount;}
-    if(inPrev){prevData.routes+=routeCount;prevData.sends+=sendCount;prevData.meters+=meterCount;}
+    const bMoves=_climbBoardMoves(s);
+    if(inThis){thisData.routes+=routeCount;thisData.sends+=sendCount;thisData.meters+=meterCount;thisData.boardMoves+=bMoves;}
+    if(inPrev){prevData.routes+=routeCount;prevData.sends+=sendCount;prevData.meters+=meterCount;prevData.boardMoves+=bMoves;}
   });
 
   // Top grade per window (highest in CLIMB_GRADES array)
@@ -9240,7 +9348,8 @@ function getClimbingTrends(){
     delta:{
       routes:getDelta(prevData.routes,thisData.routes),
       sends:getDelta(prevData.sends,thisData.sends),
-      meters:getDelta(prevData.meters,thisData.meters)
+      meters:getDelta(prevData.meters,thisData.meters),
+      boardMoves:getDelta(prevData.boardMoves,thisData.boardMoves)
     }
   };
 }
