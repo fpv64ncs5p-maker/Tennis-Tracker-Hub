@@ -3879,17 +3879,22 @@ function showSessionDetail(type,id){
     const detSends=detRoutes.filter(r=>r.result!=='Project').length;
     const detMeters=detRoutes.reduce((a,r)=>a+(r.wallH||0)*(r.climbedDown?2:1),0);
     const detMvRoutes=detRoutes.filter(r=>r.movements>0);
-    const detTotalMvs=detMvRoutes.reduce((a,r)=>a+r.movements*(r.climbedDown?2:1),0);
-    const detAvgMvs=detMvRoutes.length?Math.round(detTotalMvs/detMvRoutes.reduce((a,r)=>a+(r.climbedDown?2:1),0)):0;
+    const detRouteMvs=detMvRoutes.reduce((a,r)=>a+r.movements*(r.climbedDown?2:1),0);
+    // Board moves count towards the session total (Jo 2026-10-05); the ~mv/rt
+    // average stays ROUTE-only, otherwise board volume distorts it.
+    const detBoardMvs=_climbBoardMoves(s);
+    const detTotalMvs=detRouteMvs+detBoardMvs;
+    const detAvgMvs=detMvRoutes.length?Math.round(detRouteMvs/detMvRoutes.reduce((a,r)=>a+(r.climbedDown?2:1),0)):0;
     // A session can span several walls — list every height actually climbed.
     const detWalls=[...new Set(detRoutes.map(r=>r.wallH).filter(h=>h>0))].sort((a,b)=>a-b);
     const wallLabelTxt=detWalls.length?` · wall ${detWalls.join('/')}m`:(wallH?` · wall ${wallH}m`:'');
     html+=`<p style="color:var(--muted);font-size:13px;margin-bottom:8px">${s.gym}${s.duration?' · '+s.duration+' min':''}${wallLabelTxt}</p>`;
     html+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-      ${detRouteTotal?`<div class="stat-box"><div class="stat-val stat-climb">${detRouteTotal}${detDownclimbs?`<span style="font-size:11px"> (${detDownclimbs}↕)</span>`:''}</div><div class="stat-lbl">Routes</div></div>`:''}
+      ${detRouteTotal?`<div class="stat-box"><div class="stat-val stat-climb">${detRouteTotal}${detDownclimbs?`<span style="font-size:11px"> (${detDownclimbs}↕)</span>`:''}</div><div class="stat-lbl">Routes${detAvgMvs?` · ~${detAvgMvs}mv/rt`:''}</div></div>`:''}
       ${detSends?`<div class="stat-box"><div class="stat-val stat-climb">${detSends}</div><div class="stat-lbl">Sends</div></div>`:''}
       ${detMeters?`<div class="stat-box"><div class="stat-val stat-climb">${detMeters>=1000?(detMeters/1000).toFixed(1)+'km':detMeters+'m'}</div><div class="stat-lbl">Meters</div></div>`:''}
-      ${detTotalMvs?`<div class="stat-box"><div class="stat-val stat-climb">${detTotalMvs}</div><div class="stat-lbl">Total Mvs${detAvgMvs?' · ~'+detAvgMvs+'/rt':''}</div></div>`:''}
+      ${detTotalMvs?`<div class="stat-box"><div class="stat-val stat-climb">${detTotalMvs}</div><div class="stat-lbl">Total Mvs</div></div>`:''}
+      ${detBoardMvs?`<div class="stat-box"><div class="stat-val" style="color:#7c3aed">${detBoardMvs}</div><div class="stat-lbl">🟫 Board Mvs</div></div>`:''}
     </div>`;
     html+=angleSummaryHtml(angleCounts(getSessionRoutes(s).map(r=>({...r,count:1}))));
     if(s.plan&&s.plan.items){
@@ -5257,15 +5262,16 @@ function updateClimbSummary(){
   }
 
   const avgMvs=routesWithMvs>0?Math.round(totalMovements/routesWithMvs):0;
+  const totalAllMvs=totalMovements+totalMoves; // routes + board = session volume
   const summaryEl=document.getElementById('climb-session-summary');
   if(!climbSession.warmup.length && !climbSession.blocks.length && !climbSession.cooldown.length){summaryEl.style.display='none';return;}
   summaryEl.style.display='block';
   document.getElementById('climb-stats-summary').innerHTML=`
-    ${totalRoutes?`<div class="stat-box"><div class="stat-val stat-climb">${totalRoutes}</div><div class="stat-lbl">Routes</div></div>`:''}
+    ${totalRoutes?`<div class="stat-box"><div class="stat-val stat-climb">${totalRoutes}</div><div class="stat-lbl">Routes${avgMvs?` · ~${avgMvs}mv/rt`:''}</div></div>`:''}
     ${sends?`<div class="stat-box"><div class="stat-val stat-climb">${sends}</div><div class="stat-lbl">Sends</div></div>`:''}
     ${totalMeters?`<div class="stat-box"><div class="stat-val stat-climb">${totalMeters}m</div><div class="stat-lbl">Meters</div></div>`:''}
-    ${totalMovements?`<div class="stat-box"><div class="stat-val stat-climb">${totalMovements}</div><div class="stat-lbl">Total Mvs${avgMvs?` · ~${avgMvs}/rt`:''}</div></div>`:''}
-    ${totalMoves?`<div class="stat-box"><div class="stat-val stat-climb">${totalMoves}</div><div class="stat-lbl">Moves</div></div>`:''}`;
+    ${totalAllMvs?`<div class="stat-box"><div class="stat-val stat-climb">${totalAllMvs}</div><div class="stat-lbl">Total Mvs</div></div>`:''}
+    ${totalMoves?`<div class="stat-box"><div class="stat-val" style="color:#7c3aed">${totalMoves}</div><div class="stat-lbl">🟫 Board Mvs</div></div>`:''}`;
   // Wall-angle breakdown (only routes that carry an angle)
   const angEl=document.getElementById('climb-angle-summary');
   if(angEl){
@@ -5674,7 +5680,8 @@ function renderClimbHistory(){
     }
     if(routes.length) meta+=` · ${totalRouteCount} routes${downclimbs?` (${downclimbs}↕)`:''} · ${sends} sends`;
     if(meters>0) meta+=` · ${meters>=1000?(meters/1000).toFixed(1)+'km':meters+'m'}`;
-    if(totalMvs>0) meta+=` · ${totalMvs} mv (~${avgMvs}/rt)`;
+    const boardMvs=_climbBoardMoves(s);
+    if(totalMvs+boardMvs>0) meta+=` · ${totalMvs+boardMvs} mv${avgMvs?` (~${avgMvs}/rt)`:''}${boardMvs?` · 🟫 ${boardMvs}`:''}`;
     if(s.blocks){
       const boards=s.blocks.filter(b=>b.type==='board');
       if(boards.length) meta+=' · '+boards.map(b=>b.board+(b.angle?` ${b.angle}°`:'')).join(', ');
@@ -6663,13 +6670,17 @@ function renderWeekTotals(weekStart){
 
   // ── Climbing ──────────────────────────────────────
   const climbS=DB.climbSessions().filter(s=>s.date&&inWeek(s.date));
-  let climbMins=0,climbRoutes=0,climbMeters=0;
+  let climbMins=0,climbRoutes=0,climbMeters=0,climbMvs=0;
   let boardMoves=0,arcMins=0;
   climbS.forEach(s=>{
     climbMins+=parseInt(s.duration)||0;
     const routes=getSessionRoutes(s);
     climbRoutes+=routes.length;
-    routes.forEach(r=>{ climbMeters+=(r.wallH||0)*(r.climbedDown?2:1); });
+    routes.forEach(r=>{
+      const mult=r.climbedDown?2:1;
+      climbMeters+=(r.wallH||0)*mult;
+      if(r.movements>0)climbMvs+=r.movements*mult;
+    });
     boardMoves+=_climbBoardMoves(s);
     arcMins+=_climbArcMins(s);
   });
@@ -6749,6 +6760,7 @@ function renderWeekTotals(weekStart){
       fmtMins(climbMins)?`⏱ ${fmtMins(climbMins)}`:'',
       climbRoutes>0?`🪨 ${climbRoutes} routes`:'',
       climbMeters>0?`📏 ${climbMeters>=1000?(climbMeters/1000).toFixed(1)+'km':climbMeters+'m'} climbed`:'',
+      climbMvs+boardMoves>0?`✋ ${climbMvs+boardMoves} movements`:'',
       boardMoves>0?`🟫 ${boardMoves} board moves`:'',
       arcMins>0?`🔁 ${fmtMins(arcMins)} ARC`:'',
     ]);
@@ -7108,7 +7120,7 @@ function renderMonthlyResume(){
         <div class="month-metric-row"><span class="month-metric-lbl">Routes</span><span class="month-metric-val">${st.climbRoutes}${delta(st.climbRoutes,prev?.climbRoutes)}</span></div>
         <div class="month-metric-row"><span class="month-metric-lbl">Sends</span><span class="month-metric-val">${st.climbSends} <span class="text-xxs-muted">(${st.sendRate}%)${delta(st.sendRate,prev?.sendRate)}</span></span></div>
         ${st.climbMeters?`<div class="month-metric-row"><span class="month-metric-lbl">Meters</span><span class="month-metric-val">${mLabel}${delta(st.climbMeters,prev?.climbMeters)}</span></div>`:''}
-        ${st.climbMvs?`<div class="month-metric-row"><span class="month-metric-lbl">Movements</span><span class="month-metric-val">${st.climbMvs}${delta(st.climbMvs,prev?.climbMvs)}</span></div>`:''}
+        ${st.climbMvs+st.boardMoves?`<div class="month-metric-row"><span class="month-metric-lbl">Movements</span><span class="month-metric-val">${st.climbMvs+st.boardMoves}${delta(st.climbMvs+st.boardMoves,prev?(prev.climbMvs+prev.boardMoves):null)}</span></div>`:''}
         ${st.avgMvs?`<div class="month-metric-row"><span class="month-metric-lbl">Avg mv/rt</span><span class="month-metric-val">~${st.avgMvs}${delta(st.avgMvs,prev?.avgMvs)}</span></div>`:''}
         ${st.boardMoves?`<div class="month-metric-row"><span class="month-metric-lbl">🟫 Board moves</span><span class="month-metric-val">${st.boardMoves}${delta(st.boardMoves,prev?.boardMoves)}</span></div>`:''}
         ${st.arcMins?`<div class="month-metric-row"><span class="month-metric-lbl">🔁 ARC</span><span class="month-metric-val">${fmtMins(st.arcMins)}${delta(st.arcMins,prev?.arcMins)}</span></div>`:''}
