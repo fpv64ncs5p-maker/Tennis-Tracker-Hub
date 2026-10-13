@@ -363,3 +363,8 @@ Training Hub loads zero external resources. If the Tennis tab needs Supabase JS 
 - Audience: Jo, possibly shared with a physio. Notes are saved per month on the device only (`report_notes` in localStorage, not synced).
 - 2026-10-13 (follow-up): report gained a **🧗 Climbing detail** table — routes climbed, meters, movements, sends, board moves, top grade, each vs last month. Counting matches the Monthly Resume (climbed-down route ×2).
 - 2026-10-13 (follow-up): **Rest days** = days so far in the month with no training (the "rest" mark isn't needed). Rehab-only and work-only days count as rest (Jo's choice). Shown as 😴 in the report calendar; tile renamed "Rest days (no training)".
+
+### 2026-10-13 — Yearly report (same window, option A)
+- The report window has a **Month / Year** switch (button now "📄 Report — month / year (PDF)").
+- Yearly report = the monthly stats run for each month and added up: Year at a glance (vs previous year; for the current year it compares the same Jan–current-month period) · Month by month (active/rest days, sessions, time, avg RPE, work) · Training time per sport per month · Climbing over the year (routes, meters, movements, sends, board moves, top grade; best grade of the year) · Tennis over the year (sessions, time, matches, W–L, errors/100) · Rehab per month · Notes.
+- Year notes are stored as `Y<year>` in the same device-only `report_notes`.

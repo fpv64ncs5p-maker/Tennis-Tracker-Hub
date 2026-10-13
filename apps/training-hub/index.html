@@ -1009,7 +1009,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <div id="planner-days"></div>
       </div>
       <div id="planner-monthly-view" style="display:none">
-        <button class="btn btn-sm" onclick="openMonthReport()" style="width:100%;margin-bottom:10px">📄 Monthly report (PDF)</button>
+        <button class="btn btn-sm" onclick="openMonthReport()" style="width:100%;margin-bottom:10px">📄 Report — month / year (PDF)</button>
         <div id="planner-monthly"></div>
       </div>
     </div>
@@ -11601,6 +11601,8 @@ function monthReportStats(ym){
   return{ym,nDays,elapsed,days,sp,activeDays,restDays:Math.max(0,elapsed-activeDays),workDays,workH,trainMins,sessions,
     gymVol,routes,sends,meters,movs,boardMoves,topGrade:topIdx>=0?CLIMB_GRADES[topIdx]:null,
     matches:matches.length,won,lost,winPct:(won+lost)?Math.round(won/(won+lost)*100):null,errRate:ePts?Math.round(eNum/ePts*1000)/10:null,
+    eNum,ePts,rRpeSum:rRpes.reduce((a,b)=>a+b,0),rRpeN:rRpes.length,
+    rpeSum:dayList.reduce((a,d)=>a+d.rpes.reduce((x,y)=>x+y,0),0),rpeN:dayList.reduce((a,d)=>a+d.rpes.length,0),
     rehabLogged:rehabLogged.length,rehabRpe:rRpes.length?Math.round(rRpes.reduce((a,b)=>a+b,0)/rRpes.length*10)/10:null,rehabPhases:phases,
     weeks};
 }
@@ -11702,13 +11704,116 @@ function monthReportHtml(ym,notes){
 
 // Notes are kept per month on this device (localStorage, not synced)
 function _mrNotesAll(){try{return JSON.parse(localStorage.getItem('report_notes')||'{}');}catch{return{};}}
-function saveMonthReportNotes(){
-  const ym=document.getElementById('mr-month').value;
-  const all=_mrNotesAll();all[ym]=document.getElementById('mr-notes').value;
-  try{localStorage.setItem('report_notes',JSON.stringify(all));}catch(e){}
-  renderMonthReportPreview(true);
+// ── Yearly report (2026-10-13) — built from the monthly stats ──────────────
+function yearReportStats(y,uptoMonth){
+  const last=uptoMonth||12;
+  const months=[];for(let i=1;i<=last;i++)months.push(monthReportStats(y+'-'+String(i).padStart(2,'0')));
+  const sum=f=>months.reduce((a,m)=>a+(f(m)||0),0);
+  const sp={};Object.keys(MR_LABELS).forEach(k=>sp[k]={sessions:sum(m=>m.sp[k].sessions),mins:sum(m=>m.sp[k].mins)});
+  let topIdx=-1;months.forEach(m=>{const i=CLIMB_GRADES.indexOf(m.topGrade);if(i>topIdx)topIdx=i;});
+  const won=sum(m=>m.won),lost=sum(m=>m.lost),eNum=sum(m=>m.eNum),ePts=sum(m=>m.ePts);
+  const rN=sum(m=>m.rRpeN),rS=sum(m=>m.rRpeSum),pN=sum(m=>m.rpeN),pS=sum(m=>m.rpeSum);
+  return{y,months,sp,
+    activeDays:sum(m=>m.activeDays),restDays:sum(m=>m.restDays),elapsed:sum(m=>m.elapsed),
+    sessions:sum(m=>m.sessions),trainMins:sum(m=>m.trainMins),workDays:sum(m=>m.workDays),workH:sum(m=>m.workH),
+    routes:sum(m=>m.routes),meters:sum(m=>m.meters),movs:sum(m=>m.movs),sends:sum(m=>m.sends),boardMoves:sum(m=>m.boardMoves),
+    topGrade:topIdx>=0?CLIMB_GRADES[topIdx]:null,
+    matches:sum(m=>m.matches),won,lost,winPct:(won+lost)?Math.round(won/(won+lost)*100):null,errRate:ePts?Math.round(eNum/ePts*1000)/10:null,
+    rehabSessions:sp.rehab.sessions,rehabRpe:rN?Math.round(rS/rN*10)/10:null,
+    rpe:pN?Math.round(pS/pN*10)/10:null};
 }
-function openMonthReport(){
+
+function yearReportHtml(y,notes){
+  const now=today();
+  const isCur=String(y)===now.slice(0,4);
+  const upto=isCur?parseInt(now.slice(5,7)):12;
+  const s=yearReportStats(y,upto),p=yearReportStats(String(Number(y)-1),upto);
+  const MS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const gen=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  const tile=(l,v,d)=>`<div class="mr-tile"><div class="mr-tile-l">${l}</div><div class="mr-tile-v">${v}${d||''}</div></div>`;
+  const neutral=h=>h.replace(/mr-d (up|dn)/,'mr-d eq');
+  const h1=v=>Math.round(v*10)/10;
+  const cmpLabel=isCur?`Jan–${MS[upto-1]} ${Number(y)-1}`:String(Number(y)-1);
+  const mName=m=>MS[parseInt(m.ym.slice(5,7))-1];
+
+  // 2. Month by month
+  const mmRows=s.months.map(m=>`<tr><td>${mName(m)}</td>
+    <td class="n">${m.activeDays}</td><td class="n">${m.restDays}</td><td class="n">${m.sessions}</td>
+    <td class="n">${_mrFmtMins(m.trainMins)}</td><td class="n">${m.rpeN?h1(m.rpeSum/m.rpeN):'—'}</td>
+    <td class="n">${m.workDays?`${m.workDays} d · ${h1(m.workH)} h`:'—'}</td></tr>`).join('');
+  const mmTot=`<tr><th>Total</th><th class="n">${s.activeDays}</th><th class="n">${s.restDays}</th><th class="n">${s.sessions}</th><th class="n">${_mrFmtMins(s.trainMins)}</th><th class="n">${s.rpe!=null?s.rpe:'—'}</th><th class="n">${s.workDays} d · ${h1(s.workH)} h</th></tr>`;
+
+  // 3. Per sport per month (time)
+  const sports=MR_TRAIN.filter(t=>s.sp[t].sessions);
+  const spHead=`<tr><th>Month</th>${sports.map(t=>`<th class="n">${MR_ICONS[t]} ${MR_LABELS[t]}</th>`).join('')}</tr>`;
+  const spRows=s.months.map(m=>`<tr><td>${mName(m)}</td>${sports.map(t=>`<td class="n">${m.sp[t].mins?_mrFmtMins(m.sp[t].mins):(m.sp[t].sessions?m.sp[t].sessions+'×':'—')}</td>`).join('')}</tr>`).join('');
+  const spTot=`<tr><th>Total</th>${sports.map(t=>`<th class="n">${_mrFmtMins(s.sp[t].mins)}<br><span class="mr-muted" style="font-weight:400">${s.sp[t].sessions} sess.</span>${_mrDelta(s.sp[t].mins,p.sp[t].mins)}</th>`).join('')}</tr>`;
+
+  // 4. Climbing
+  const climbRows=s.months.filter(m=>m.sp.climb.sessions).map(m=>`<tr><td>${mName(m)}</td>
+    <td class="n">${m.sp.climb.sessions}</td><td class="n">${m.routes}</td><td class="n">${Math.round(m.meters)} m</td><td class="n">${m.movs}</td>
+    <td class="n">${m.sends}</td><td class="n">${m.boardMoves||'—'}</td><td class="n">${m.topGrade||'—'}</td></tr>`).join('');
+  const climb=s.sp.climb.sessions?`<div class="mr-sec"><h2>🧗 Climbing over the year</h2>
+    <table><tr><th>Month</th><th class="n">Sessions</th><th class="n">Routes</th><th class="n">Meters</th><th class="n">Movements</th><th class="n">Sends</th><th class="n">Board moves</th><th class="n">Top grade</th></tr>${climbRows}
+    <tr><th>Total</th><th class="n">${s.sp.climb.sessions}</th><th class="n">${s.routes}${_mrDelta(s.routes,p.routes)}</th><th class="n">${Math.round(s.meters)} m${_mrDelta(s.meters,p.meters)}</th><th class="n">${s.movs}${_mrDelta(s.movs,p.movs)}</th><th class="n">${s.sends}</th><th class="n">${s.boardMoves}</th><th class="n">${s.topGrade||'—'}</th></tr></table>
+    <div class="mr-legend">Best grade of the year: <strong>${s.topGrade||'—'}</strong>${p.topGrade?` (${cmpLabel}: ${p.topGrade})`:''}. Up + down = 2 routes.</div></div>`:'';
+
+  // 5. Tennis
+  const tenRows=s.months.filter(m=>m.sp.tennis.sessions||m.matches).map(m=>`<tr><td>${mName(m)}</td>
+    <td class="n">${m.sp.tennis.sessions}</td><td class="n">${_mrFmtMins(m.sp.tennis.mins)}</td><td class="n">${m.matches||'—'}</td>
+    <td class="n">${(m.won+m.lost)?`${m.won}–${m.lost}`:'—'}</td><td class="n">${m.errRate!=null?m.errRate:'—'}</td></tr>`).join('');
+  const tennis=(s.sp.tennis.sessions||s.matches)?`<div class="mr-sec"><h2>🎾 Tennis over the year</h2>
+    <table><tr><th>Month</th><th class="n">Sessions</th><th class="n">Time</th><th class="n">Matches</th><th class="n">W–L</th><th class="n">Errors / 100 pts</th></tr>${tenRows}
+    <tr><th>Total</th><th class="n">${s.sp.tennis.sessions}</th><th class="n">${_mrFmtMins(s.sp.tennis.mins)}</th><th class="n">${s.matches}</th><th class="n">${(s.won+s.lost)?`${s.won}–${s.lost} (${s.winPct}%)`:'—'}</th><th class="n">${s.errRate!=null?s.errRate:'—'}</th></tr></table></div>`:'';
+
+  // 6. Rehab
+  const rehRows=s.months.filter(m=>m.sp.rehab.sessions).map(m=>`<tr><td>${mName(m)}</td><td class="n">${m.sp.rehab.sessions}</td><td>${m.rehabPhases.join(', ')||'—'}</td><td class="n">${m.rehabRpe!=null?m.rehabRpe:'—'}</td></tr>`).join('');
+  const rehab=rehRows?`<table><tr><th>Month</th><th class="n">Sessions</th><th>Phase(s)</th><th class="n">Avg RPE</th></tr>${rehRows}
+    <tr><th>Total</th><th class="n">${s.rehabSessions}</th><th></th><th class="n">${s.rehabRpe!=null?s.rehabRpe:'—'}</th></tr></table>`
+    :'<div class="mr-muted">No rehab sessions this year.</div>';
+
+  return `
+  <h1>Yearly Training Report</h1>
+  <div class="mr-sub"><strong>${y}</strong> · Jo · generated ${gen}${isCur?` · <em>year in progress (Jan–${MS[upto-1]})</em>`:''} · vs ${cmpLabel}</div>
+
+  <div class="mr-sec"><h2>Year at a glance</h2>
+  <div class="mr-tiles">
+    ${tile('Active days',`${s.activeDays}<span style="font-size:11px;font-weight:600;color:#555">/${s.elapsed}</span>`,_mrDelta(s.activeDays,p.activeDays))}
+    ${tile('Rest days (no training)',s.restDays,neutral(_mrDelta(s.restDays,p.restDays)))}
+    ${tile('Training sessions',s.sessions,_mrDelta(s.sessions,p.sessions))}
+    ${tile('Training time',_mrFmtMins(s.trainMins),_mrDelta(s.trainMins,p.trainMins))}
+    ${tile('Work days',s.workDays,_mrDelta(s.workDays,p.workDays))}
+    ${tile('Work hours',h1(s.workH)+' h',_mrDelta(s.workH,p.workH))}
+  </div></div>
+
+  <div class="mr-sec"><h2>Month by month</h2>
+  <table><tr><th>Month</th><th class="n">Active days</th><th class="n">Rest days</th><th class="n">Sessions</th><th class="n">Training time</th><th class="n">Avg RPE</th><th class="n">Work</th></tr>${mmRows}${mmTot}</table>
+  <div class="mr-legend">RPE = average of the RPE values entered in the Planner.</div></div>
+
+  ${sports.length?`<div class="mr-sec"><h2>Training time per sport</h2>
+  <table>${spHead}${spRows}${spTot}</table>
+  <div class="mr-legend">"2×" = sessions without a duration entered. Totals compared with ${cmpLabel}.</div></div>`:''}
+
+  ${climb}
+  ${tennis}
+
+  <div class="mr-sec"><h2>🦵 Rehab</h2>${rehab}</div>
+
+  <div class="mr-sec"><h2>Notes</h2>
+  <div class="mr-notes${notes&&notes.trim()?'':' blank'}">${esc(notes||'')}</div></div>
+
+  <div class="mr-foot">Training Hub · Gym, climbing & fingerboard from logged sessions · Tennis from the Planner + watch matches · Golf, active & work from the Planner.</div>`;
+}
+
+// ── Report window: Month / Year switch ─────────────────────────────────────
+let _mrMode='month';
+function _mrKey(){const v=document.getElementById('mr-month').value;return _mrMode==='year'?'Y'+v:v;}
+function _mrHtml(notes){const v=document.getElementById('mr-month').value;return _mrMode==='year'?yearReportHtml(v,notes):monthReportHtml(v,notes);}
+function setMonthReportMode(mode){
+  _mrMode=mode;
+  document.getElementById('mr-mode-month').className=mode==='month'?'btn btn-sm':'btn btn-ghost btn-sm';
+  document.getElementById('mr-mode-year').className=mode==='year'?'btn btn-sm':'btn btn-ghost btn-sm';
+  document.getElementById('mr-month-label').textContent=mode==='year'?'Year':'Month';
   const set=new Set([today().slice(0,7)]);
   const add=d=>{if(d&&d.length>=7&&d<=today())set.add(d.slice(0,7));};
   DB.gymSessions().forEach(s=>add(s.date));
@@ -11716,23 +11821,31 @@ function openMonthReport(){
   DB.fbSessions().forEach(s=>add(s.date));
   _loggedTennisMatches().forEach(x=>add(x.date));
   Object.keys(DB.planData()).forEach(wk=>add(wk));
-  const sel=document.getElementById('mr-month');
-  sel.innerHTML=[...set].sort().reverse().map(ym=>`<option value="${ym}">${_mrMonthLabel(ym)}</option>`).join('');
-  openModal('modal-month-report');
+  const vals=mode==='year'?[...new Set([...set].map(ym=>ym.slice(0,4)))]:[...set];
+  document.getElementById('mr-month').innerHTML=vals.sort().reverse()
+    .map(v=>`<option value="${v}">${mode==='year'?v:_mrMonthLabel(v)}</option>`).join('');
   renderMonthReportPreview();
 }
+function saveMonthReportNotes(){
+  const all=_mrNotesAll();all[_mrKey()]=document.getElementById('mr-notes').value;
+  try{localStorage.setItem('report_notes',JSON.stringify(all));}catch(e){}
+  renderMonthReportPreview(true);
+}
+function openMonthReport(){
+  openModal('modal-month-report');
+  setMonthReportMode(_mrMode);
+}
 function renderMonthReportPreview(keepNotes){
-  const ym=document.getElementById('mr-month').value;
   const ta=document.getElementById('mr-notes');
-  if(!keepNotes)ta.value=_mrNotesAll()[ym]||'';
-  document.getElementById('mr-preview').innerHTML=monthReportHtml(ym,ta.value);
+  if(!keepNotes)ta.value=_mrNotesAll()[_mrKey()]||'';
+  document.getElementById('mr-preview').innerHTML=_mrHtml(ta.value);
 }
 function exportMonthReport(){
-  const ym=document.getElementById('mr-month').value;
+  const v=document.getElementById('mr-month').value;
   const root=document.getElementById('print-root');
-  root.innerHTML='<div class="mr">'+monthReportHtml(ym,document.getElementById('mr-notes').value)+'</div>';
+  root.innerHTML='<div class="mr">'+_mrHtml(document.getElementById('mr-notes').value)+'</div>';
   const prevTitle=document.title;
-  document.title='Training Report '+_mrMonthLabel(ym); // becomes the PDF file name
+  document.title=_mrMode==='year'?'Training Report '+v:'Training Report '+_mrMonthLabel(v); // becomes the PDF file name
   const restore=()=>{root.innerHTML='';document.title=prevTitle;window.removeEventListener('afterprint',restore);};
   window.addEventListener('afterprint',restore);
   setTimeout(restore,120000); // iOS Safari doesn't always fire afterprint
@@ -12032,11 +12145,15 @@ function exportMonthReport(){
   <div class="modal" style="max-height:92vh;overflow-y:auto">
     <div class="modal-handle"></div>
     <div class="modal-header">
-      <div class="modal-title">📄 Monthly report</div>
+      <div class="modal-title">📄 Training report</div>
       <button class="modal-close" aria-label="Close" onclick="closeModal('modal-month-report')">✕</button>
     </div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button class="btn btn-sm" id="mr-mode-month" onclick="setMonthReportMode('month')" style="flex:1">Month</button>
+      <button class="btn btn-ghost btn-sm" id="mr-mode-year" onclick="setMonthReportMode('year')" style="flex:1">Year</button>
+    </div>
     <div class="form-group">
-      <label>Month</label>
+      <label id="mr-month-label">Month</label>
       <select id="mr-month" onchange="renderMonthReportPreview()" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px"></select>
     </div>
     <div class="form-group">
