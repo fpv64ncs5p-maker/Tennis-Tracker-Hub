@@ -433,6 +433,43 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
   #print-root .pr-foot{margin-top:22px;font-size:9pt;color:#666;border-top:1px solid #ccc;padding-top:6px}
   #print-root .pr-notes{white-space:pre-wrap;font-size:11pt}
 }
+
+/* ══ Monthly Report (2026-10-13) — screen preview + print ══ */
+.mr{background:#fff;color:#111;font-family:system-ui,-apple-system,sans-serif;font-size:12px;line-height:1.4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.mr-preview{border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;margin:12px 0;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+.mr h1{font-size:20px;font-weight:800;margin:0 0 2px;letter-spacing:-.2px}
+.mr .mr-sub{color:#555;font-size:11.5px;margin-bottom:12px}
+.mr h2{font-size:13px;font-weight:800;margin:16px 0 6px;padding-bottom:3px;border-bottom:2px solid #111;text-transform:uppercase;letter-spacing:.05em}
+.mr .mr-sec{break-inside:avoid;page-break-inside:avoid}
+.mr .mr-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.mr .mr-tile{border:1px solid #ccc;border-radius:6px;padding:7px 9px}
+.mr .mr-tile-l{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+.mr .mr-tile-v{font-size:17px;font-weight:800}
+.mr .mr-d{font-size:10px;font-weight:700;margin-left:4px}
+.mr .mr-d.up{color:#15803d}.mr .mr-d.dn{color:#b91c1c}.mr .mr-d.eq{color:#777}
+.mr table{width:100%;border-collapse:collapse;margin:4px 0}
+.mr th,.mr td{border:1px solid #bbb;padding:4px 6px;text-align:left;font-size:11px;vertical-align:top}
+.mr th{background:#eee;font-weight:700}
+.mr td.n,.mr th.n{text-align:center;white-space:nowrap}
+.mr .mr-cal{table-layout:fixed}
+.mr .mr-cal th{text-align:center;font-size:10px}
+.mr .mr-cal td{height:40px;padding:2px 3px}
+.mr .mr-cal td.work{background:#e8f0fe}
+.mr .mr-cal td.empty{background:#f6f6f6}
+.mr .mr-cal .dn{font-size:9.5px;color:#555;font-weight:700}
+.mr .mr-cal .ic{font-size:12px;line-height:1.2}
+.mr .mr-legend{font-size:10px;color:#555;margin-top:3px}
+.mr .mr-notes{border:1px solid #bbb;border-radius:6px;min-height:70px;padding:8px;white-space:pre-wrap;font-size:11.5px}
+.mr .mr-notes.blank{background:repeating-linear-gradient(#fff,#fff 21px,#ddd 22px)}
+.mr .mr-foot{margin-top:14px;font-size:9.5px;color:#777;border-top:1px solid #ccc;padding-top:5px}
+.mr .mr-muted{color:#666}
+@media print{
+  html,body{height:auto!important;overflow:visible!important;background:#fff!important}
+  #print-root .mr th,#print-root .mr td{border:1px solid #bbb;padding:4px 6px;font-size:10pt}
+  #print-root .mr h1{font-size:18pt}
+  #print-root .mr h2{font-size:11pt;margin:12px 0 5px;border-bottom:2px solid #111}
+  #print-root .mr .mr-cal td{height:42px}
+}
 </style>
 </head>
 <body>
@@ -972,6 +1009,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <div id="planner-days"></div>
       </div>
       <div id="planner-monthly-view" style="display:none">
+        <button class="btn btn-sm" onclick="openMonthReport()" style="width:100%;margin-bottom:10px">📄 Monthly report (PDF)</button>
         <div id="planner-monthly"></div>
       </div>
     </div>
@@ -11413,6 +11451,293 @@ function tsReportHtml(s){
 // same protection as the climbing draft (lesson from 2026-06-22).
 document.addEventListener('visibilitychange',()=>{ if(document.hidden) tsSaveDraft(); });
 window.addEventListener('pagehide',tsSaveDraft);
+
+// ══════════════════════════════════════════════════
+//  MONTHLY REPORT (2026-10-13) — print-to-PDF, no library
+// ══════════════════════════════════════════════════
+// Sources (same rules as Home / Monthly Resume):
+//  · Gym, Climbing, Fingerboard → logged sessions
+//  · Tennis → planner entries first (most trainings aren't logged as matches);
+//    a logged match on a day with no planned tennis counts as one session.
+//    Match stats (W/L, errors) → logged matches (hidden dropped, splits merged)
+//  · Golf, Active → planner entries
+//  · Rehab → logged sessions, planner entry only on days with none
+//  · Work → planner work days (start–end hours)
+//  Planner entries dated after today are ignored (not done yet).
+const MR_ICONS={gym:'💪',climb:'🧗',fb:'🖐️',tennis:'🎾',golf:'⛳',active:'🏃',rehab:'🦵'};
+const MR_LABELS={gym:'Gym',climb:'Climbing',fb:'Fingerboard',tennis:'Tennis',golf:'Golf',active:'Active',rehab:'Rehab'};
+const MR_TRAIN=['climb','fb','gym','tennis','golf','active']; // count as active/training (rehab excluded)
+const MR_MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function _mrMonthLabel(ym){const[y,m]=ym.split('-');return MR_MONTHS[parseInt(m)-1]+' '+y;}
+function _mrPrevYm(ym){let[y,m]=ym.split('-').map(Number);m--;if(m<1){m=12;y--;}return y+'-'+String(m).padStart(2,'0');}
+function _mrHours(start,end){
+  const p=t=>{const[a,b]=(t||'').split(':').map(Number);return isNaN(a)?null:a*60+(b||0);};
+  const s=p(start),e=p(end);
+  return (s!=null&&e!=null&&e>s)?(e-s)/60:0;
+}
+function _mrFmtMins(m){return fmtMins(Math.round(m))||'—';}
+
+function monthReportStats(ym){
+  const[y,m]=ym.split('-').map(Number);
+  const nDays=new Date(y,m,0).getDate();
+  const first=ym+'-01',last=ym+'-'+String(nDays).padStart(2,'0');
+  const todayStr=today();
+  const inMonth=d=>d&&d>=first&&d<=last;
+  const elapsed=last<=todayStr?nDays:(first>todayStr?0:parseInt(todayStr.slice(8,10)));
+
+  const days={};
+  for(let i=1;i<=nDays;i++){
+    const ds=ym+'-'+String(i).padStart(2,'0');
+    days[ds]={date:ds,acts:new Set(),mins:0,rpes:[],work:false,workH:0};
+  }
+  const sp={};
+  Object.keys(MR_LABELS).forEach(k=>sp[k]={sessions:0,mins:0});
+  const addSess=(d,type,mins,rpe)=>{
+    const day=days[d];if(!day)return;
+    day.acts.add(type);
+    sp[type].sessions++;sp[type].mins+=mins||0;
+    if(type!=='rehab')day.mins+=mins||0;
+    if(rpe>0&&type!=='rehab')day.rpes.push(rpe);
+  };
+
+  // Logged gym / climb / fingerboard
+  let gymVol=0;
+  const gymS=DB.gymSessions().filter(s=>inMonth(s.date));
+  gymS.forEach(s=>{
+    addSess(s.date,'gym',s.durationMins||0);
+    (s.exercises||[]).forEach(e=>{
+      if(e.type==='cardio')return;
+      gymVol+=(parseInt(e.sets)||0)*(parseInt(e.reps)||0)*(parseFloat(e.weight)||0);
+    });
+  });
+  let routes=0,sends=0,meters=0,movs=0,boardMoves=0,topIdx=-1;
+  DB.climbSessions().filter(s=>inMonth(s.date)).forEach(s=>{
+    addSess(s.date,'climb',parseInt(s.duration)||0);
+    boardMoves+=_climbBoardMoves(s);
+    getSessionRoutes(s).forEach(r=>{
+      const mult=r.climbedDown?2:1;
+      routes+=mult;
+      if(r.result!=='Project')sends+=mult;
+      meters+=(r.wallH||0)*mult;
+      if(r.movements>0)movs+=r.movements*mult;
+      if(['OS','Flash','RP'].includes(r.result)&&r.grade){
+        const idx=CLIMB_GRADES.indexOf(r.grade);
+        if(idx>topIdx)topIdx=idx;
+      }
+    });
+  });
+  DB.fbSessions().filter(s=>inMonth(s.date)).forEach(s=>addSess(s.date,'fb',s.durationMins||0));
+
+  // Planner: tennis / golf / active / rehab fallback / work
+  const loggedMatches=_loggedTennisMatches().filter(x=>inMonth(x.date));
+  const rehabLogged=(()=>{const d=DB.rehabData();return Array.isArray(d.sessions)?d.sessions.filter(x=>x&&inMonth(x.date)):[];})();
+  const rehabDays=new Set(rehabLogged.map(r=>r.date));
+  const plannedTennisDays=new Set();
+  const planData=DB.planData();
+  Object.keys(planData).forEach(wk=>{
+    (planData[wk]||[]).forEach((d,di)=>{
+      const ds=d.date||addDays(wk,di);
+      if(!inMonth(ds)||ds>todayStr)return;
+      if(d.work){days[ds].work=true;days[ds].workH=_mrHours(d.workStart,d.workEnd);}
+      (d.sessions||[]).forEach(ps=>{
+        if(!ps||!ps.trainingType)return;
+        const t=ps.trainingType,mins=parseInt(ps.duration)||0,rpe=parseFloat(ps.rpe)||0;
+        if(t==='tennis'){plannedTennisDays.add(ds);addSess(ds,'tennis',mins,rpe);}
+        else if(t==='golf'||t==='active')addSess(ds,t,mins,rpe);
+        else if(t==='rehab'&&!rehabDays.has(ds))addSess(ds,'rehab',mins,0);
+        else if((t==='gym'||t==='climb')&&rpe>0&&days[ds].acts.has(t))days[ds].rpes.push(rpe);
+      });
+    });
+  });
+  // Tennis fallback: logged match on a day with no planned tennis = one session
+  const fb={};
+  loggedMatches.forEach(x=>{if(!plannedTennisDays.has(x.date))fb[x.date]=(fb[x.date]||0)+x.mins;});
+  Object.keys(fb).forEach(d=>addSess(d,'tennis',fb[d]));
+  // Logged rehab
+  rehabLogged.forEach(r=>{addSess(r.date,'rehab',0,0);});
+
+  // Match stats
+  const matches=_loggedTennisMatchesFull().filter(x=>inMonth((x.match_date||'').slice(0,10)));
+  let won=0,lost=0,eNum=0,ePts=0;
+  matches.forEach(x=>{
+    if(x.result==='won')won++;else if(x.result==='lost')lost++;
+    if(x.unforced_errors!=null){
+      const p=(x.service_points_played!=null&&x.return_points_played!=null)?x.service_points_played+x.return_points_played:((x.points_won!=null&&x.points_lost!=null)?x.points_won+x.points_lost:null);
+      if(p>0){eNum+=x.unforced_errors;ePts+=p;}
+    }
+  });
+
+  // Rehab detail
+  const rRpes=rehabLogged.map(r=>parseFloat(r.rpe)).filter(v=>v>0);
+  const phases=[...new Set(rehabLogged.filter(r=>r.phase!=null).map(r=>r.phase))].sort((a,b)=>a-b)
+    .map(pi=>(REHAB_PHASES[pi]&&REHAB_PHASES[pi].phase)||('Phase '+(pi+1)));
+
+  // Totals
+  const dayList=Object.values(days);
+  const activeDays=dayList.filter(d=>MR_TRAIN.some(t=>d.acts.has(t))).length;
+  const workDays=dayList.filter(d=>d.work).length;
+  const workH=dayList.reduce((a,d)=>a+d.workH,0);
+  const trainMins=MR_TRAIN.reduce((a,t)=>a+sp[t].mins,0);
+  const sessions=MR_TRAIN.reduce((a,t)=>a+sp[t].sessions,0);
+
+  // Weeks (Mon–Sun, only days inside the month)
+  const weeks=[];
+  let wk=getMonday(first);
+  while(wk<=last){
+    const wDays=[];for(let i=0;i<7;i++){const d=addDays(wk,i);if(days[d])wDays.push(days[d]);}
+    const rp=wDays.flatMap(d=>d.rpes);
+    weeks.push({
+      from:wDays[0].date,to:wDays[wDays.length-1].date,
+      sessions:wDays.reduce((a,d)=>a+MR_TRAIN.filter(t=>d.acts.has(t)).length,0),
+      mins:wDays.reduce((a,d)=>a+d.mins,0),
+      rpe:rp.length?Math.round(rp.reduce((a,b)=>a+b,0)/rp.length*10)/10:null,
+      workH:wDays.reduce((a,d)=>a+d.workH,0),
+      workDays:wDays.filter(d=>d.work).length
+    });
+    wk=addDays(wk,7);
+  }
+
+  return{ym,nDays,elapsed,days,sp,activeDays,restDays:Math.max(0,elapsed-activeDays),workDays,workH,trainMins,sessions,
+    gymVol,routes,sends,meters,movs,boardMoves,topGrade:topIdx>=0?CLIMB_GRADES[topIdx]:null,
+    matches:matches.length,won,lost,winPct:(won+lost)?Math.round(won/(won+lost)*100):null,errRate:ePts?Math.round(eNum/ePts*1000)/10:null,
+    rehabLogged:rehabLogged.length,rehabRpe:rRpes.length?Math.round(rRpes.reduce((a,b)=>a+b,0)/rRpes.length*10)/10:null,rehabPhases:phases,
+    weeks};
+}
+
+function _mrDelta(cur,prev){
+  if(!prev)return '';
+  const pct=Math.round((cur-prev)/prev*100);
+  if(Math.abs(pct)<1)return '<span class="mr-d eq">→ 0%</span>';
+  return pct>0?`<span class="mr-d up">▲${pct}%</span>`:`<span class="mr-d dn">▼${Math.abs(pct)}%</span>`;
+}
+
+function monthReportHtml(ym,notes){
+  const s=monthReportStats(ym),p=monthReportStats(_mrPrevYm(ym));
+  const isCur=ym===today().slice(0,7);
+  const fmtD=d=>{const[,mm,dd]=d.split('-');return dd+'/'+mm;};
+  const gen=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  const tile=(l,v,d)=>`<div class="mr-tile"><div class="mr-tile-l">${l}</div><div class="mr-tile-v">${v}${d||''}</div></div>`;
+
+  // Calendar
+  const[y,m]=ym.split('-').map(Number);
+  const startDow=(new Date(y,m-1,1).getDay()+6)%7;
+  let cells=[];for(let i=0;i<startDow;i++)cells.push('<td class="empty"></td>');
+  for(let i=1;i<=s.nDays;i++){
+    const d=s.days[ym+'-'+String(i).padStart(2,'0')];
+    const isRest=i<=s.elapsed&&!MR_TRAIN.some(t=>d.acts.has(t)); // no training (rehab-only counts as rest)
+    const ic=Object.keys(MR_ICONS).filter(k=>d.acts.has(k)).map(k=>MR_ICONS[k]).join('')+(d.work?'💼':'')+(isRest?'😴':'');
+    cells.push(`<td class="${d.work?'work':''}"><div class="dn">${i}</div><div class="ic">${ic}</div></td>`);
+  }
+  while(cells.length%7)cells.push('<td class="empty"></td>');
+  let rows='';for(let i=0;i<cells.length;i+=7)rows+='<tr>'+cells.slice(i,i+7).join('')+'</tr>';
+
+  // Per-sport rows
+  const hl={
+    climb:[s.topGrade?`top grade ${s.topGrade}`:'',s.routes?'details below':''],
+    gym:[s.gymVol?`${(s.gymVol/1000).toFixed(1)} t volume`:''],
+    tennis:[s.matches?`${s.matches} match${s.matches>1?'es':''} logged`:'',(s.won+s.lost)?`${s.won}W–${s.lost}L (${s.winPct}%)`:'',s.errRate!=null?`${s.errRate} errors / 100 pts`:''],
+  };
+  const sportRows=MR_TRAIN.filter(t=>s.sp[t].sessions||p.sp[t].sessions).map(t=>`<tr>
+    <td>${MR_ICONS[t]} ${MR_LABELS[t]}</td>
+    <td class="n">${s.sp[t].sessions}</td>
+    <td class="n">${_mrFmtMins(s.sp[t].mins)}${_mrDelta(s.sp[t].mins,p.sp[t].mins)}</td>
+    <td>${(hl[t]||[]).filter(Boolean).join(' · ')||'<span class="mr-muted">—</span>'}</td></tr>`).join('');
+
+  const weekRows=s.weeks.map(w=>`<tr>
+    <td>${fmtD(w.from)} – ${fmtD(w.to)}</td>
+    <td class="n">${w.sessions}</td>
+    <td class="n">${_mrFmtMins(w.mins)}</td>
+    <td class="n">${w.rpe!=null?w.rpe:'—'}</td>
+    <td class="n">${w.workDays?`${w.workDays} d · ${Math.round(w.workH*10)/10} h`:'—'}</td></tr>`).join('');
+
+  const rehab=(s.sp.rehab.sessions)
+    ?`<table><tr><th>Sessions</th><th>Phase(s)</th><th class="n">Avg RPE</th></tr>
+       <tr><td>${s.sp.rehab.sessions}${s.rehabLogged<s.sp.rehab.sessions?` <span class="mr-muted">(${s.rehabLogged} logged)</span>`:''}</td>
+       <td>${s.rehabPhases.join(', ')||'—'}</td><td class="n">${s.rehabRpe!=null?s.rehabRpe:'—'}</td></tr></table>`
+    :'<div class="mr-muted">No rehab sessions this month.</div>';
+
+  return `
+  <h1>Monthly Training Report</h1>
+  <div class="mr-sub"><strong>${_mrMonthLabel(ym)}</strong> · Jo · generated ${gen}${isCur?` · <em>month in progress (${s.elapsed}/${s.nDays} days)</em>`:''} · vs ${_mrMonthLabel(_mrPrevYm(ym))}</div>
+
+  <div class="mr-sec"><h2>Month at a glance</h2>
+  <div class="mr-tiles">
+    ${tile('Active days',`${s.activeDays}<span style="font-size:11px;font-weight:600;color:#555">/${s.elapsed||s.nDays}</span>`,_mrDelta(s.activeDays,p.activeDays))}
+    ${tile('Rest days (no training)',s.restDays,_mrDelta(s.restDays,p.restDays).replace(/mr-d (up|dn)/,'mr-d eq'))}
+    ${tile('Training sessions',s.sessions,_mrDelta(s.sessions,p.sessions))}
+    ${tile('Training time',_mrFmtMins(s.trainMins),_mrDelta(s.trainMins,p.trainMins))}
+    ${tile('Work days',s.workDays,_mrDelta(s.workDays,p.workDays))}
+    ${tile('Work hours',Math.round(s.workH*10)/10+' h',_mrDelta(s.workH,p.workH))}
+  </div></div>
+
+  <div class="mr-sec"><h2>Calendar</h2>
+  <table class="mr-cal"><tr>${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<th>${d}</th>`).join('')}</tr>${rows}</table>
+  <div class="mr-legend">${Object.keys(MR_ICONS).map(k=>MR_ICONS[k]+' '+MR_LABELS[k]).join(' · ')} · 💼 Work day (blue) · 😴 Rest day (no training)</div></div>
+
+  <div class="mr-sec"><h2>Per sport</h2>
+  ${sportRows?`<table><tr><th>Sport</th><th class="n">Sessions</th><th class="n">Time (vs last month)</th><th>Highlights</th></tr>${sportRows}</table>`:'<div class="mr-muted">No training logged this month.</div>'}</div>
+
+  ${(s.sp.climb.sessions||p.sp.climb.sessions)?`<div class="mr-sec"><h2>🧗 Climbing detail</h2>
+  <table><tr><th class="n">Routes climbed</th><th class="n">Meters</th><th class="n">Movements</th><th class="n">Sends</th><th class="n">Board moves</th><th class="n">Top grade</th></tr>
+  <tr><td class="n"><strong>${s.routes}</strong>${_mrDelta(s.routes,p.routes)}</td>
+  <td class="n"><strong>${Math.round(s.meters)} m</strong>${_mrDelta(s.meters,p.meters)}</td>
+  <td class="n"><strong>${s.movs}</strong>${_mrDelta(s.movs,p.movs)}</td>
+  <td class="n"><strong>${s.sends}</strong>${_mrDelta(s.sends,p.sends)}</td>
+  <td class="n"><strong>${s.boardMoves}</strong>${_mrDelta(s.boardMoves,p.boardMoves)}</td>
+  <td class="n"><strong>${s.topGrade||'—'}</strong>${p.topGrade?` <span class="mr-muted">(${p.topGrade})</span>`:''}</td></tr></table>
+  <div class="mr-legend">Same counting as the Monthly Resume: a route climbed down counts twice (routes, meters, movements). Sends = all routes not marked Project. Top grade = hardest OS / Flash / RP (last month in brackets).</div></div>`:''}
+
+  <div class="mr-sec"><h2>Weekly load</h2>
+  <table><tr><th>Week</th><th class="n">Sessions</th><th class="n">Training time</th><th class="n">Avg RPE</th><th class="n">Work</th></tr>${weekRows}</table>
+  <div class="mr-legend">RPE = average of the RPE values entered in the Planner. Weeks are cut at the month edges.</div></div>
+
+  <div class="mr-sec"><h2>🦵 Rehab</h2>${rehab}</div>
+
+  <div class="mr-sec"><h2>Notes</h2>
+  <div class="mr-notes${notes&&notes.trim()?'':' blank'}">${esc(notes||'')}</div></div>
+
+  <div class="mr-foot">Training Hub · Gym, climbing & fingerboard from logged sessions · Tennis from the Planner + watch matches · Golf, active & work from the Planner.</div>`;
+}
+
+// Notes are kept per month on this device (localStorage, not synced)
+function _mrNotesAll(){try{return JSON.parse(localStorage.getItem('report_notes')||'{}');}catch{return{};}}
+function saveMonthReportNotes(){
+  const ym=document.getElementById('mr-month').value;
+  const all=_mrNotesAll();all[ym]=document.getElementById('mr-notes').value;
+  try{localStorage.setItem('report_notes',JSON.stringify(all));}catch(e){}
+  renderMonthReportPreview(true);
+}
+function openMonthReport(){
+  const set=new Set([today().slice(0,7)]);
+  const add=d=>{if(d&&d.length>=7&&d<=today())set.add(d.slice(0,7));};
+  DB.gymSessions().forEach(s=>add(s.date));
+  DB.climbSessions().forEach(s=>add(s.date));
+  DB.fbSessions().forEach(s=>add(s.date));
+  _loggedTennisMatches().forEach(x=>add(x.date));
+  Object.keys(DB.planData()).forEach(wk=>add(wk));
+  const sel=document.getElementById('mr-month');
+  sel.innerHTML=[...set].sort().reverse().map(ym=>`<option value="${ym}">${_mrMonthLabel(ym)}</option>`).join('');
+  openModal('modal-month-report');
+  renderMonthReportPreview();
+}
+function renderMonthReportPreview(keepNotes){
+  const ym=document.getElementById('mr-month').value;
+  const ta=document.getElementById('mr-notes');
+  if(!keepNotes)ta.value=_mrNotesAll()[ym]||'';
+  document.getElementById('mr-preview').innerHTML=monthReportHtml(ym,ta.value);
+}
+function exportMonthReport(){
+  const ym=document.getElementById('mr-month').value;
+  const root=document.getElementById('print-root');
+  root.innerHTML='<div class="mr">'+monthReportHtml(ym,document.getElementById('mr-notes').value)+'</div>';
+  const prevTitle=document.title;
+  document.title='Training Report '+_mrMonthLabel(ym); // becomes the PDF file name
+  const restore=()=>{root.innerHTML='';document.title=prevTitle;window.removeEventListener('afterprint',restore);};
+  window.addEventListener('afterprint',restore);
+  setTimeout(restore,120000); // iOS Safari doesn't always fire afterprint
+  setTimeout(()=>window.print(),60);
+}
 </script>
 
 <!-- login overlay removed — sync uses anon key, no login needed -->
@@ -11702,6 +12027,30 @@ window.addEventListener('pagehide',tsSaveDraft);
 </div>
 
 <!-- PRINT / PDF EXPORT TARGET (hidden on screen, only rendered when printing) -->
+<!-- MONTHLY REPORT MODAL (2026-10-13) -->
+<div class="modal-overlay" role="dialog" aria-modal="true" id="modal-month-report">
+  <div class="modal" style="max-height:92vh;overflow-y:auto">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title">📄 Monthly report</div>
+      <button class="modal-close" aria-label="Close" onclick="closeModal('modal-month-report')">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Month</label>
+      <select id="mr-month" onchange="renderMonthReportPreview()" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:15px"></select>
+    </div>
+    <div class="form-group">
+      <label>Notes (optional — printed on the report)</label>
+      <textarea id="mr-notes" rows="3" placeholder="e.g. calf felt tight in week 2, busy work month…" oninput="saveMonthReportNotes()" style="width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:14px;font-family:inherit"></textarea>
+    </div>
+    <button class="btn" onclick="exportMonthReport()" style="width:100%;padding:13px;font-weight:800;font-size:15px;background:var(--plan);color:#fff;border:none">📄 Save as PDF</button>
+    <div style="font-size:11.5px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.5">
+      On iPhone: the print sheet opens → tap <strong>Share</strong> → <strong>Save to Files</strong> (or send via Mail / WhatsApp).
+    </div>
+    <div id="mr-preview" class="mr mr-preview"></div>
+  </div>
+</div>
+
 <div id="print-root"></div>
 
 </body>

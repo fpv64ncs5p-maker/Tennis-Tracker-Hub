@@ -355,3 +355,11 @@ Training Hub loads zero external resources. If the Tennis tab needs Supabase JS 
 - **Week calendar + Active days** merge Planner entries with logged gym, climbing, fingerboard (🖐️), tennis matches (watch + manual) and rehab. Same icon never shown twice per day. Fingerboard now counts as an active day.
 - **Tennis Momentum:** the Planner is the primary source for Sessions / Total time / RPE (most trainings are not logged as matches). A logged match on a day with no planned tennis still counts as one session (watch duration). Win rate and errors come from logged matches with hidden matches dropped and split sessions merged (`_loggedTennisMatchesFull()`).
 - "Today's Focus" stays Planner-only (it shows the plan).
+
+### 2026-10-13 — Monthly Report (PDF)
+- Planner → Monthly → **📄 Monthly report (PDF)**. Pick a month, add optional notes, tap **Save as PDF** (browser print → PDF; no library, keeps the app single-file). File name = "Training Report <Month Year>".
+- Sections: Month at a glance (active/rest days, sessions, training time, work days, work hours — with % vs previous month) · Calendar (sport icons, work days shaded blue) · Per sport (sessions, time, highlights: climbing routes/sends/top grade/board moves, gym volume, tennis matches W–L/errors per 100 pts) · Weekly load (sessions, time, avg Planner RPE, work days/hours) · Rehab (sessions, phases, avg RPE) · Notes.
+- Sources: gym/climb/fingerboard = logged sessions; tennis = Planner first, watch match only on days with no planned tennis; golf/active/work = Planner; rehab = logged, Planner fallback. Planner entries after today are ignored. Work hours = workStart→workEnd.
+- Audience: Jo, possibly shared with a physio. Notes are saved per month on the device only (`report_notes` in localStorage, not synced).
+- 2026-10-13 (follow-up): report gained a **🧗 Climbing detail** table — routes climbed, meters, movements, sends, board moves, top grade, each vs last month. Counting matches the Monthly Resume (climbed-down route ×2).
+- 2026-10-13 (follow-up): **Rest days** = days so far in the month with no training (the "rest" mark isn't needed). Rehab-only and work-only days count as rest (Jo's choice). Shown as 😴 in the report calendar; tile renamed "Rest days (no training)".
