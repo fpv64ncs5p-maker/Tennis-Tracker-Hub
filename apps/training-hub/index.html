@@ -6724,15 +6724,18 @@ function fmtMins(m){
 
 // Logged tennis matches: watch (Supabase) + manual, overlay-hidden dropped,
 // split sessions merged. Dates are 'YYYY-MM-DD'.
-function _loggedTennisMatches(){
+function _loggedTennisMatchesFull(){
   try{
     const overlay=_getTennisOverlay();
     const watch=_sbMatches.filter(m=>!(overlay[m.id]&&overlay[m.id].hidden));
     const local=_getTennisMatches();
     return _applyTennisMerges([...watch,...local])
-      .filter(m=>m&&!m._hidden&&(m.match_date||'').length>=10)
-      .map(m=>({date:(m.match_date||'').slice(0,10),mins:parseInt(m.duration_min)||0}));
+      .filter(m=>m&&!m._hidden&&(m.match_date||'').length>=10);
   }catch(e){return [];}
+}
+function _loggedTennisMatches(){
+  return _loggedTennisMatchesFull()
+    .map(m=>({date:(m.match_date||'').slice(0,10),mins:parseInt(m.duration_min)||0}));
 }
 // Logged rehab sessions (rehab_data v2). Read directly — never force a migration.
 function _loggedRehabSessions(){
@@ -9124,11 +9127,18 @@ function renderHomeWeekCalendar(){
   const todayStr=today();
   const mondayStr=getMonday(todayStr);
   const plan=DB.planData()[mondayStr];
-  // Logged rehab sessions (v2) — shown as done 🦵 even if not planned
-  const rehabDates=new Set((DB.rehabData().sessions||[]).map(s=>s.date));
+  // Logged sessions — shown even if not planned (2026-10-13: Home used to read
+  // the planner only, so unplanned gym/climb/fingerboard/tennis days were missing)
+  const loggedByDate={};
+  const addLogged=(d,type)=>{if(!d)return;(loggedByDate[d]=loggedByDate[d]||new Set()).add(type);};
+  DB.gymSessions().forEach(s=>addLogged(s.date,'gym'));
+  DB.climbSessions().forEach(s=>addLogged(s.date,'climb'));
+  DB.fbSessions().forEach(s=>addLogged(s.date,'fb'));
+  _loggedTennisMatches().forEach(m=>addLogged(m.date,'tennis'));
+  _loggedRehabSessions().forEach(r=>addLogged(r.date,'rehab'));
 
-  const trainingIcons={'gym':'💪','climb':'🧗','tennis':'🎾','golf':'⛳','rehab':'🦵','active':'🏃','rest':'😴'};
-  const countedSports=['gym','climb','tennis','golf'];
+  const trainingIcons={'gym':'💪','climb':'🧗','fb':'🖐️','tennis':'🎾','golf':'⛳','rehab':'🦵','active':'🏃','rest':'😴'};
+  const countedSports=['gym','climb','fb','tennis','golf'];
   const dayNames=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   let activeDays=0;
   let html='';
@@ -9153,8 +9163,12 @@ function renderHomeWeekCalendar(){
       });
     }
 
-    // Overlay logged rehab session (dedupe against a planned rehab icon)
-    if(rehabDates.has(date)&&!sessionIcons.includes('🦵'))sessionIcons.push('🦵');
+    // Overlay logged sessions (dedupe against planned icons of the same type)
+    (loggedByDate[date]||new Set()).forEach(type=>{
+      const ic=trainingIcons[type];
+      if(ic&&!sessionIcons.includes(ic))sessionIcons.push(ic);
+      if(countedSports.includes(type))hasCountedSport=true;
+    });
 
     if(hasCountedSport) activeDays++;
 
@@ -9169,7 +9183,7 @@ function renderHomeWeekCalendar(){
 
   document.getElementById('home-week-calendar').innerHTML=html;
   document.getElementById('home-active-days').innerHTML=`
-    <span class="active-days-label">Active days (Gym, Climb, Tennis, Golf):</span>
+    <span class="active-days-label">Active days (Gym, Climb, Fingerboard, Tennis, Golf):</span>
     <span class="active-days-count">${activeDays}/7</span>
   `;
 }
@@ -9397,13 +9411,16 @@ function getTennisTrends(){
   let thisData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,fin:0,won:0,errors:0,errCount:0,df:0,dfCount:0,eNum:0,ePts:0};
   let prevData={sessions:0,mins:0,rpeSum:0,rpeCount:0,matches:0,fin:0,won:0,errors:0,errCount:0,df:0,dfCount:0,eNum:0,ePts:0};
 
-  // Count tennis sessions from the planner (primary source)
+  // Count tennis sessions from the planner (primary source — most trainings
+  // are never logged as matches). 2026-10-13
   const planData=DB.planData();
+  const plannedTennisDays=new Set();
   Object.keys(planData).forEach(weekKey=>{
     (planData[weekKey]||[]).forEach((d,di)=>{
       const dayDate=d.date||addDays(weekKey,di);
       (d.sessions||[]).forEach(ps=>{
         if(!ps||ps.trainingType!=='tennis')return;
+        plannedTennisDays.add(dayDate);
         const t=_inWindow(dayDate,thisStart,thisEnd)?thisData:_inWindow(dayDate,prevStart,prevEnd)?prevData:null;
         if(!t)return;
         t.sessions++;
@@ -9413,8 +9430,22 @@ function getTennisTrends(){
     });
   });
 
-  // Count formal match logs (Tennis tab + Supabase)
-  const matches=[..._sbMatches,..._getTennisMatches()];
+  // Fallback: a logged match on a day with NO planned tennis still counts as a
+  // session (one per day), using the watch duration. Never double-counts a planned day.
+  const fallbackDays={};
+  _loggedTennisMatches().forEach(m=>{
+    if(plannedTennisDays.has(m.date))return;
+    fallbackDays[m.date]=(fallbackDays[m.date]||0)+m.mins;
+  });
+  Object.keys(fallbackDays).forEach(dayDate=>{
+    const t=_inWindow(dayDate,thisStart,thisEnd)?thisData:_inWindow(dayDate,prevStart,prevEnd)?prevData:null;
+    if(!t)return;
+    t.sessions++;
+    t.mins+=fallbackDays[dayDate];
+  });
+
+  // Count formal match logs (Tennis tab + Supabase) — hidden dropped, split sessions merged
+  const matches=_loggedTennisMatchesFull();
   matches.forEach(m=>{
     const dateStr=(m.match_date||'').slice(0,10);
     const inThis=_inWindow(dateStr,thisStart,thisEnd);

@@ -348,3 +348,10 @@ localStorage is primary. On startup: if local has data → push to Gist. If loca
 
 ### No CDN — no external scripts
 Training Hub loads zero external resources. If the Tennis tab needs Supabase JS SDK, it must either be inlined or loaded via `<script>` tag within the single file. Alternatively, use raw `fetch()` calls to the Supabase REST API directly (no SDK needed).
+
+---
+
+### 2026-10-13 — Home screen now counts all activities
+- **Week calendar + Active days** merge Planner entries with logged gym, climbing, fingerboard (🖐️), tennis matches (watch + manual) and rehab. Same icon never shown twice per day. Fingerboard now counts as an active day.
+- **Tennis Momentum:** the Planner is the primary source for Sessions / Total time / RPE (most trainings are not logged as matches). A logged match on a day with no planned tennis still counts as one session (watch duration). Win rate and errors come from logged matches with hidden matches dropped and split sessions merged (`_loggedTennisMatchesFull()`).
+- "Today's Focus" stays Planner-only (it shows the plan).
