@@ -2647,9 +2647,8 @@ function generatePlan(){
     }
   }
 
-  const estMin=Math.round(totalSec/60);
   const el=document.getElementById('build-result');
-  if(!plan.length){el.innerHTML='<div class="empty"><p>No exercises fit in that time. Try a longer duration.</p></div>';return}
+  if(!plan.length){el.innerHTML='<div class="empty"><p>No exercises fit in that time. Try a longer duration.</p></div>';_buildState=null;return}
 
   const phaseSessionCount=phaseSessions.length;
   const dataSourceLabel=phaseSessionCount>=3
@@ -2665,40 +2664,127 @@ function generatePlan(){
   const staleBanner=assessAge&&assessAge>4
     ?`<div style="font-size:11px;color:#f97316;margin-bottom:6px">⚠ Assessment is ${Math.round(assessAge)} weeks old — consider re-testing</div>`:'';
 
-  el.innerHTML=`
-    <div class="card">
-      <div class="card-title">Suggested Plan · ~${estMin} min · ${intensity}%${_buildPhaseLabel}</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">📊 ${dataSourceLabel}</div>
-      ${assessBanner}${staleBanner}
-      ${plan.map(ex=>{
-        const swFull=suggestWeightFull(ex.name,intensity);
-        const sw=swFull.weight;
-        const wStr=typeof sw==='number'?`${sw} kg`:(sw||'—');
-        const usageCount=freq[ex.name]||0;
-        const usageBadge=usageCount>0?`<span style="font-size:10px;color:var(--muted);margin-left:4px">×${usageCount}</span>`:'';
-        const srcBadge=swFull.source==='assessment'
-          ?`<span style="font-size:10px;color:var(--green,#16a34a);margin-left:4px" title="${swFull.label||''}">📋</span>`:'';
-        return `<div class="ex-row">
-          <div class="ex-row-info">
-            <div class="ex-row-name">${ex.name}${usageBadge}${srcBadge}</div>
-            <div class="ex-row-meta">
-              <span>📦 ${ex.sets} sets</span>
-              <span>🔁 ${ex.reps}</span>
-              <span>⏱ ${ex.rest}</span>
-            </div>
-          </div>
-          <div style="text-align:right;flex-shrink:0">
-            <div class="meta-pill weight">${wStr}</div>
-            <div class="meta-pill intensity" style="margin-top:4px">${intensity}%</div>
-          </div>
-        </div>`
-      }).join('')}
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-ghost" style="flex:1" onclick="document.getElementById('build-result').innerHTML=''">✕ Discard</button>
-        <button class="btn btn-ghost" style="flex:1" onclick="saveGeneratedPlanAsTemplate(${JSON.stringify(plan).replace(/"/g,'&quot;')})">⭐ Save</button>
-        <button class="btn btn-gym" style="flex:2" onclick="loadPlanIntoLog(${JSON.stringify(plan).replace(/"/g,'&quot;')},${intensity})">▶ Start</button>
+  // Editable plan state (2026-10-18): ✕ remove · 🔄 swap within the same area · ＋ add
+  _buildState={plan,intensity,freq,phaseDef:_phaseDef,pool:mainPool,
+    header:{phaseLabel:_buildPhaseLabel,dataSourceLabel,assessBanner,staleBanner},seen:{}};
+  renderBuildPlan();
+}
+
+// ── Suggested plan editing (2026-10-18) ──────────────────────────────────────
+// _buildState holds the generated plan so single exercises can be removed, swapped
+// for another in the same area (most-used first, each tap = next option) or added.
+let _buildState=null;
+function _buildApplyPhase(ex){
+  const d=_buildState&&_buildState.phaseDef;
+  return d&&ex.cat!=='Warm-up'&&!ex.cardio&&ex.type!=='cardio'?{...ex,sets:d.sets,reps:d.reps,rest:d.rest}:{...ex};
+}
+// Same "area" = same category; all Superior variants (machine / no machine) count as one area.
+function _buildSameArea(a,b){
+  if(a.startsWith('Superior')&&b.startsWith('Superior'))return true;
+  return a===b;
+}
+function _buildEstMin(plan){return Math.round(plan.reduce((t,ex)=>t+exTimeSec({...ex,reps:String(ex.reps)}),0)/60);}
+function renderBuildPlan(){
+  const el=document.getElementById('build-result');
+  if(!el)return;
+  const st=_buildState;
+  if(!st){el.innerHTML='';return;}
+  const {plan,intensity,freq,header}=st;
+  const estMin=_buildEstMin(plan);
+  const btn='background:none;border:1px solid var(--border);border-radius:8px;padding:4px 9px;font-size:14px;cursor:pointer;line-height:1.2';
+  const rows=plan.map((ex,i)=>{
+    const swFull=suggestWeightFull(ex.name,intensity);
+    const sw=swFull.weight;
+    const wStr=typeof sw==='number'?`${sw} kg`:(sw||'—');
+    const usageCount=freq[ex.name]||0;
+    const usageBadge=usageCount>0?`<span style="font-size:10px;color:var(--muted);margin-left:4px">×${usageCount}</span>`:'';
+    const srcBadge=swFull.source==='assessment'
+      ?`<span style="font-size:10px;color:var(--green,#16a34a);margin-left:4px" title="${esc(swFull.label||'')}">📋</span>`:'';
+    const canSwap=ex.cat!=='Warm-up';
+    return `<div class="ex-row">
+      <div class="ex-row-info">
+        <div class="ex-row-name">${esc(ex.name)}${usageBadge}${srcBadge}</div>
+        <div class="ex-row-meta">
+          <span>📦 ${ex.sets} sets</span>
+          <span>🔁 ${esc(String(ex.reps))}</span>
+          <span>⏱ ${esc(String(ex.rest))}</span>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          ${canSwap?`<button style="${btn}" onclick="buildSwapEx(${i})" aria-label="Swap ${esc(ex.name)}">🔄 Swap</button>`:''}
+          <button style="${btn}" onclick="buildRemoveEx(${i})" aria-label="Remove ${esc(ex.name)}">✕ Remove</button>
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div class="meta-pill weight">${wStr}</div>
+        <div class="meta-pill intensity" style="margin-top:4px">${intensity}%</div>
       </div>
     </div>`;
+  }).join('');
+  // ＋ Add: every gym exercise not already in the plan, grouped by category
+  const inPlan=new Set(plan.map(e=>e.name));
+  const cats={};
+  EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&e.cat!=='Fingerboard'&&!inPlan.has(e.name))
+    .forEach(e=>{(cats[e.cat]=cats[e.cat]||[]).push(e);});
+  const addOpts=Object.keys(cats).map(c=>`<optgroup label="${esc(c)}">${
+    cats[c].sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0)).map(e=>`<option value="${esc(e.name)}">${esc(e.name)}${freq[e.name]?` ×${freq[e.name]}`:''}</option>`).join('')
+  }</optgroup>`).join('');
+  el.innerHTML=`
+    <div class="card">
+      <div class="card-title">Suggested Plan · ~${estMin} min · ${intensity}%${header.phaseLabel}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">📊 ${header.dataSourceLabel}</div>
+      ${header.assessBanner}${header.staleBanner}
+      ${rows||'<div class="today-empty">No exercises left — add one below</div>'}
+      <select id="build-add-ex" onchange="buildAddEx(this.value)" style="margin:8px 0 0" aria-label="Add an exercise">
+        <option value="">＋ Add an exercise…</option>${addOpts}
+      </select>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-ghost" style="flex:1" onclick="_buildState=null;document.getElementById('build-result').innerHTML=''">✕ Discard</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="buildSavePlan()">⭐ Save</button>
+        <button class="btn btn-gym" style="flex:2" onclick="buildStartPlan()">▶ Start</button>
+      </div>
+    </div>`;
+}
+function buildRemoveEx(i){
+  const st=_buildState;if(!st||!st.plan[i])return;
+  const [gone]=st.plan.splice(i,1);
+  renderBuildPlan();
+  toast(`✕ ${gone.name} removed · ~${_buildEstMin(st.plan)} min`);
+}
+function buildSwapEx(i){
+  const st=_buildState;if(!st||!st.plan[i])return;
+  const cur=st.plan[i];
+  const inPlan=new Set(st.plan.map(e=>e.name));
+  const key='a:'+(cur.cat.startsWith('Superior')?'Superior':cur.cat)+':'+i;
+  const seen=st.seen[key]=st.seen[key]||new Set();
+  seen.add(cur.name);
+  // Candidates: the generator's pool first (respects area + equipment), then the whole library
+  const libExtra=EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&!st.pool.some(p=>p.name===e.name));
+  const ordered=[...st.pool,...libExtra.sort((a,b)=>(st.freq[b.name]||0)-(st.freq[a.name]||0))];
+  let next=ordered.find(e=>_buildSameArea(e.cat,cur.cat)&&!inPlan.has(e.name)&&!seen.has(e.name));
+  if(!next){
+    // Went through every option → start the round again
+    seen.clear();seen.add(cur.name);
+    next=ordered.find(e=>_buildSameArea(e.cat,cur.cat)&&!inPlan.has(e.name)&&e.name!==cur.name);
+  }
+  if(!next){toast(`No other ${cur.cat} exercise to swap in`);return;}
+  st.plan[i]=_buildApplyPhase(next);
+  renderBuildPlan();
+}
+function buildAddEx(name){
+  const st=_buildState;if(!st||!name)return;
+  const ex=EXERCISES.find(e=>e.name===name);
+  if(!ex)return;
+  st.plan.push(_buildApplyPhase(ex));
+  renderBuildPlan();
+  toast(`＋ ${ex.name} added · ~${_buildEstMin(st.plan)} min`);
+}
+function buildSavePlan(){
+  if(!_buildState||!_buildState.plan.length){toast('Add at least one exercise');return;}
+  saveGeneratedPlanAsTemplate(_buildState.plan.map(e=>({...e})));
+}
+function buildStartPlan(){
+  if(!_buildState||!_buildState.plan.length){toast('Add at least one exercise');return;}
+  loadPlanIntoLog(_buildState.plan.map(e=>({...e})),_buildState.intensity);
 }
 
 function saveGeneratedPlanAsTemplate(plan){
