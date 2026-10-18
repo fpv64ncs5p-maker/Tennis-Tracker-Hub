@@ -2560,14 +2560,14 @@ function generatePlan(){
   const _buildIdx=currentGymMacroPhaseIndex(_buildRanges);
   const _bCyc=cycleNow();
   const _buildPhaseLabel=_bCyc
-    ?` · ${_bCyc.week.emoji} ${_bCyc.week.label} week ${_bCyc.idx+1}/${TRAINING_CYCLE.length}`
+    ?` · ${_bCyc.week.emoji} ${_bCyc.week.id==='deload'?_bCyc.week.label:(SEASON_GYM[_bCyc.week.gymPhase]||{}).label} week ${_bCyc.wi+1}/${_bCyc.seg.weeks}`
     :(_buildIdx>=0&&_buildIdx<GYM_MACRO_PHASES.length)
     ?` · ${GYM_MACRO_PHASES[_buildIdx].emoji} ${GYM_MACRO_PHASES[_buildIdx].label} phase`:'';
 
   let phaseStart=null,phaseEnd=null;
   if(_bCyc){
-    // "This phase" = the current 5-week cycle so far
-    phaseStart=new Date(_bCyc.cycleStart+'T12:00:00');phaseStart.setHours(0,0,0,0);
+    // "This phase" = the current season segment (block or deload) so far
+    phaseStart=new Date(_bCyc.segStart+'T12:00:00');phaseStart.setHours(0,0,0,0);
     phaseEnd=new Date(_bCyc.weekEnd+'T12:00:00');phaseEnd.setHours(23,59,59,999);
   }else if(_buildIdx>=0&&_buildRanges&&_buildRanges[_buildIdx]){
     phaseStart=new Date(_buildRanges[_buildIdx].start);phaseStart.setHours(0,0,0,0);
@@ -6230,6 +6230,7 @@ function renderMacrocycle(){
   const phasesList=document.getElementById('macro-phases-list');
   const ranges=macroDateRanges(data);
   const currentIdx=currentMacroPhaseIndex(ranges);
+  if(getSeason()&&_seasonState()!=='ended'){peakCard.innerHTML=seasonMacroTabHtml('climb');phasesList.innerHTML='';return;}
 
   // Start date card
   peakCard.innerHTML=`<div class="card" style="margin-bottom:12px">
@@ -8496,51 +8497,104 @@ function _goalDefaultRest(){
 }
 
 // ══════════════════════════════════════════════════
-//  TRAINING CYCLE (2026-10-18)
+//  SEASON PLAN — TRAINING CYCLE v2 (2026-10-18)
 // ══════════════════════════════════════════════════
-// One repeating 5-week cycle for ALL sports: Deload → Base → Build → Load → Peak.
-// Stored in 'training_cycle' = {startDate:'YYYY-MM-DD' (a Monday, = first Deload week)}.
-// When set it drives the gym phase (% / sets / reps), pre-fills the Planner with
-// Jo's real week, and feeds the Home "Week Check" (rules vs what was logged).
-// Why: after the Oct 2026 physio visit — gym, climbing and planner each had their own
-// plan, nothing connected them, and hard days piled up with no warning.
-const TRAINING_CYCLE=[
-  {id:'deload',label:'Deload',emoji:'😴',color:'#64748b',gymPhase:'deload',goal:'Deload',
-   pct:60,sets:2,reps:'10',rest:"1'30\"",gymMaxMin:45,
-   gym:'2 × 10 @ ~60% · max 45 min',gymFreq:'1–2×/week',climb:'Easy routes only',tennis:'Easier pace',
-   wedDouble:false,maxHard:1,noFingers:true,
-   remove:'Board, fingerboard, wrist loading, anything to failure'},
-  {id:'base',label:'Base',emoji:'🌱',color:'#16a34a',gymPhase:'hypertrophy',goal:'Hypertrophy',
-   pct:70,sets:3,reps:'12',rest:"1'30\"",
-   gym:'3 × 10–12 @ ~70%',climb:'Technique + volume',tennis:'Normal',wedDouble:false,maxHard:3},
-  {id:'build',label:'Build',emoji:'🏗️',color:'#2563eb',gymPhase:'hypertrophy',goal:'Hypertrophy',
-   pct:75,sets:3,reps:'10',rest:"2'",
-   gym:'3 × 8–10 @ ~75%',climb:'Volume + projects',tennis:'Normal',wedDouble:false,maxHard:3},
-  {id:'load',label:'Load',emoji:'⚡',color:'#7c3aed',gymPhase:'strength',goal:'Strength',
-   pct:80,sets:4,reps:'6',rest:"2'30\"",
-   gym:'4 × 6 @ ~80%',climb:'Projects + board',tennis:'Normal',wedDouble:true,maxHard:3},
-  {id:'peak',label:'Peak',emoji:'🏔️',color:'#e11d48',gymPhase:'strength',goal:'Strength',
-   pct:85,sets:4,reps:'5',rest:"3'",
-   gym:'4 × 5 @ ~85%',climb:'Board + hardest routes',tennis:'Normal',wedDouble:true,maxHard:3},
-];
+// One season for gym AND climbing, so both deload in the same week.
+// 'training_cycle' = {v:2, startDate (Monday), leadDeload, blocks:[{gym,climb,weeks}], finalDeload}
+// Timeline: [lead deload] → block → deload → block → … → last block → final deload (1–2 w).
+// A block pairs a gym phase with a climbing phase; 2–5 weeks so no phase runs >5 weeks
+// without a deload. Stretching/shortening a block moves everything after it.
+// When set it drives the gym phase (% / sets / reps), replaces both macro tabs, pre-fills the
+// Planner with Jo's real week and feeds the Home "Week Check".
+// History: v1 (same day) was a fixed repeating 5-week cycle; Jo preferred deloads between
+// phases in the Gym/Climbing macros, with gym + climbing aligned (2026-10-18, option C).
+const SEASON_GYM={
+  hypertrophy:{label:'Hypertrophy',emoji:'📈',color:'#16a34a',goal:'Hypertrophy',lo:70,hi:75,sets:3,reps:'10',rest:"1'30\"",scheme:'3 × 8–12'},
+  strength:   {label:'Strength',emoji:'💪',color:'#2563eb',goal:'Strength',lo:80,hi:85,sets:4,reps:'5',rest:"3'",scheme:'4 × 4–6'},
+  power:      {label:'Power',emoji:'⚡',color:'#7c3aed',goal:'Power',lo:85,hi:90,sets:4,reps:'3',rest:"4'",scheme:'4 × 3 explosive'},
+};
+const SEASON_CLIMB={
+  prep: {label:'Preparation',emoji:'🌱',focus:'General fitness · easy volume',wedDouble:false},
+  base: {label:'Base',emoji:'🏗️',focus:'Technique + volume',wedDouble:false},
+  build:{label:'Build',emoji:'⚡',focus:'Projects + board',wedDouble:true},
+  taper:{label:'Taper',emoji:'📉',focus:'Fewer, quality attempts on target routes',wedDouble:false},
+  peak: {label:'Peak',emoji:'🏔️',focus:'Hardest routes · board',wedDouble:true},
+};
+const SEASON_DELOAD={id:'deload',label:'Deload',emoji:'😴',color:'#64748b',gymPhase:'deload',goal:'Deload',
+  pct:60,sets:2,reps:'10',rest:"1'30\"",gymMaxMin:45,
+  gym:'2 × 10 @ ~60% · max 45 min',gymFreq:'1–2×/week',climb:'Easy routes only',tennis:'Easier pace',
+  wedDouble:false,maxHard:1,noFingers:true,remove:'Board, fingerboard, wrist loading, anything to failure'};
+const SEASON_LIMITS={blockMin:2,blockMax:5,finalMin:1,finalMax:2};
 const CYCLE_RULES={restDays:2,gymTarget:2,hardGymMin:50};
+
+function defaultSeason(startDate){
+  return {v:2,startDate,leadDeload:true,finalDeload:2,
+    blocks:[{gym:'strength',climb:'build',weeks:4},{gym:'power',climb:'peak',weeks:4}]};
+}
+// Returns the season (v2) or null. A v1 {startDate} cycle is upgraded to the default season.
+function getSeason(){
+  const c=DB.trainingCycle();
+  if(!c||!c.startDate)return null;
+  if(!Array.isArray(c.blocks)||!c.blocks.length)return defaultSeason(getMonday(c.startDate));
+  return c;
+}
+function saveSeason(s){DB.saveTrainingCycle(s);_refreshSeasonViews();}
 
 function _daysBetween(a,b){return Math.round((new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/86400000);}
 
-// Cycle week containing dateStr, or null (no cycle / before its start).
+// Season → ordered segments with dates.
+function seasonSegments(s){
+  if(!s)return [];
+  const segs=[];
+  let cur=getMonday(s.startDate);
+  const push=seg=>{seg.start=cur;seg.end=addDays(cur,seg.weeks*7-1);cur=addDays(cur,seg.weeks*7);segs.push(seg);};
+  if(s.leadDeload!==false)push({type:'deload',weeks:1,lead:true});
+  s.blocks.forEach((b,i)=>{
+    push({type:'block',weeks:b.weeks,gym:b.gym,climb:b.climb,blockIdx:i});
+    const last=i===s.blocks.length-1;
+    push({type:'deload',weeks:last?(s.finalDeload||2):1,final:last,afterBlock:i});
+  });
+  return segs;
+}
+
+// Rules for week wi (0-based) of a segment.
+function seasonWeekDef(seg,wi){
+  if(seg.type==='deload')return {...SEASON_DELOAD,label:seg.final?'Final deload':'Deload'};
+  const g=SEASON_GYM[seg.gym]||SEASON_GYM.hypertrophy;
+  const c=SEASON_CLIMB[seg.climb]||SEASON_CLIMB.base;
+  const pct=seg.weeks>1?Math.round(g.lo+(g.hi-g.lo)*wi/(seg.weeks-1)):g.lo;
+  return {id:'block',label:`${g.label} + ${c.label}`,emoji:g.emoji,climbEmoji:c.emoji,color:g.color,
+    gymPhase:seg.gym,climbPhase:seg.climb,goal:g.goal,pct,sets:g.sets,reps:g.reps,rest:g.rest,
+    gym:`${g.scheme} @ ~${pct}%`,gymFreq:'2×/week',climb:`${c.emoji} ${c.label} — ${c.focus}`,tennis:'Normal',
+    wedDouble:c.wedDouble,maxHard:3};
+}
+
+// Season week containing dateStr, or null (no season / before start / after the final deload).
 function cycleWeekFor(dateStr){
-  const c=DB.trainingCycle();
-  if(!c||!c.startDate||!dateStr)return null;
-  const start=getMonday(c.startDate);
+  const s=getSeason();
+  if(!s||!dateStr)return null;
   const mon=getMonday(dateStr);
-  const weeks=Math.floor(_daysBetween(start,mon)/7);
-  if(weeks<0)return null;
-  const n=TRAINING_CYCLE.length;
-  const idx=weeks%n;
-  return {idx,week:TRAINING_CYCLE[idx],cycleNo:Math.floor(weeks/n)+1,
-    weekStart:mon,weekEnd:addDays(mon,6),cycleStart:addDays(start,Math.floor(weeks/n)*n*7),start};
+  const segs=seasonSegments(s);
+  for(let i=0;i<segs.length;i++){
+    const seg=segs[i];
+    if(mon>=seg.start&&mon<=seg.end){
+      const wi=Math.floor(_daysBetween(seg.start,mon)/7);
+      return {seg,segIdx:i,segs,wi,week:seasonWeekDef(seg,wi),
+        weekStart:mon,weekEnd:addDays(mon,6),segStart:seg.start,season:s};
+    }
+  }
+  return null;
 }
 function cycleNow(){try{return cycleWeekFor(today());}catch(e){return null;}}
+function _seasonState(){
+  const s=getSeason();
+  if(!s)return 'none';
+  const segs=seasonSegments(s);
+  const mon=getMonday(today());
+  if(mon<segs[0].start)return 'future';
+  if(mon>segs[segs.length-1].end)return 'ended';
+  return 'active';
+}
 
 function _defaultCycleStart(){
   const t=today();
@@ -8549,22 +8603,56 @@ function _defaultCycleStart(){
 }
 function _fmtShort(d){return new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'});}
 
-function saveCycleStart(val){
-  if(!val){toast('Pick a start date');return;}
-  DB.saveTrainingCycle({startDate:getMonday(val),setAt:today()});
-  _cycleSettingsOpen=false;
-  toast('🔄 Training cycle set — week 1 is a Deload');
-  renderHome();
+// ── Season edits (each saves + re-renders every view) ────────────────────────
+function startSeason(dateVal){
+  if(!dateVal){toast('Pick a start date');return;}
+  const old=getSeason();
+  const s=old&&_seasonState()!=='ended'?{...old,startDate:getMonday(dateVal)}:defaultSeason(getMonday(dateVal));
+  _seasonEditOpen=false;
+  saveSeason(s);
+  toast('🔄 Season plan saved');
+}
+function seasonSetStart(val){const s=getSeason();if(!s||!val)return;s.startDate=getMonday(val);saveSeason(s);}
+function seasonToggleLead(){const s=getSeason();if(!s)return;s.leadDeload=s.leadDeload===false;saveSeason(s);}
+function seasonBlockWeeks(i,d){
+  const s=getSeason();if(!s||!s.blocks[i])return;
+  const n=s.blocks[i].weeks+d;
+  if(n<SEASON_LIMITS.blockMin||n>SEASON_LIMITS.blockMax){toast(`A block is ${SEASON_LIMITS.blockMin}–${SEASON_LIMITS.blockMax} weeks — longer needs a deload in between (add another block)`);return;}
+  s.blocks[i].weeks=n;saveSeason(s);
+}
+function seasonBlockPhase(i,sport,val){const s=getSeason();if(!s||!s.blocks[i])return;s.blocks[i][sport]=val;saveSeason(s);}
+function seasonAddBlock(){
+  const s=getSeason();if(!s)return;
+  const last=s.blocks[s.blocks.length-1]||{gym:'hypertrophy',climb:'base'};
+  s.blocks.push({gym:last.gym,climb:last.climb,weeks:4});saveSeason(s);
+}
+function seasonRemoveBlock(i){
+  const s=getSeason();if(!s||s.blocks.length<=1)return;
+  if(!confirm('Remove this block? Everything after it moves earlier.'))return;
+  s.blocks.splice(i,1);saveSeason(s);
+}
+function seasonFinalWeeks(d){
+  const s=getSeason();if(!s)return;
+  const n=(s.finalDeload||2)+d;
+  if(n<SEASON_LIMITS.finalMin||n>SEASON_LIMITS.finalMax)return;
+  s.finalDeload=n;saveSeason(s);
 }
 function turnOffCycle(){
-  if(!confirm('Turn off the training cycle? Your logged sessions and planner stay as they are.'))return;
+  if(!confirm('Turn off the season plan? Your logged sessions and planner stay as they are, and the old Gym/Climbing macros come back.'))return;
   DB.set('training_cycle',null);
-  _cycleSettingsOpen=false;
-  renderHome();
+  _seasonEditOpen=false;
+  _refreshSeasonViews();
 }
-let _cycleSettingsOpen=false;
-function toggleCycleSettings(){_cycleSettingsOpen=!_cycleSettingsOpen;renderHomeCycle();}
+let _seasonEditOpen=false;
+function toggleCycleSettings(){_seasonEditOpen=!_seasonEditOpen;_refreshSeasonViews();}
+function _refreshSeasonViews(){
+  try{renderHomeCycle();renderHomeWeekCheck();}catch(e){}
+  try{if(document.getElementById('gym-macro')&&document.getElementById('gym-macro').style.display!=='none')renderGymMacrocycle();}catch(e){}
+  try{if(document.getElementById('climb-macro')&&document.getElementById('climb-macro').style.display!=='none')renderMacrocycle();}catch(e){}
+  try{if(currentWeekStart&&document.getElementById('planner-cycle'))renderPlannerCycle(currentWeekStart);}catch(e){}
+}
 
+// ── Rendering ────────────────────────────────────────────────────────────────
 function _cycleRulesHtml(w){
   const row=(icon,label,val)=>`<div style="display:flex;gap:8px;font-size:13px;padding:3px 0"><span style="width:20px;text-align:center">${icon}</span><span style="color:var(--muted);min-width:78px">${label}</span><span style="font-weight:600">${val}</span></div>`;
   return row('💪','Gym',`${w.gym} · ${w.gymFreq||'2×/week'}`)
@@ -8573,64 +8661,134 @@ function _cycleRulesHtml(w){
     +row('📅','Wednesday',w.wedDouble?'Double OK (climb first, then tennis)':'Tennis only — no double')
     +(w.remove?row('🚫','Skip',w.remove):'');
 }
+function _segLabel(seg){
+  if(seg.type==='deload')return `😴 ${seg.final?'Final deload':'Deload'}`;
+  const g=SEASON_GYM[seg.gym]||{},c=SEASON_CLIMB[seg.climb]||{};
+  return `${g.emoji||''} ${g.label||seg.gym} + ${c.emoji||''} ${c.label||seg.climb}`;
+}
+function _segColor(seg){return seg.type==='deload'?'#94a3b8':(SEASON_GYM[seg.gym]||{}).color||'#64748b';}
+// Proportional timeline bar of the whole season, current week marked.
+function _seasonBarHtml(segs,curMon){
+  const total=segs.reduce((a,s)=>a+s.weeks,0)||1;
+  return `<div style="display:flex;gap:2px;margin:10px 0 4px;height:8px">${segs.map(s=>{
+    const cur=curMon&&curMon>=s.start&&curMon<=s.end;
+    const past=curMon&&s.end<curMon;
+    return `<div title="${esc(_segLabel(s))}" style="flex:${s.weeks};border-radius:3px;background:${_segColor(s)};opacity:${cur?1:past?.35:.6};${cur?'box-shadow:0 0 0 2px #fff,0 0 0 3px '+_segColor(s):''}"></div>`;
+  }).join('')}</div>
+  <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted)"><span>${_fmtShort(segs[0].start)}</span><span>${_fmtShort(segs[segs.length-1].end)}</span></div>`;
+}
+// The "where am I" card — used on Home and in the Planner.
+function seasonWeekCardHtml(cw,opts={}){
+  const w=cw.week,seg=cw.seg;
+  const next=cw.segs[cw.segIdx+1];
+  const sub=`Week ${cw.wi+1}/${seg.weeks} · ${_fmtShort(cw.weekStart)} – ${_fmtShort(cw.weekEnd)}`;
+  const title=seg.type==='deload'?`😴 ${w.label} week`:`${w.emoji} ${(SEASON_GYM[seg.gym]||{}).label} + ${w.climbEmoji} ${(SEASON_CLIMB[seg.climb]||{}).label}`;
+  return `<div class="card" style="border-left:4px solid ${w.color}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <div>
+        <div style="font-size:${opts.compact?15:17}px;font-weight:800;color:${w.color}">${title}</div>
+        <div class="text-xs-muted">${sub}</div>
+      </div>
+      ${opts.settings?`<button class="btn btn-ghost btn-sm" onclick="toggleCycleSettings()" aria-label="Season settings">⚙️</button>`:''}
+    </div>
+    ${_seasonBarHtml(cw.segs,cw.weekStart)}
+    <div style="margin-top:6px">${_cycleRulesHtml(w)}</div>
+    <div class="text-xs-muted" style="margin-top:6px">${next?`Next: ${_segLabel(next)} from ${_fmtShort(next.start)} (${next.weeks} wk${next.weeks>1?'s':''})`:'Last week of the season — plan the next one in ⚙️'}</div>
+    ${opts.extra||''}
+  </div>`;
+}
+
+// Editor — shown on Home (⚙️), Gym → Macro and Climbing → Macro.
+function seasonEditorHtml(){
+  const s=getSeason();
+  if(!s)return '';
+  const segs=seasonSegments(s);
+  const gymOpts=v=>Object.entries(SEASON_GYM).map(([k,g])=>`<option value="${k}"${k===v?' selected':''}>${g.emoji} ${g.label}</option>`).join('');
+  const climbOpts=v=>Object.entries(SEASON_CLIMB).map(([k,c])=>`<option value="${k}"${k===v?' selected':''}>${c.emoji} ${c.label}</option>`).join('');
+  const mon=getMonday(today());
+  const rows=segs.map(seg=>{
+    const cur=mon>=seg.start&&mon<=seg.end;
+    const dates=`${_fmtShort(seg.start)} – ${_fmtShort(seg.end)}`;
+    const badge=cur?`<span style="font-size:10px;background:${_segColor(seg)};color:#fff;padding:1px 7px;border-radius:9px;font-weight:700;margin-left:6px">NOW</span>`:seg.end<mon?`<span class="text-xs-muted" style="margin-left:6px">done ✓</span>`:'';
+    if(seg.type==='deload'){
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-radius:var(--radius-sm);background:#94a3b81a;margin-bottom:6px">
+        <div><div style="font-weight:700;font-size:13px">😴 ${seg.final?'Final deload':'Deload'}${badge}</div><div class="text-xs-muted">${dates} · ${seg.weeks} wk${seg.weeks>1?'s':''}</div></div>
+        ${seg.final?`<div style="display:flex;align-items:center;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="seasonFinalWeeks(-1)" aria-label="Shorter">−</button><b>${seg.weeks}w</b>
+          <button class="btn btn-ghost btn-sm" onclick="seasonFinalWeeks(1)" aria-label="Longer">+</button></div>`
+          :seg.lead?`<button class="btn btn-ghost btn-sm" onclick="seasonToggleLead()">Remove</button>`:''}
+      </div>`;
+    }
+    const i=seg.blockIdx;
+    return `<div style="padding:10px;border-radius:var(--radius-sm);border:1px solid ${_segColor(seg)}55;border-left:4px solid ${_segColor(seg)};margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
+        <div style="font-weight:700;font-size:13px">Block ${i+1}${badge}<div class="text-xs-muted" style="font-weight:500">${dates}</div></div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="seasonBlockWeeks(${i},-1)" aria-label="Shorter">−</button><b>${seg.weeks}w</b>
+          <button class="btn btn-ghost btn-sm" onclick="seasonBlockWeeks(${i},1)" aria-label="Longer">+</button>
+          ${s.blocks.length>1?`<button class="btn btn-ghost btn-sm" onclick="seasonRemoveBlock(${i})" aria-label="Remove block">✕</button>`:''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <select style="flex:1;margin-bottom:0" onchange="seasonBlockPhase(${i},'gym',this.value)" aria-label="Gym phase">${gymOpts(seg.gym)}</select>
+        <select style="flex:1;margin-bottom:0" onchange="seasonBlockPhase(${i},'climb',this.value)" aria-label="Climbing phase">${climbOpts(seg.climb)}</select>
+      </div>
+    </div>`;
+  }).join('');
+  return `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+    <label style="font-size:12px">Season start (a Monday)</label>
+    <input type="date" value="${getMonday(s.startDate)}" onchange="seasonSetStart(this.value)" style="margin-bottom:8px">
+    ${s.leadDeload===false?`<button class="btn btn-ghost btn-sm" style="margin-bottom:8px" onclick="seasonToggleLead()">+ Start with a deload week</button>`:''}
+    ${rows}
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="seasonAddBlock()">+ Add block</button>
+      <button class="btn btn-ghost btn-sm" onclick="turnOffCycle()">Turn off</button>
+    </div>
+    <div class="text-xs-muted" style="margin-top:6px">A deload week is added after every block automatically. Blocks are ${SEASON_LIMITS.blockMin}–${SEASON_LIMITS.blockMax} weeks.</div>
+  </div>`;
+}
 
 function renderHomeCycle(){
   const el=document.getElementById('home-cycle');
   if(!el)return;
-  const c=DB.trainingCycle();
-  const settings=(cur)=>`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-      <label style="font-size:12px">Cycle start — the Monday of a <b>Deload</b> week</label>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input type="date" id="cycle-start-input" value="${cur}" style="flex:1;min-width:140px;margin-bottom:0">
-        <button class="btn btn-sm" onclick="saveCycleStart(document.getElementById('cycle-start-input').value)">Save</button>
-        ${c?`<button class="btn btn-ghost btn-sm" onclick="turnOffCycle()">Turn off</button>`:''}
-      </div>
-      <div class="text-xs-muted" style="margin-top:6px">Order: ${TRAINING_CYCLE.map(w=>w.emoji+' '+w.label).join(' → ')}, then it repeats.</div>
-    </div>`;
-  if(!c||!c.startDate){
+  const state=_seasonState();
+  if(state==='none'||state==='ended'){
+    const prev=seasonSegments(defaultSeason(_defaultCycleStart()));
     el.innerHTML=`<div class="card">
-      <div style="font-size:14px;font-weight:700;margin-bottom:4px">🔄 Set up your training cycle</div>
-      <div style="font-size:13px;color:var(--muted)">4 training weeks + 1 deload week, for all your sports. The app then tells you which week you're in and checks your week against the rules.</div>
-      ${settings(_defaultCycleStart())}
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px">${state==='ended'?'🏁 Season finished — plan the next one':'🔄 Set up your season plan'}</div>
+      <div style="font-size:13px;color:var(--muted)">Gym and climbing phases in blocks, with a shared deload week after each block and a longer deload at the end.</div>
+      <div style="margin:8px 0">${prev.map(s=>`<div style="font-size:12px;padding:2px 0"><b>${_segLabel(s)}</b> <span class="text-xs-muted">· ${_fmtShort(s.start)} – ${_fmtShort(s.end)}</span></div>`).join('')}</div>
+      <label style="font-size:12px">Start (Monday of the first deload week)</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="date" id="cycle-start-input" value="${_defaultCycleStart()}" style="flex:1;margin-bottom:0">
+        <button class="btn btn-sm" onclick="startSeason(document.getElementById('cycle-start-input').value)">Start</button>
+      </div>
+      <div class="text-xs-muted" style="margin-top:6px">You can change phases and stretch or shorten blocks afterwards (⚙️).</div>
     </div>`;
     return;
   }
-  const cw=cycleNow();
-  if(!cw){
+  if(state==='future'){
+    const s=getSeason(),first=seasonSegments(s)[0];
     el.innerHTML=`<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <div style="font-size:14px;font-weight:700">🔄 Cycle starts ${fmtDay(getMonday(c.startDate))}</div>
-        <button class="btn btn-ghost btn-sm" onclick="toggleCycleSettings()" aria-label="Cycle settings">⚙️</button>
+        <div style="font-size:14px;font-weight:700">🔄 Season starts ${fmtDay(first.start)}</div>
+        <button class="btn btn-ghost btn-sm" onclick="toggleCycleSettings()" aria-label="Season settings">⚙️</button>
       </div>
-      <div style="font-size:13px;color:var(--muted);margin-top:4px">First week: ${TRAINING_CYCLE[0].emoji} ${TRAINING_CYCLE[0].label}</div>
-      ${_cycleRulesHtml(TRAINING_CYCLE[0])}
-      ${_cycleSettingsOpen?settings(getMonday(c.startDate)):''}
+      <div style="font-size:13px;color:var(--muted);margin-top:4px">First: ${_segLabel(first)}</div>
+      ${_cycleRulesHtml(seasonWeekDef(first,0))}
+      ${_seasonEditOpen?seasonEditorHtml():''}
     </div>`;
     return;
   }
-  const w=cw.week,n=TRAINING_CYCLE.length;
-  const next=TRAINING_CYCLE[(cw.idx+1)%n];
-  const nextDeloadIn=(n-cw.idx)%n||n;
-  const dots=TRAINING_CYCLE.map((x,i)=>{
-    const cur=i===cw.idx,past=i<cw.idx;
-    return `<div style="flex:1;text-align:center">
-      <div style="height:6px;border-radius:3px;background:${cur?x.color:past?x.color+'66':'var(--border)'}"></div>
-      <div style="font-size:10px;margin-top:3px;color:${cur?x.color:'var(--muted)'};font-weight:${cur?800:500}">${x.emoji} ${x.label}</div>
-    </div>`;
-  }).join('');
-  el.innerHTML=`<div class="card" style="border-left:4px solid ${w.color}">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-      <div>
-        <div style="font-size:17px;font-weight:800;color:${w.color}">${w.emoji} ${w.label} week</div>
-        <div class="text-xs-muted">Week ${cw.idx+1}/${n} · cycle ${cw.cycleNo} · ${_fmtShort(cw.weekStart)} – ${_fmtShort(cw.weekEnd)}</div>
-      </div>
-      <button class="btn btn-ghost btn-sm" onclick="toggleCycleSettings()" aria-label="Cycle settings">⚙️</button>
-    </div>
-    <div style="display:flex;gap:4px;margin:10px 0 8px">${dots}</div>
-    ${_cycleRulesHtml(w)}
-    <div class="text-xs-muted" style="margin-top:6px">Next: ${next.emoji} ${next.label} from ${_fmtShort(addDays(cw.weekStart,7))}${w.id!=='deload'?` · next deload in ${nextDeloadIn} week${nextDeloadIn>1?'s':''}`:''}</div>
-    ${_cycleSettingsOpen?settings(getMonday(c.startDate)):''}
-  </div>`;
+  el.innerHTML=seasonWeekCardHtml(cycleNow(),{settings:true,extra:_seasonEditOpen?seasonEditorHtml():''});
+}
+
+// Gym → Macro and Climbing → Macro: the season replaces the old per-sport macro while it's on.
+function seasonMacroTabHtml(sport){
+  const cw=cycleNow();
+  const intro=`<div class="card" style="margin-bottom:12px;font-size:13px">🔄 <b>Season plan is on</b> — gym and climbing share one plan with a deload week after every block. ${sport==='gym'?'Gym':'Climbing'} phases are set per block below. <span class="text-xs-muted">(The old ${sport} macro dates are kept and come back if you turn the season off.)</span></div>`;
+  const now=cw?seasonWeekCardHtml(cw,{compact:true}):'';
+  return intro+now+`<div class="card">${seasonEditorHtml()}</div>`;
 }
 
 function cycleGymBannerHtml(cw){
@@ -8638,21 +8796,21 @@ function cycleGymBannerHtml(cw){
   return `<div style="background:${w.color}12;border:1px solid ${w.color}40;border-left:3px solid ${w.color};border-radius:var(--radius-sm);padding:10px 14px">
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
       <span style="font-size:18px">${w.emoji}</span>
-      <span style="font-weight:700;font-size:14px;color:${w.color}">${w.label} week</span>
-      <span style="font-size:11px;background:${w.color};color:#fff;padding:1px 8px;border-radius:10px;font-weight:700">Wk ${cw.idx+1}/${TRAINING_CYCLE.length}</span>
+      <span style="font-weight:700;font-size:14px;color:${w.color}">${w.id==='deload'?w.label+' week':(SEASON_GYM[w.gymPhase]||{}).label+' phase'}</span>
+      <span style="font-size:11px;background:${w.color};color:#fff;padding:1px 8px;border-radius:10px;font-weight:700">Wk ${cw.wi+1}/${cw.seg.weeks}</span>
     </div>
     <div style="font-size:13px;font-weight:600;margin-top:5px">${w.gym} · rest ${w.rest}</div>
     ${w.remove?`<div style="font-size:12px;color:var(--muted);margin-top:3px">🚫 ${w.remove}</div>`:''}
   </div>`;
 }
 
-// ── Planner: Jo's real week per cycle week ────────────────────────────────────
+// ── Planner: Jo's real week per season week ───────────────────────────────────
 // Work days: sessions[0] = before work, sessions[1+] = after work (planner convention).
 function _cs(type,sub,dur){return {trainingType:type,trainingSubtype:sub,duration:dur?String(dur):'',rpe:'',actual:''};}
 function _csEmpty(){return {trainingType:'',trainingSubtype:'',duration:'',rpe:'',actual:''};}
 function cycleDayPlans(w){
   const dl=w.id==='deload';
-  const wedClimb=w.id==='peak'?'Board + Projects':'Projects + Strength';
+  const wedClimb=w.climbPhase==='peak'?'Board + Projects':'Projects + Strength';
   return [
     {day:'Monday',work:true,type:dl?'Tennis (easy)':'Gym upper + Tennis',
      sessions:dl?[_csEmpty(),_cs('tennis','Training Session',90)]:[_cs('gym','Superior + Core',60),_cs('tennis','Training Session',120)]},
@@ -8673,8 +8831,8 @@ function cycleWeekEntries(weekStart,w){
     sessions:p.sessions.map(s=>({...s})),_cycle:w.id
   }));
 }
-// A day is "empty" when nothing is planned on it and it wasn't filled from the cycle
-// (cycle rest days like Friday have no sessions on purpose).
+// A day is "empty" when nothing is planned on it and it wasn't filled from the season
+// (season rest days like Friday have no sessions on purpose).
 function _planDayEmpty(d){return !d.done&&!d._cycle&&!(d.sessions||[]).some(s=>s&&s.trainingType);}
 function _planWeekUntouched(days){
   return Array.isArray(days)&&days.length===7&&!days.some(d=>d&&d._cycle)&&days.every(d=>d&&_planDayEmpty(d));
@@ -8701,25 +8859,18 @@ function fillWeekFromCycle(weekKey){
   const n=_applyCycleToWeek(data[weekKey],weekKey,cw.week);
   DB.savePlan(data);
   renderPlanner();
-  toast(n?`${cw.week.emoji} ${n} empty day${n>1?'s':''} filled from the ${cw.week.label} plan`:'No empty days to fill — your own plans were kept');
+  toast(n?`${cw.week.emoji} ${n} empty day${n>1?'s':''} filled from the plan`:'No empty days to fill — your own plans were kept');
 }
+// Planner: the same "where am I" card as Home, for the week being viewed.
 function renderPlannerCycle(weekKey){
   const el=document.getElementById('planner-cycle');
   if(!el)return;
   const cw=cycleWeekFor(weekKey);
   if(!cw){el.innerHTML='';return;}
-  const w=cw.week;
   const days=(DB.planData()[weekKey])||[];
   const empty=days.filter(d=>d&&_planDayEmpty(d)).length;
-  el.innerHTML=`<div class="card" style="border-left:4px solid ${w.color};padding:10px 14px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <div>
-        <div style="font-weight:800;color:${w.color}">${w.emoji} ${w.label} week <span class="text-xs-muted" style="font-weight:600">· ${cw.idx+1}/${TRAINING_CYCLE.length}</span></div>
-        <div class="text-xs-muted">💪 ${w.gym} · 🧗 ${w.climb} · 📅 Wed ${w.wedDouble?'double':'tennis only'}</div>
-      </div>
-      ${empty?`<button class="btn btn-ghost btn-sm" onclick="fillWeekFromCycle('${weekKey}')">📋 Fill ${empty} empty day${empty>1?'s':''}</button>`:''}
-    </div>
-  </div>`;
+  const fill=empty?`<button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%" onclick="fillWeekFromCycle('${weekKey}')">📋 Fill ${empty} empty day${empty>1?'s':''} from the plan</button>`:'';
+  el.innerHTML=seasonWeekCardHtml(cw,{compact:true,extra:fill});
 }
 
 // ── Week Check: what was logged vs the cycle rules ────────────────────────────
@@ -8834,7 +8985,7 @@ function computeWeekCheck(todayStr){
   past.forEach(d=>{
     const a=act[d]||[];
     if(!w.wedDouble&&a.some(x=>x.kind==='tennis')&&a.some(x=>x.kind==='climb'||x.kind==='fb'))
-      warn(`Climbing + tennis on ${_dow(d)} — double days only in Load/Peak weeks.`);
+      warn(`Climbing + tennis on ${_dow(d)} — double days only in Build/Peak climbing weeks.`);
   });
 
   // 5. Legs ≥2 days before tennis (calves / Achilles)
@@ -9049,10 +9200,9 @@ function renderGymMacrocycle(){
   const phasesList=document.getElementById('gym-macro-phases-list');
   const ranges=gymMacroDateRanges(data);
   const currentIdx=currentGymMacroPhaseIndex(ranges);
-  const _cycNote=DB.trainingCycle()
-    ?`<div class="card" style="margin-bottom:12px;border-left:4px solid #64748b;font-size:13px">🔄 <b>Training Cycle is on</b> — your weekly phase (sets, reps, %) now comes from the 5-week cycle on Home, not from the dates below.</div>`:'';
+  if(getSeason()&&_seasonState()!=='ended'){startCard.innerHTML=seasonMacroTabHtml('gym');phasesList.innerHTML='';return;}
 
-  startCard.innerHTML=_cycNote+`<div class="card" style="margin-bottom:12px">
+  startCard.innerHTML=`<div class="card" style="margin-bottom:12px">
     <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Gym Cycle Start Date</div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <input type="date" id="gym-macro-start-input" value="${data.startDate||''}"
