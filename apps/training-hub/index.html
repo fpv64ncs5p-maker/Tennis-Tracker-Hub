@@ -7492,6 +7492,11 @@ function renderPlanner(){
   // Week summary
   const workDays=days.filter(d=>d.work).length;
   const doneDays=days.filter(d=>d.done).length;
+  // Rest = no training planned (Rest-type sessions don't count as training);
+  // Full rest = rest AND not a work day (2026-10-19, Jo).
+  const _isRestDay=d=>!(d.sessions||[]).some(s=>s&&s.trainingType&&s.trainingType!=='rest');
+  const restDays=days.filter(_isRestDay).length;
+  const fullRestDays=days.filter(d=>_isRestDay(d)&&!d.work).length;
   const typeCounts={};
   days.forEach(d=>{
     (d.sessions||[]).forEach(s=>{
@@ -7509,7 +7514,8 @@ function renderPlanner(){
     <span class="week-summary-chip" style="border-color:#388bfd44;color:#388bfd;background:#388bfd11">💼 ${workDays} work</span>
     <span class="week-summary-chip" style="border-color:#2ea04344;color:#2ea043;background:#2ea04311">✅ ${doneDays} done</span>
     ${typeChips}
-    <span class="week-summary-chip">${7-workDays} free</span>
+    <span class="week-summary-chip" title="Days not marked as work">🏖 ${7-workDays} off work</span>
+    <span class="week-summary-chip" style="border-color:#64748b44;color:#64748b;background:#64748b11" title="Days with no training planned${fullRestDays?` · ${fullRestDays} full rest (no work either)`:''}">😴 ${restDays} rest${fullRestDays?` · ${fullRestDays} full`:''}</span>
   </div>`+days.map((d,i)=>{
     const sessions=d.sessions||[];
     const activeSessions=sessions.filter(s=>s&&s.trainingType);
@@ -7562,9 +7568,10 @@ function renderPlanner(){
           ${(()=>{
             if(!d.work){
               // Off day: just show activities or placeholder
-              return activeSessions.length
-                ?`<span class="day-activity-badge" style="color:${firstColor}">${label}</span>`
-                :`<span style="color:var(--muted2);font-style:italic">Tap to plan</span>`;
+              // No work and no training → Full rest (2026-10-19)
+              const _onlyRest=!activeSessions.some(s=>s.trainingType!=='rest');
+              if(_onlyRest)return `<span class="day-activity-badge" style="color:#64748b">😴 Full rest</span>`;
+              return `<span class="day-activity-badge" style="color:${firstColor}">${label}</span>`;
             }
             // Work day: build timeline  morning → 💼 work → after work
             const beforeSessions=sessions.slice(0,1).filter(s=>s&&s.trainingType);
