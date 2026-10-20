@@ -4491,6 +4491,45 @@ const CLIMB_TEMPLATES=[...CLIMB_DOC_TEMPLATES,
 // Real route count (the doc's "15x"/"10x" label is not always accurate).
 function tmplRouteCount(t){return t.warmup.length+t.sets.reduce((n,s)=>n+s.length,0)+t.cooldown.length;}
 
+/* ── Template size picker (2026-10-20, Jo) ───────────────────────────────────
+   Total 10 / 15 / 20 routes (or "Doc" = as written), warm-up 4–8, cool-down on/off.
+   Warm-up = a gentle ramp ending at the template's top warm-up grade (max 4 grades
+   below it). Cool-down = the template's own (max 2). What's left goes into sets of
+   ~3 (as even as possible); the doc's set pattern is repeated if more sets are needed
+   and the last sets are dropped if fewer. Settings are a per-device convenience. */
+const TMPL_TOTALS=[null,10,15,20], TMPL_WARMS=[4,5,6,7,8];
+function _tmplSize(){
+  try{const v=JSON.parse(localStorage.getItem('_climb_tmpl_size')||'null');if(v)return {total:v.total??null,warm:v.warm||6,cool:v.cool!==false};}catch(e){}
+  return {total:null,warm:6,cool:true};
+}
+function setTmplSize(k,v){
+  const z=_tmplSize();z[k]=v;
+  try{localStorage.setItem('_climb_tmpl_size',JSON.stringify(z));}catch(e){}
+  renderClimbTemplates();
+}
+function sizeTemplate(t,z){
+  if(!z||!z.total)return t;
+  const idx=g=>CLIMB_GRADES.indexOf(g);
+  const top=[...t.warmup].sort((a,b)=>idx(b)-idx(a))[0]||shiftGrade(t.grade,-4);
+  // Ramp of up to 4 grades below the top warm-up grade, never below 4a
+  const span=Math.min(z.warm-1,4,Math.max(0,idx(top)-idx('4a')));
+  const warmup=[...Array(z.warm)].map((_,k)=>shiftGrade(top,-Math.round(span*(z.warm-1-k)/Math.max(1,z.warm-1))));
+  const cooldown=z.cool?(t.cooldown.length?t.cooldown.slice(0,2):[shiftGrade(top,-1),shiftGrade(top,-2)]):[];
+  const main=Math.max(3,z.total-warmup.length-cooldown.length);
+  const nSets=Math.ceil(main/3);
+  const base=Math.floor(main/nSets),extra=main%nSets;
+  const src=t.sets.length?t.sets:[[t.grade]];
+  const sets=[...Array(nSets)].map((_,i)=>{
+    const pat=src[i%src.length];
+    const n=base+(i<extra?1:0);
+    if(n>=pat.length)return [...Array(n)].map((_,j)=>pat[j%pat.length]);
+    // Fewer routes than the doc's set: keep its hardest ones, in the doc's order
+    const keep=pat.map((g,j)=>({g,j})).sort((a,b)=>idx(b.g)-idx(a.g)).slice(0,n).sort((a,b)=>a.j-b.j);
+    return keep.map(x=>x.g);
+  });
+  return {...t,warmup,sets,cooldown,sized:warmup.length+main+cooldown.length};
+}
+
 /* ── SESSION TEMPLATES AS A TICK-OFF PLAN (2026-08-05) ────────────────────
    Applying a template used to write the whole thing straight into the log as
    if it had already been climbed (result 'Repeat'), so 15 routes and ~200m
@@ -4504,14 +4543,15 @@ function tmplRouteCount(t){return t.warmup.length+t.sets.reduce((n,s)=>n+s.lengt
 let _planSeq=0;
 
 function applyClimbTemplate(id){
-  const t=CLIMB_TEMPLATES.find(x=>x.id===id);
-  if(!t)return;
+  const t0=CLIMB_TEMPLATES.find(x=>x.id===id);
+  if(!t0)return;
+  const t=sizeTemplate(t0,_tmplSize());
   if(climbSession.plan&&climbSession.plan.items.some(i=>i.done)
      &&!confirm('Load a different plan? Routes you already ticked stay logged in the session.'))return;
   climbSession.plan={
     templateId:t.id,
     // `set` is the doc's Set 1–4 = one burn. 0 on warm-up/cool-down.
-    label:`${t.grade} · ${t.type}`,
+    label:`${t.grade} · ${t.type}${t.sized?` · ${t.sized} routes`:''}`,
     // The sessions are discipline-neutral, so the plan carries the choice and
     // every burn it opens inherits it. Keep whatever was already picked.
     mode:(climbSession.plan&&climbSession.plan.mode)||'Lead',
@@ -4522,6 +4562,7 @@ function applyClimbTemplate(id){
     ]
   };
   _planPickerOpen=false;
+  _planEditMode=false;
   markDirty('climb');
   renderClimbTemplates();
   renderClimbBlocks();
@@ -4617,6 +4658,56 @@ function clearClimbPlan(){
 let _planPickerOpen=false;
 function togglePlanPicker(){_planPickerOpen=!_planPickerOpen;renderClimbTemplates();}
 
+/* ── Editing a loaded plan (2026-10-20, Jo) ─────────────────────────────────
+   ✏️ Edit turns the unticked chips into grade pickers with ✕, adds a ＋ per row
+   (warm-up, each set, cool-down — cool-down shows even when empty) and "＋ Set".
+   Ticked routes are already logged, so they can't be removed or changed here
+   (untick first). Items keep their order: new ones go after the row's last item. */
+let _planEditMode=false;
+function togglePlanEdit(){_planEditMode=!_planEditMode;renderClimbTemplates();}
+function _planRowMatch(key){
+  if(key==='warmup')return it=>it.section==='warmup';
+  if(key==='cooldown')return it=>it.section==='cooldown';
+  if(key==='main')return it=>it.section==='main'&&!it.set;
+  const n=parseInt(key.slice(3));return it=>it.section==='main'&&it.set===n;
+}
+function planAddRoute(key){
+  const p=climbSession.plan;if(!p)return;
+  const m=_planRowMatch(key);
+  let last=-1;p.items.forEach((it,i)=>{if(m(it))last=i;});
+  const section=key==='warmup'?'warmup':key==='cooldown'?'cooldown':'main';
+  const set=key.startsWith('set')?parseInt(key.slice(3)):0;
+  let grade=last>=0?p.items[last].grade:null;
+  if(!grade){
+    // Empty row (e.g. cool-down switched off): one grade below the plan's easiest set route
+    const mains=p.items.filter(it=>it.section==='main').map(it=>it.grade);
+    grade=section==='cooldown'?shiftGrade(mains.sort((a,b)=>CLIMB_GRADES.indexOf(a)-CLIMB_GRADES.indexOf(b))[0]||'5b',-1):'5b';
+  }
+  let at=last>=0?last+1:(section==='warmup'?0:section==='cooldown'?p.items.length:p.items.findIndex(it=>it.section==='cooldown'));
+  if(at<0)at=p.items.length;
+  p.items.splice(at,0,{grade,section,set,done:false,pid:''});
+  markDirty('climb');renderClimbTemplates();
+}
+function planAddSet(){
+  const p=climbSession.plan;if(!p)return;
+  const mains=p.items.filter(it=>it.section==='main');
+  const n=mains.reduce((a,it)=>Math.max(a,it.set||0),0)+1;
+  const lastSet=mains.filter(it=>it.set===n-1).map(it=>it.grade);
+  const grades=lastSet.length?lastSet:[p.items.find(it=>it.section==='main')?.grade||'6a'];
+  let at=p.items.findIndex(it=>it.section==='cooldown');if(at<0)at=p.items.length;
+  p.items.splice(at,0,...grades.map(g=>({grade:g,section:'main',set:n,done:false,pid:''})));
+  markDirty('climb');renderClimbTemplates();
+}
+function planRemoveRoute(i){
+  const p=climbSession.plan;if(!p||!p.items[i]||p.items[i].done)return;
+  p.items.splice(i,1);
+  markDirty('climb');renderClimbTemplates();
+}
+function planSetGrade(i,g){
+  const p=climbSession.plan;if(!p||!p.items[i]||p.items[i].done)return;
+  p.items[i].grade=g;markDirty('climb');renderClimbTemplates();
+}
+
 /* Rows of the plan card, in order: warm-up, then ONE ROW PER SET (the doc's
    Set 1–4, each of which is a burn), then cool-down. Plans saved before
    2026-08-06 have no `set` on their items — those fall back to a single
@@ -4637,18 +4728,24 @@ function _planRows(p){
 function _planCardHtml(p){
   const done=p.items.filter(i=>i.done).length;
   const burns=climbSession.blocks.filter(b=>b.type==='routes').length;
+  const ed=_planEditMode;
   const rows=_planRows(p).map(sec=>{
     const idxs=p.items.map((it,i)=>({it,i})).filter(x=>sec.match(x.it));
-    if(!idxs.length)return '';
+    if(!idxs.length&&!(ed&&sec.key==='cooldown'))return '';
     const secDone=idxs.filter(x=>x.it.done).length;
-    const tick=secDone===idxs.length?' <span style="color:var(--green)">✓</span>':'';
+    const tick=idxs.length&&secDone===idxs.length?' <span style="color:var(--green)">✓</span>':'';
     return `<div style="font-size:10px;font-weight:700;color:${sec.color};text-transform:uppercase;letter-spacing:.05em;margin:8px 0 5px">${sec.label}${sec.key.startsWith('set')?` <span style="color:var(--muted);font-weight:600">· 1 burn · ${secDone}/${idxs.length}</span>`:''}${tick}</div>
-      <div style="display:flex;gap:5px;flex-wrap:wrap">${idxs.map(({it,i})=>`
+      <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">${idxs.map(({it,i})=>(ed&&!it.done)?`
+        <span style="display:inline-flex;align-items:center;gap:2px;border:1.5px dashed var(--climb);border-radius:var(--radius-sm);padding:2px 3px">
+          <select onchange="planSetGrade(${i},this.value)" aria-label="Grade" style="width:auto;margin:0;padding:4px 2px;font-size:13px;font-weight:800;border:none;background:none">${CLIMB_GRADES.map(g=>`<option${g===it.grade?' selected':''}>${g}</option>`).join('')}</select>
+          <button onclick="planRemoveRoute(${i})" aria-label="Remove ${it.grade}" style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--muted);padding:2px 4px">✕</button>
+        </span>`:`
         <button onclick="togglePlanItem(${i})" title="${it.done?'Tap to un-log':'Tap when climbed'}"
           style="min-width:52px;padding:7px 8px;border-radius:var(--radius-sm);font-size:13px;font-weight:800;cursor:pointer;
           border:1.5px solid ${it.done?'var(--green)':'var(--border)'};
           background:${it.done?'rgba(21,128,61,.12)':'var(--surface2)'};
-          color:${it.done?'var(--green)':'var(--text)'}">${it.done?'✓ ':''}${it.grade}</button>`).join('')}</div>`;
+          color:${it.done?'var(--green)':'var(--text)'}">${it.done?'✓ ':''}${it.grade}</button>`).join('')}${ed?`
+        <button onclick="planAddRoute('${sec.key}')" aria-label="Add a route" style="min-width:40px;padding:7px 10px;border-radius:var(--radius-sm);font-size:14px;font-weight:800;cursor:pointer;border:1.5px dashed var(--border);background:none;color:var(--climb)">＋</button>`:''}</div>`;
   }).join('');
   return `<div class="card" style="margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px">
@@ -4656,6 +4753,7 @@ function _planCardHtml(p){
       <button class="btn-icon" title="Remove plan" onclick="clearClimbPlan()">✕</button>
     </div>
     <div style="font-size:12px;color:var(--muted)">${done}/${p.items.length} climbed${burns?` · ${burns} burn${burns===1?'':'s'}`:''} — each set is its own burn</div>
+    ${ed?`<div style="font-size:12px;color:var(--climb);margin-top:6px;font-weight:600">✏️ Change grades, ✕ remove, ＋ add. Ticked routes are locked (untick first).</div>`:''}
     <div style="display:flex;gap:6px;margin-top:10px">${
       [['Boulder','🪨 Boulder'],['Lead','🧗 Ropes']].map(([m,lbl])=>{
         const on=(p.mode||'Lead')===m;
@@ -4664,9 +4762,11 @@ function _planCardHtml(p){
           border:1.5px solid ${on?'var(--climb)':'var(--border)'};background:${on?'var(--climb)':'none'};color:${on?'#fff':'var(--text)'}">${lbl}</button>`;
       }).join('')}</div>
     ${rows}
+    ${ed?`<button class="btn btn-ghost" style="width:100%;font-size:12px;margin-top:10px" onclick="planAddSet()">＋ Add a set</button>`:''}
     <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn btn-ghost" style="flex:1;font-size:12px" onclick="togglePlanPicker()">Change plan</button>
-      <button class="btn btn-climb" style="flex:1;font-size:12px" onclick="startNewBurn()">➕ New burn</button>
+      <button class="btn ${ed?'btn-climb':'btn-ghost'}" style="flex:1;font-size:12px" onclick="togglePlanEdit()">${ed?'✓ Done':'✏️ Edit'}</button>
+      ${ed?'':`<button class="btn btn-ghost" style="flex:1;font-size:12px" onclick="togglePlanPicker()">Change plan</button>
+      <button class="btn btn-climb" style="flex:1;font-size:12px" onclick="startNewBurn()">➕ New burn</button>`}
     </div>
   </div>`;
 }
@@ -4680,7 +4780,15 @@ function renderClimbTemplates(){
   // One ladder — the same sessions work for boulder or ropes (Jo, 2026-08-06).
   const grades=[...new Set(CLIMB_TEMPLATES.map(t=>t.grade))];
   if(!grades.includes(_tmplGradeFilter))_tmplGradeFilter='6c+';
-  const filtered=CLIMB_TEMPLATES.filter(t=>t.grade===_tmplGradeFilter);
+  const _z=_tmplSize();
+  const filtered=CLIMB_TEMPLATES.filter(t=>t.grade===_tmplGradeFilter).map(t=>sizeTemplate(t,_z));
+  const _chip=(on,label,js)=>`<button onclick="${js}" style="padding:4px 10px;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid ${on?'var(--climb)':'var(--border)'};background:${on?'var(--climb)':'none'};color:${on?'#fff':'var(--text)'}">${label}</button>`;
+  const _row=(lbl,chips)=>`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px"><span style="font-size:11px;font-weight:700;color:var(--muted);min-width:70px;text-transform:uppercase">${lbl}</span>${chips}</div>`;
+  const sizeHtml=`<div style="background:var(--surface2);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:12px">
+    ${_row('Routes',TMPL_TOTALS.map(n=>_chip(_z.total===n,n?n:'As doc',`setTmplSize('total',${n})`)).join(''))}
+    ${_z.total?_row('Warm-up',TMPL_WARMS.map(n=>_chip(_z.warm===n,n,`setTmplSize('warm',${n})`)).join(''))
+      +_row('Cool-down',_chip(_z.cool,'On',"setTmplSize('cool',true)")+_chip(!_z.cool,'Off',"setTmplSize('cool',false)")):''}
+  </div>`;
   const gradeChips=grades.map(g=>`
     <button onclick="_tmplGradeFilter='${g}';renderClimbTemplates()"
       style="padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid ${g===_tmplGradeFilter?'var(--climb)':'var(--border)'};background:${g===_tmplGradeFilter?'var(--climb)':'none'};color:${g===_tmplGradeFilter?'#fff':'var(--text)'}">${g}</button>`).join('');
@@ -4693,7 +4801,7 @@ function renderClimbTemplates(){
         <div style="font-size:13px;font-weight:700;color:var(--climb);margin-bottom:4px">${t.grade} · ${t.type} <span style="font-size:11px;color:var(--muted);font-weight:400">${n} routes · ${t.sets.length} burns${t.label.includes('L1')?' · L1':''}</span>${t.derivedFrom?` <span title="Not in the doc — built from the ${t.derivedFrom} session, shifted" style="font-size:10px;font-weight:700;color:var(--muted);background:var(--surface2);border-radius:10px;padding:2px 7px;margin-left:2px">from ${t.derivedFrom}</span>`:''}</div>
         <div style="font-size:11px;color:var(--muted);line-height:1.7">
           <span style="color:#ea7c3a">▲</span> ${t.warmup.join(' ')} &nbsp;
-          <span style="color:#16a34a">▼</span> ${t.cooldown.join(' ')}<br>${setLine}
+          <span style="color:#16a34a">▼</span> ${t.cooldown.length?t.cooldown.join(' '):'—'}<br>${setLine}
         </div>
       </div>
       <button class="btn btn-climb" style="padding:6px 14px;font-size:12px;white-space:nowrap" onclick="applyClimbTemplate('${t.id}')">Apply</button>
@@ -4706,6 +4814,7 @@ function renderClimbTemplates(){
       ${plan?`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="togglePlanPicker()">Back to plan</button>`:''}
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${gradeChips}</div>
+    ${sizeHtml}
     ${tmplCards}
   </div>`;
 }
