@@ -565,6 +565,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 
       <!-- LOG MODE -->
       <div id="gym-log">
+        <div id="gym-planned-banner"></div>
         <div id="gym-edit-banner" style="display:none;background:var(--warn,#f59e0b);color:#000;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:13px;font-weight:600;text-align:center">✏️ Editing saved session — changes will overwrite the original <button onclick="cancelGymEdit()" style="background:#fff3;border:none;border-radius:4px;padding:2px 8px;margin-left:8px;cursor:pointer;font-size:12px">Cancel</button></div>
         <div id="gym-draft-banner" style="display:none;background:#dbeafe;border:1px solid #93c5fd;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:13px;align-items:center;gap:8px;flex-wrap:wrap">
           <span></span>
@@ -634,6 +635,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 
       <!-- BUILD MODE -->
       <div id="gym-build" style="display:none">
+        <div id="gym-build-planning"></div>
         <div id="gym-build-macro-banner" style="margin-bottom:8px"></div>
         <div id="templates-section"></div>
         <div class="card">
@@ -849,6 +851,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           </div>
         </div>
 
+        <div id="climb-planned-banner"></div>
         <div id="climb-templates-section"></div>
         <div id="climb-blocks-list"></div>
 
@@ -1886,6 +1889,8 @@ const DB = {
   savePlan(d){this.set('plan_data',d)},
   gymMacroData(){return this.get('gym_macro_data')||{}},
   trainingCycle(){return this.get('training_cycle')||null},
+  plannedSessions(){return this.get('planned_sessions')||[]},
+  savePlannedSessions(a){this.set('planned_sessions',a)},
   saveTrainingCycle(c){this.set('training_cycle',c)},
   saveGymMacro(d){this.set('gym_macro_data',d)},
   gymAssessments(){return this.get('gym_assessments')||[]},
@@ -1928,7 +1933,7 @@ const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'climb_sessions','climb_assessments','plan_data','rehab_data','macro_data',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
   'gym_height','tennis_matches','tennis_overlay','tennis_merges','custom_gyms','fb_custom_ex',
-  'custom_exercises','training_cycle'];
+  'custom_exercises','training_cycle','planned_sessions'];
 
 function exportAllData(){
   const data={};
@@ -2508,6 +2513,7 @@ function gymMode(mode){
     document.getElementById('build-result').innerHTML='';
     renderTemplates();
     renderGymMacroContextBanner('gym-build-macro-banner');
+    try{renderPlanningBanners();}catch(e){}
     // Seed intensity from current macro phase
     const _seedPhase=currentGymPhaseId();
     if(_seedPhase&&PHASE_INTENSITY[_seedPhase]){
@@ -2558,7 +2564,7 @@ function generatePlan(){
   const _buildMacroData=DB.gymMacroData();
   const _buildRanges=gymMacroDateRanges(_buildMacroData);
   const _buildIdx=currentGymMacroPhaseIndex(_buildRanges);
-  const _bCyc=cycleNow();
+  const _bCyc=cycleWeekFor(_isPlanningGym()?_planningCtx.date:today()); // plan-ahead uses the planned date's week
   const _buildPhaseLabel=_bCyc
     ?` · ${_bCyc.week.emoji} ${_bCyc.week.id==='deload'?_bCyc.week.label:(SEASON_GYM[_bCyc.week.gymPhase]||{}).label} week ${_bCyc.wi+1}/${_bCyc.seg.weeks}`
     :(_buildIdx>=0&&_buildIdx<GYM_MACRO_PHASES.length)
@@ -2624,7 +2630,7 @@ function generatePlan(){
   }
 
   // Phase defaults for sets / reps / rest (applied to every non-warmup exercise)
-  const _phaseDef = _bCyc ? currentPhaseExDefaults()
+  const _phaseDef = _bCyc ? {sets:_bCyc.week.sets,reps:_bCyc.week.reps,rest:_bCyc.week.rest}
     : _buildIdx >= 0 && _buildIdx < GYM_MACRO_PHASES.length
     ? phaseExDefaults(GYM_MACRO_PHASES[_buildIdx].id) : null;
 
@@ -2740,7 +2746,9 @@ function renderBuildPlan(){
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn btn-ghost" style="flex:1" onclick="_buildState=null;document.getElementById('build-result').innerHTML=''">✕ Discard</button>
         <button class="btn btn-ghost" style="flex:1" onclick="buildSavePlan()">⭐ Save</button>
-        <button class="btn btn-gym" style="flex:2" onclick="buildStartPlan()">▶ Start</button>
+        ${_isPlanningGym()
+          ?`<button class="btn btn-gym" style="flex:2" onclick="savePlanning()">💾 Save for ${fmtDay(_planningCtx.date)}</button>`
+          :`<button class="btn btn-gym" style="flex:2" onclick="buildStartPlan()">▶ Start</button>`}
       </div>
     </div>`;
 }
@@ -4546,6 +4554,17 @@ function applyClimbTemplate(id){
   const t0=CLIMB_TEMPLATES.find(x=>x.id===id);
   if(!t0)return;
   const t=sizeTemplate(t0,_tmplSize());
+  if(_isPlanningClimb()){
+    // Plan ahead: build the plan aside — today's session is not touched
+    _planningClimbPlan={templateId:t.id,label:`${t.grade} · ${t.type}${t.sized?` · ${t.sized} routes`:''}`,
+      mode:(_planningClimbPlan&&_planningClimbPlan.mode)||'Lead',
+      items:[...t.warmup.map(g=>({grade:g,section:'warmup',set:0,done:false,pid:''})),
+        ...t.sets.flatMap((s,si)=>s.map(g=>({grade:g,section:'main',set:si+1,done:false,pid:''}))),
+        ...t.cooldown.map(g=>({grade:g,section:'cooldown',set:0,done:false,pid:''}))]};
+    _planPickerOpen=false;
+    renderClimbTemplates();
+    return;
+  }
   if(climbSession.plan&&climbSession.plan.items.some(i=>i.done)
      &&!confirm('Load a different plan? Routes you already ticked stay logged in the session.'))return;
   climbSession.plan={
@@ -4592,9 +4611,10 @@ function _blockForSet(n){
 // Boulder or ropes, from the plan card toggle. No plan → Lead, as before.
 function _planMode(){return (climbSession.plan&&climbSession.plan.mode)||'Lead';}
 function setPlanMode(m){
-  const p=climbSession.plan;
+  const p=_curPlan();
   if(!p||p.mode===m)return;
   p.mode=m;
+  if(_isPlanningClimb()){renderClimbTemplates();return;}
   // Burns holding nothing but plan-ticked routes follow the toggle as well —
   // otherwise flipping it after the first tick would leave that burn wrong.
   // A burn with any hand-logged route is left alone (`.every` is true when empty).
@@ -4672,7 +4692,7 @@ function _planRowMatch(key){
   const n=parseInt(key.slice(3));return it=>it.section==='main'&&it.set===n;
 }
 function planAddRoute(key){
-  const p=climbSession.plan;if(!p)return;
+  const p=_curPlan();if(!p)return;
   const m=_planRowMatch(key);
   let last=-1;p.items.forEach((it,i)=>{if(m(it))last=i;});
   const section=key==='warmup'?'warmup':key==='cooldown'?'cooldown':'main';
@@ -4686,26 +4706,26 @@ function planAddRoute(key){
   let at=last>=0?last+1:(section==='warmup'?0:section==='cooldown'?p.items.length:p.items.findIndex(it=>it.section==='cooldown'));
   if(at<0)at=p.items.length;
   p.items.splice(at,0,{grade,section,set,done:false,pid:''});
-  markDirty('climb');renderClimbTemplates();
+  if(!_isPlanningClimb())markDirty('climb');renderClimbTemplates();
 }
 function planAddSet(){
-  const p=climbSession.plan;if(!p)return;
+  const p=_curPlan();if(!p)return;
   const mains=p.items.filter(it=>it.section==='main');
   const n=mains.reduce((a,it)=>Math.max(a,it.set||0),0)+1;
   const lastSet=mains.filter(it=>it.set===n-1).map(it=>it.grade);
   const grades=lastSet.length?lastSet:[p.items.find(it=>it.section==='main')?.grade||'6a'];
   let at=p.items.findIndex(it=>it.section==='cooldown');if(at<0)at=p.items.length;
   p.items.splice(at,0,...grades.map(g=>({grade:g,section:'main',set:n,done:false,pid:''})));
-  markDirty('climb');renderClimbTemplates();
+  if(!_isPlanningClimb())markDirty('climb');renderClimbTemplates();
 }
 function planRemoveRoute(i){
-  const p=climbSession.plan;if(!p||!p.items[i]||p.items[i].done)return;
+  const p=_curPlan();if(!p||!p.items[i]||p.items[i].done)return;
   p.items.splice(i,1);
-  markDirty('climb');renderClimbTemplates();
+  if(!_isPlanningClimb())markDirty('climb');renderClimbTemplates();
 }
 function planSetGrade(i,g){
-  const p=climbSession.plan;if(!p||!p.items[i]||p.items[i].done)return;
-  p.items[i].grade=g;markDirty('climb');renderClimbTemplates();
+  const p=_curPlan();if(!p||!p.items[i]||p.items[i].done)return;
+  p.items[i].grade=g;if(!_isPlanningClimb())markDirty('climb');renderClimbTemplates();
 }
 
 /* Rows of the plan card, in order: warm-up, then ONE ROW PER SET (the doc's
@@ -4727,8 +4747,9 @@ function _planRows(p){
 }
 function _planCardHtml(p){
   const done=p.items.filter(i=>i.done).length;
-  const burns=climbSession.blocks.filter(b=>b.type==='routes').length;
-  const ed=_planEditMode;
+  const burns=_isPlanningClimb()?0:climbSession.blocks.filter(b=>b.type==='routes').length;
+  const planning=_isPlanningClimb();
+  const ed=_planEditMode||planning;
   const rows=_planRows(p).map(sec=>{
     const idxs=p.items.map((it,i)=>({it,i})).filter(x=>sec.match(x.it));
     if(!idxs.length&&!(ed&&sec.key==='cooldown'))return '';
@@ -4750,10 +4771,10 @@ function _planCardHtml(p){
   return `<div class="card" style="margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px">
       <span class="card-title" style="margin:0">📋 Plan · ${p.label}</span>
-      <button class="btn-icon" title="Remove plan" onclick="clearClimbPlan()">✕</button>
+      ${planning?'':`<button class="btn-icon" title="Remove plan" onclick="clearClimbPlan()">✕</button>`}
     </div>
     <div style="font-size:12px;color:var(--muted)">${done}/${p.items.length} climbed${burns?` · ${burns} burn${burns===1?'':'s'}`:''} — each set is its own burn</div>
-    ${ed?`<div style="font-size:12px;color:var(--climb);margin-top:6px;font-weight:600">✏️ Change grades, ✕ remove, ＋ add. Ticked routes are locked (untick first).</div>`:''}
+    ${ed?`<div style="font-size:12px;color:var(--climb);margin-top:6px;font-weight:600">✏️ Change grades, ✕ remove, ＋ add.${planning?'':' Ticked routes are locked (untick first).'}</div>`:''}
     <div style="display:flex;gap:6px;margin-top:10px">${
       [['Boulder','🪨 Boulder'],['Lead','🧗 Ropes']].map(([m,lbl])=>{
         const on=(p.mode||'Lead')===m;
@@ -4763,20 +4784,25 @@ function _planCardHtml(p){
       }).join('')}</div>
     ${rows}
     ${ed?`<button class="btn btn-ghost" style="width:100%;font-size:12px;margin-top:10px" onclick="planAddSet()">＋ Add a set</button>`:''}
-    <div style="display:flex;gap:8px;margin-top:12px">
+    ${planning?`<div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-ghost" style="flex:1;font-size:12px" onclick="togglePlanPicker()">Change template</button>
+      <button class="btn btn-climb" style="flex:2;font-size:12px" onclick="savePlanning()">💾 Save for ${fmtDay(_planningCtx.date)}</button>
+    </div>`:`<div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn ${ed?'btn-climb':'btn-ghost'}" style="flex:1;font-size:12px" onclick="togglePlanEdit()">${ed?'✓ Done':'✏️ Edit'}</button>
       ${ed?'':`<button class="btn btn-ghost" style="flex:1;font-size:12px" onclick="togglePlanPicker()">Change plan</button>
       <button class="btn btn-climb" style="flex:1;font-size:12px" onclick="startNewBurn()">➕ New burn</button>`}
-    </div>
+    </div>`}
   </div>`;
 }
 
 function renderClimbTemplates(){
   const el=document.getElementById('climb-templates-section');
   if(!el)return;
+  try{renderPlannedBanner('climb');}catch(e){}
+  const _pb=_isPlanningClimb()?_planningBannerHtml():'';
   // An active plan replaces the picker (reopen it with "Change plan").
-  const plan=climbSession.plan;
-  if(plan&&!_planPickerOpen){el.innerHTML=_planCardHtml(plan);return;}
+  const plan=_curPlan();
+  if(plan&&!_planPickerOpen){el.innerHTML=_pb+_planCardHtml(plan);return;}
   // One ladder — the same sessions work for boulder or ropes (Jo, 2026-08-06).
   const grades=[...new Set(CLIMB_TEMPLATES.map(t=>t.grade))];
   if(!grades.includes(_tmplGradeFilter))_tmplGradeFilter='6c+';
@@ -4808,7 +4834,7 @@ function renderClimbTemplates(){
     </div>`;
   }).join('');
 
-  el.innerHTML=`<div class="card" style="margin-bottom:12px">
+  el.innerHTML=_pb+`<div class="card" style="margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <span class="card-title" style="margin:0">📋 Session Templates</span>
       ${plan?`<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="togglePlanPicker()">Back to plan</button>`:''}
@@ -6930,7 +6956,7 @@ function activityLabel(d){
   return sessions.map(s=>{
     const t=TRAINING_TYPES[s.trainingType];
     if(!t)return s.trainingType;
-    return t.icon+' '+(s.trainingSubtype||t.label);
+    return (s.psId?'📋 ':'')+t.icon+' '+(s.trainingSubtype||t.label);
   }).join(' · ');
 }
 
@@ -6979,6 +7005,7 @@ function buildSessionSlotHTML(weekKey,dayIdx,si,s,label,removeFn){
       <input type="text" value="${s.actual||''}" placeholder="${placeholder}"
         onchange="savePlanSessionField('${weekKey}',${dayIdx},${si},'actual',this.value)">
     </div>
+    ${_psSlotHtml(weekKey,dayIdx,s)}
   </div>`;
 }
 
@@ -7662,11 +7689,11 @@ function renderPlanner(){
       const after=sessions.slice(1).map((s,si)=>
         buildSessionSlotHTML(weekKey,i,si+1,s,slotLabels[si+1]||'Evening',`removePlanSession('${weekKey}',${i},${si+1})`)
       ).join('');
-      bodyContent=before+workBlock+after+addBtn;
+      bodyContent=before+workBlock+after+addBtn+_planDayButtonsHtml(d);
     } else {
       bodyContent=sessions.map((s,si)=>
         buildSessionSlotHTML(weekKey,i,si,s,slotLabels[si]||('Session '+(si+1)),`removePlanSession('${weekKey}',${i},${si})`)
-      ).join('')+addBtn;
+      ).join('')+addBtn+_planDayButtonsHtml(d);
     }
 
     return `
@@ -7685,8 +7712,8 @@ function renderPlanner(){
             // Work day: build timeline  morning → 💼 work → after work
             const beforeSessions=sessions.slice(0,1).filter(s=>s&&s.trainingType);
             const afterSessions=sessions.slice(1).filter(s=>s&&s.trainingType);
-            const beforeLabel=beforeSessions.map(s=>{const t=TRAINING_TYPES[s.trainingType];return t?t.icon+' '+(s.trainingSubtype||t.label):s.trainingType;}).join(' · ');
-            const afterLabel=afterSessions.map(s=>{const t=TRAINING_TYPES[s.trainingType];return t?t.icon+' '+(s.trainingSubtype||t.label):s.trainingType;}).join(' · ');
+            const beforeLabel=beforeSessions.map(s=>{const t=TRAINING_TYPES[s.trainingType];return (s.psId?'📋 ':'')+(t?t.icon+' '+(s.trainingSubtype||t.label):s.trainingType);}).join(' · ');
+            const afterLabel=afterSessions.map(s=>{const t=TRAINING_TYPES[s.trainingType];return (s.psId?'📋 ':'')+(t?t.icon+' '+(s.trainingSubtype||t.label):s.trainingType);}).join(' · ');
             const beforeColor=beforeSessions.length&&TRAINING_TYPES[beforeSessions[0].trainingType]?TRAINING_TYPES[beforeSessions[0].trainingType].color:'var(--muted)';
             const afterColor=afterSessions.length&&TRAINING_TYPES[afterSessions[0].trainingType]?TRAINING_TYPES[afterSessions[0].trainingType].color:'var(--muted)';
             let parts='';
@@ -7802,6 +7829,11 @@ function addPlanSession(weekKey,i){
 function removePlanSession(weekKey,i,si){
   const data=DB.planData();
   if(!data[weekKey])return;
+  const _slot=data[weekKey][i].sessions[si];
+  if(_slot&&_slot.psId&&_psById(_slot.psId)){
+    if(!confirm('This session has a saved plan. Remove the session and its plan?'))return;
+    DB.savePlannedSessions(_psList().filter(p=>p.id!==_slot.psId));
+  }
   data[weekKey][i].sessions.splice(si,1);
   DB.savePlan(data);
   renderPlanner();
@@ -9254,9 +9286,252 @@ function renderHomeWeekCheck(){
 }
 
 // ══════════════════════════════════════════════════
+//  PLAN AHEAD (2026-10-20)
+// ══════════════════════════════════════════════════
+// Plan a gym or climbing session for a future date, exactly as you want it, and
+// load it with one tap on the day. Stored in the synced key 'planned_sessions':
+//   [{id, sport:'gym'|'climb', date, label, mins, gym:{plan,intensity}, climb:{plan}, loadedAt}]
+// Each planned session is linked to a Planner slot of the same sport on that day
+// (slot.psId; slot.psAdded when the slot was created for it), so the Planner, Home
+// and the Week Check all see it. Jo chose option C: plan from Gym/Climbing or from
+// the Planner, and reopen / move / delete a planned session later.
+let _planningCtx=null;        // {sport, date, id|null} while planning
+let _planningClimbPlan=null;  // the climbing plan being built (never touches climbSession)
+
+function _psList(){return DB.plannedSessions();}
+function _psById(id){return _psList().find(p=>p.id===id)||null;}
+function _psForDate(date,sport){return _psList().filter(p=>p.date===date&&(!sport||p.sport===sport));}
+function _isPlanningClimb(){return !!(_planningCtx&&_planningCtx.sport==='climb');}
+function _isPlanningGym(){return !!(_planningCtx&&_planningCtx.sport==='gym');}
+function _curPlan(){return _isPlanningClimb()?_planningClimbPlan:climbSession.plan;}
+function _deep(o){return JSON.parse(JSON.stringify(o));}
+
+// Sets/reps/rest for the week a date falls in (season week, else today's phase).
+function exDefaultsFor(date){
+  const cw=cycleWeekFor(date);
+  if(cw)return {sets:cw.week.sets,reps:cw.week.reps,rest:cw.week.rest};
+  return currentPhaseExDefaults();
+}
+function _intensityFor(date){const cw=cycleWeekFor(date);return cw?cw.week.pct:currentPhaseIntensity();}
+
+// A fresh planner week (season template when the season covers it).
+function _newPlanWeek(wk){
+  const cw=cycleWeekFor(wk);
+  return cw?cycleWeekEntries(wk,cw.week):WEEK_TEMPLATE.map((d,i)=>({
+    ...d,date:addDays(wk,i),done:false,work:false,workStart:'10:00',workEnd:'18:00',sessions:[]}));
+}
+function _attachPlanToDay(ps){
+  const data=DB.planData();
+  const wk=getMonday(ps.date);
+  if(!data[wk])data[wk]=_newPlanWeek(wk);
+  const day=data[wk].find(d=>d&&d.date===ps.date);
+  if(!day)return;
+  day.sessions=(day.sessions||[]).filter(s=>s!=null);
+  let slot=day.sessions.find(s=>s.psId===ps.id)
+    ||day.sessions.find(s=>s.trainingType===ps.sport&&!s.psId);
+  if(!slot){slot={trainingType:ps.sport,trainingSubtype:'',duration:'',rpe:'',actual:'',psAdded:true};day.sessions.push(slot);}
+  slot.psId=ps.id;
+  if(ps.mins)slot.duration=String(ps.mins);
+  day.planned=true;
+  DB.savePlan(data);
+}
+function _detachPlanFromDay(ps){
+  const data=DB.planData();
+  let changed=false;
+  Object.keys(data).forEach(wk=>(data[wk]||[]).forEach(d=>{
+    if(!d||!d.sessions)return;
+    const i=d.sessions.findIndex(s=>s&&s.psId===ps.id);
+    if(i===-1)return;
+    if(d.sessions[i].psAdded)d.sessions.splice(i,1);else delete d.sessions[i].psId;
+    changed=true;
+  }));
+  if(changed)DB.savePlan(data);
+}
+
+// ── Start / cancel / save ────────────────────────────────────────────────────
+function startPlanning(sport,date,id){
+  const ps=id?_psById(id):null;
+  _planningCtx={sport,date:(ps&&ps.date)||date||addDays(today(),1),id:ps?ps.id:null};
+  if(sport==='gym'){
+    switchTab('gym');gymMode('build');
+    document.getElementById('build-intensity').value=ps?ps.gym.intensity:_intensityFor(_planningCtx.date);
+    if(ps){
+      const freq={};DB.gymSessions().forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name)freq[e.name]=(freq[e.name]||0)+1;}));
+      const pool=EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&e.cat!=='Warm-up').sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0));
+      _buildState={plan:_deep(ps.gym.plan),intensity:ps.gym.intensity,freq,phaseDef:exDefaultsFor(_planningCtx.date),pool,
+        header:{phaseLabel:'',dataSourceLabel:'Planned session — edit it, then save',assessBanner:'',staleBanner:''},seen:{}};
+      renderBuildPlan();
+    }
+    renderPlanningBanners();
+    document.getElementById('gym-build')?.scrollIntoView({block:'start'});
+  }else{
+    _planningClimbPlan=ps?_deep(ps.climb.plan):null;
+    switchTab('climb');climbMode('log');
+    renderClimbTemplates();
+    document.getElementById('climb-templates-section')?.scrollIntoView({block:'start'});
+  }
+}
+function cancelPlanning(){
+  const sport=_planningCtx&&_planningCtx.sport;
+  _planningCtx=null;_planningClimbPlan=null;
+  if(sport==='gym'){_buildState=null;renderBuildPlan();renderPlanningBanners();}
+  else renderClimbTemplates();
+}
+function setPlanningDate(v){
+  if(!_planningCtx||!v)return;
+  if(v<today()){toast('Pick today or a future date');renderPlanningBanners();renderClimbTemplates();return;}
+  _planningCtx.date=v;
+  if(_planningCtx.sport==='gym'){
+    const pct=_intensityFor(v);
+    if(_buildState){_buildState.intensity=pct;_buildState.phaseDef=exDefaultsFor(v);}
+    const el=document.getElementById('build-intensity');if(el)el.value=pct;
+    renderPlanningBanners();renderBuildPlan();
+  }else renderClimbTemplates();
+}
+function savePlanning(){
+  const ctx=_planningCtx;if(!ctx)return;
+  const list=_psList();
+  let ps=ctx.id?list.find(p=>p.id===ctx.id):null;
+  if(ps)_detachPlanFromDay(ps);
+  if(!ps){ps={id:'ps'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),sport:ctx.sport,createdAt:Date.now()};list.push(ps);}
+  ps.date=ctx.date;ps.loadedAt=null;
+  if(ctx.sport==='gym'){
+    if(!_buildState||!_buildState.plan.length){toast('Add at least one exercise');return;}
+    const mins=_buildEstMin(_buildState.plan);
+    ps.gym={plan:_deep(_buildState.plan),intensity:_buildState.intensity};
+    ps.label=`${_buildState.plan.length} exercises · ~${mins} min · ${_buildState.intensity}%`;
+    ps.mins=mins;
+  }else{
+    if(!_planningClimbPlan||!_planningClimbPlan.items.length){toast('Pick a template first');return;}
+    const p=_deep(_planningClimbPlan);
+    p.items.forEach(it=>{it.done=false;it.pid='';});
+    ps.climb={plan:p};
+    ps.label=`${p.label.replace(/ · \d+ routes$/,'')} · ${p.items.length} routes · ${p.mode==='Boulder'?'🪨 Boulder':'🧗 Ropes'}`;
+    ps.mins='';
+  }
+  DB.savePlannedSessions(list);
+  _attachPlanToDay(ps);
+  const sport=ctx.sport;
+  _planningCtx=null;_planningClimbPlan=null;
+  if(sport==='gym'){_buildState=null;renderBuildPlan();renderPlanningBanners();}
+  toast(`📅 ${sport==='gym'?'Gym':'Climbing'} plan saved for ${fmtDay(ps.date)}`);
+  currentWeekStart=getMonday(ps.date);
+  switchTab('plan');
+}
+function movePlannedSession(id,date){
+  const list=_psList();const ps=list.find(p=>p.id===id);
+  if(!ps||!date||date===ps.date)return;
+  _detachPlanFromDay(ps);
+  ps.date=date;ps.loadedAt=null;
+  DB.savePlannedSessions(list);
+  _attachPlanToDay(ps);
+  toast(`📅 Moved to ${fmtDay(date)}`);
+  _refreshPlanViews();
+}
+function deletePlannedSession(id){
+  const list=_psList();const ps=list.find(p=>p.id===id);
+  if(!ps)return;
+  if(!confirm(`Delete the planned ${ps.sport==='gym'?'gym':'climbing'} session on ${fmtDay(ps.date)}?`))return;
+  _detachPlanFromDay(ps);
+  DB.savePlannedSessions(list.filter(p=>p.id!==id));
+  toast('🗑 Planned session deleted');
+  _refreshPlanViews();
+}
+function _refreshPlanViews(){
+  try{if(currentTab==='plan')renderPlanner();}catch(e){}
+  try{if(currentTab==='home')renderHome();}catch(e){}
+}
+
+// ── On the day: load into the log ─────────────────────────────────────────────
+function loadPlannedSession(id){
+  const list=_psList();const ps=list.find(p=>p.id===id);
+  if(!ps)return;
+  if(ps.sport==='gym'){
+    switchTab('gym');gymMode('log');
+    if(gymSession.exercises.length&&!confirm('Replace the exercises already in this session with your plan?'))return;
+    loadPlanIntoLog(_deep(ps.gym.plan),ps.gym.intensity);
+  }else{
+    switchTab('climb');climbMode('log');
+    if(climbSession.plan&&climbSession.plan.items.some(i=>i.done)
+       &&!confirm('Replace the current plan? Routes you already ticked stay logged.'))return;
+    const p=_deep(ps.climb.plan);
+    p.items.forEach(it=>{it.done=false;it.pid='';});
+    climbSession.plan=p;
+    _planEditMode=false;_planPickerOpen=false;
+    markDirty('climb');
+    renderClimbTemplates();renderClimbBlocks();
+  }
+  ps.loadedAt=today();
+  DB.savePlannedSessions(list);
+  renderPlannedBanner(ps.sport);
+  toast('📋 Plan loaded');
+}
+function renderPlannedBanner(sport){
+  const el=document.getElementById(sport==='gym'?'gym-planned-banner':'climb-planned-banner');
+  if(!el)return;
+  const due=_psForDate(today(),sport).filter(p=>p.loadedAt!==today());
+  el.innerHTML=due.map(p=>`<div class="card" style="border-left:4px solid var(--${sport==='gym'?'gym':'climb'},#2563eb);display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px">
+    <div><div style="font-weight:800;font-size:14px">📋 You planned this session</div><div class="text-xs-muted">${esc(p.label||'')}</div></div>
+    <button class="btn ${sport==='gym'?'btn-gym':'btn-climb'} btn-sm" onclick="loadPlannedSession('${p.id}')">Load</button>
+  </div>`).join('');
+}
+
+// ── Planning banners (Gym → Build, Climbing → templates) ─────────────────────
+function _planningBannerHtml(){
+  const c=_planningCtx;
+  const cw=cycleWeekFor(c.date);
+  return `<div class="card" style="border:2px solid var(--${c.sport==='gym'?'gym':'climb'},#2563eb);padding:10px 14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div style="font-weight:800;font-size:14px">📅 ${c.id?'Editing planned':'Planning a'} ${c.sport==='gym'?'gym':'climbing'} session</div>
+      <button class="btn btn-ghost btn-sm" onclick="cancelPlanning()">Cancel</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+      <label style="margin:0;font-size:12px">For</label>
+      <input type="date" value="${c.date}" min="${today()}" onchange="setPlanningDate(this.value)" style="flex:1;margin:0">
+    </div>
+    ${cw?`<div class="text-xs-muted" style="margin-top:6px">That week: ${cw.week.emoji} ${esc(cw.week.label)} · ${c.sport==='gym'?esc(cw.week.gym):esc(cw.week.climb)}</div>`:''}
+    <div class="text-xs-muted" style="margin-top:4px">${c.sport==='gym'?'Generate (or edit) the plan below, then tap 💾 Save for the date.':'Pick and size a template, adjust the routes, then tap 💾 Save.'}</div>
+  </div>`;
+}
+function renderPlanningBanners(){
+  const g=document.getElementById('gym-build-planning');
+  if(g)g.innerHTML=_isPlanningGym()?_planningBannerHtml():'';
+}
+
+// ── Planner: the plan strip inside a gym / climbing slot ─────────────────────
+function _psSlotHtml(weekKey,dayIdx,s){
+  if(!s||!(s.trainingType==='gym'||s.trainingType==='climb'))return '';
+  const date=addDays(weekKey,dayIdx);
+  const ps=s.psId?_psById(s.psId):null;
+  if(ps){
+    return `<div style="margin-top:10px;padding:8px 10px;border-radius:var(--radius-sm);background:#2563eb10;border:1px solid #2563eb33">
+      <div style="font-size:12px;font-weight:700">📋 Plan ready${ps.loadedAt?' · loaded ✓':''}</div>
+      <div class="text-xs-muted" style="margin-bottom:6px">${esc(ps.label||'')}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        ${ps.date===today()?`<button class="btn btn-sm" onclick="loadPlannedSession('${ps.id}')">▶ Load</button>`:''}
+        <button class="btn btn-ghost btn-sm" onclick="startPlanning('${ps.sport}','${ps.date}','${ps.id}')">✏️ Open</button>
+        <label style="margin:0;font-size:12px;display:flex;align-items:center;gap:4px">Move
+          <input type="date" value="${ps.date}" min="${today()}" onchange="movePlannedSession('${ps.id}',this.value)" style="margin:0;width:auto;font-size:12px;padding:4px"></label>
+        <button class="btn btn-ghost btn-sm" onclick="deletePlannedSession('${ps.id}')" aria-label="Delete plan">🗑</button>
+      </div>
+    </div>`;
+  }
+  if(date<today())return '';
+  return `<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="startPlanning('${s.trainingType}','${date}')">📋 Plan this ${s.trainingType==='gym'?'gym':'climbing'} session</button>`;
+}
+function _planDayButtonsHtml(d){
+  if(!d||!d.date||d.date<today())return '';
+  return `<div style="display:flex;gap:6px;margin-top:8px">
+    <button class="btn btn-ghost btn-sm" style="flex:1" onclick="startPlanning('gym','${d.date}')">📋 Plan gym</button>
+    <button class="btn btn-ghost btn-sm" style="flex:1" onclick="startPlanning('climb','${d.date}')">📋 Plan climbing</button>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════
 //  GYM MACRO CONTEXT BANNER (Log tab)
 // ══════════════════════════════════════════════════
 function renderGymMacroContextBanner(targetId='gym-macro-context-banner'){
+  if(targetId==='gym-macro-context-banner'){try{renderPlannedBanner('gym');}catch(e){}}
   const el=document.getElementById(targetId);
   if(!el)return;
   const _cyc=cycleNow();
@@ -9945,6 +10220,7 @@ function renderHomeTodayFocus(){
         <div class="today-session-type">${label}</div>
         <div class="today-session-details">${duration}${rpe}</div>
         ${s.trainingSubtype?`<div class="today-session-gym">${s.trainingSubtype}</div>`:''}
+        ${s.psId&&_psById(s.psId)?`<button class="btn btn-sm" style="margin-top:6px" onclick="loadPlannedSession('${s.psId}')">📋 ${_psById(s.psId).loadedAt===today()?'Plan loaded ✓ — open':'Load my plan'}</button>`:''}
       </div>
     </div>`;
   });
