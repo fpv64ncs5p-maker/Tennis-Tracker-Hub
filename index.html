@@ -8759,7 +8759,7 @@ const SEASON_DELOAD={id:'deload',label:'Deload',emoji:'😴',color:'#64748b',gym
   gym:'2 × 10 @ ~60% · max 45 min',gymFreq:'1–2×/week',climb:'Easy routes only',tennis:'Easier pace',
   wedDouble:false,maxHard:1,noFingers:true,remove:'Board, fingerboard, wrist loading, anything to failure'};
 const SEASON_LIMITS={blockMin:2,blockMax:5,finalMin:1,finalMax:2};
-const CYCLE_RULES={restDays:2,gymTarget:2,hardGymMin:50};
+const CYCLE_RULES={restDays:2,gymTarget:2,hardGymMin:50,hardGymPct:75,hardRir:2};
 
 function defaultSeason(startDate){
   return {v:2,startDate,leadDeload:true,finalDeload:2,
@@ -9118,9 +9118,9 @@ function _weekActivity(from,to,todayStr){
   DB.gymSessions().filter(s=>inR(s.date)).forEach(s=>{
     const ex=(s.exercises||[]);
     const mins=parseInt(s.durationMins)||null;
-    const hard=mins?mins>=CYCLE_RULES.hardGymMin:ex.length>=6;
+    const long=mins?mins>=CYCLE_RULES.hardGymMin:ex.length>=6;
     const strength=ex.filter(e=>e&&e.cat!=='Warm-up'&&e.type!=='cardio');
-    add(s.date,{kind:'gym',level:hard?'hard':'easy',mins,
+    add(s.date,{kind:'gym',level:_gymLevel(long,strength),long,mins,
       lower:ex.filter(e=>e&&LOWER.includes(e.cat)).length>=2,
       maxSets:strength.reduce((m,e)=>Math.max(m,parseInt(e.sets)||0),0),label:'💪 Gym'});
   });
@@ -9145,6 +9145,17 @@ function _weekActivity(from,to,todayStr){
   }));
   return by;
 }
+// Gym effort (2026-10-20, Jo chose B): hard = long (≥50 min) AND heavy (avg effort ≥75%),
+// or any set logged with RIR ≤2. Long but lighter = moderate; short = easy.
+// Sessions with no effort % logged keep the old rule (long = hard).
+function _gymLevel(long,strength){
+  const rirLow=strength.some(e=>e&&e.rir!==undefined&&e.rir!==null&&String(e.rir).trim()!==''&&parseFloat(String(e.rir).replace(',','.'))<=CYCLE_RULES.hardRir);
+  if(rirLow)return 'hard';
+  const ints=strength.map(e=>parseFloat(e&&e.intensity)).filter(v=>v>=30&&v<=100);
+  const avg=ints.length?ints.reduce((a,b)=>a+b,0)/ints.length:null;
+  if(long)return (avg===null||avg>=CYCLE_RULES.hardGymPct)?'hard':'moderate';
+  return 'easy';
+}
 function _dayLevel(list){
   if(!list||!list.length)return 'rest';
   if(list.some(x=>x.level==='hard'))return 'hard';
@@ -9160,7 +9171,14 @@ function _plannedFor(date){
     const t=s.trainingType,sub=s.trainingSubtype||'';
     const mins=parseInt(s.duration)||0;
     const level=t==='tennis'?'hard'
-      :t==='gym'?((mins||60)>=CYCLE_RULES.hardGymMin?'hard':'easy')
+      :t==='gym'?(()=>{
+        // Planned gym: effort = the saved plan's % or that week's season %
+        const ps=s.psId&&typeof _psById==='function'?_psById(s.psId):null;
+        const cw=cycleWeekFor(date);
+        const pct=ps&&ps.gym?ps.gym.intensity:(cw?cw.week.pct:currentPhaseIntensity());
+        const long=(mins||60)>=CYCLE_RULES.hardGymMin;
+        return long?(pct>=CYCLE_RULES.hardGymPct?'hard':'moderate'):'easy';
+      })()
       :t==='climb'?(/board|project/i.test(sub)?'hard':'moderate')
       :'easy';
     return {type:t,sub,level,mins};
@@ -9247,7 +9265,7 @@ function computeWeekCheck(todayStr){
       if(g.maxSets>w.sets)warn(`Gym on ${_dow(g.date)} had ${g.maxSets} sets on an exercise — deload is ${w.sets} sets.`);
     });
   }else{
-    const full=gyms.filter(g=>g.level==='hard').length;
+    const full=gyms.filter(g=>g.long).length;
     const plannedGym=future.filter(d=>_plannedFor(d).some(p=>p.type==='gym'));
     if(full>=CYCLE_RULES.gymTarget)ok(`Gym: ${full}/${CYCLE_RULES.gymTarget} sessions done`);
     else if(full+plannedGym.length>=CYCLE_RULES.gymTarget)ok(`Gym: ${full}/${CYCLE_RULES.gymTarget} done · still to do: ${plannedGym.map(_dow).join(', ')}`);
