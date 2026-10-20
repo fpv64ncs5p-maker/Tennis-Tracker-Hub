@@ -1862,6 +1862,7 @@ const DB = {
   gymSessions(){return this.get('gym_sessions')||[]},
   saveGym(s){const a=this.gymSessions();a.unshift(s);this.set('gym_sessions',a)},
   updateGym(s){const a=this.gymSessions().map(x=>String(x.id)===String(s.id)?s:x);this.set('gym_sessions',a)},
+  deleteGym(id){const a=this.gymSessions().filter(x=>String(x.id)!==String(id));this.set('gym_sessions',a)},
   customExercises(){return this.get('custom_exercises')||[]},
   saveCustomExercise(ex){const a=this.customExercises();a.push(ex);this.set('custom_exercises',a)},
   deleteCustomExercise(name){const a=this.customExercises().filter(e=>e.name!==name);this.set('custom_exercises',a)},
@@ -2884,6 +2885,19 @@ function renderTemplates(){
 function loadTemplate(id){
   const t=DB.gymTemplates().find(x=>x.id===id);
   if(!t)return;
+  if(typeof _isPlanningGym==='function'&&_isPlanningGym()){
+    // Plan ahead: a template becomes the editable plan for the planned date, not today's log
+    const date=_planningCtx.date,def=exDefaultsFor(date),pct=_intensityFor(date);
+    const freq={};DB.gymSessions().forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name)freq[e.name]=(freq[e.name]||0)+1;}));
+    const pool=EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&e.cat!=='Warm-up').sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0));
+    _buildState={plan:t.exercises.map(e=>(e.cat==='Warm-up'||e.type==='cardio'||e.cardio)?{...e}:{...e,sets:def.sets,reps:def.reps,rest:def.rest}),
+      intensity:pct,freq,phaseDef:def,pool,
+      header:{phaseLabel:'',dataSourceLabel:`⭐ From template "${esc(t.name)}" — edit it, then save`,assessBanner:'',staleBanner:''},seen:{}};
+    renderBuildPlan();
+    document.getElementById('build-result')?.scrollIntoView({block:'start'});
+    toast(`⭐ "${t.name}" loaded into the plan`);
+    return;
+  }
   // Use current macro phase intensity, fallback to template's stored intensity
   const _phaseId=currentGymPhaseId();
   loadPlanIntoLog(t.exercises, currentPhaseIntensity(), _phaseId);
@@ -4146,7 +4160,8 @@ function showSessionDetail(type,id){
     ? `<div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn btn-ghost" style="flex:1" onclick="saveSessionAsTemplate('${s.id}')">⭐ Save Template</button>
         <button class="btn btn-gym" style="flex:2" onclick="quickAddToSession('${s.id}')">＋ Add Exercise</button>
-       </div>`
+       </div>
+       <button class="btn btn-ghost btn-block" style="margin-top:8px;color:var(--red)" onclick="deleteGymSession('${s.id}')">🗑 Delete session</button>`
     : `<div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn btn-ghost" style="flex:1;color:var(--red)" onclick="deleteClimbSession('${s.id}')">🗑 Delete</button>
         <button class="btn btn-climb" style="flex:2" onclick="editClimbSession('${s.id}')">✏️ Edit Session</button>
@@ -5926,6 +5941,21 @@ function restoreClimbDraft(){
 function discardClimbDraft(){
   _clearDraftClimb();
   document.getElementById('climb-draft-banner').style.display='none';
+}
+
+// Gym sessions had no delete at all (only per-exercise) — added 2026-10-20 after
+// Jo saved a session on the wrong date and couldn't remove it.
+function deleteGymSession(id){
+  const all=DB.gymSessions();
+  const s=all.find(x=>String(x.id)===String(id));
+  if(!s)return;
+  if(!confirm(`Delete the gym session of ${fmtDate(s.date)}?`))return;
+  DB.deleteGym(id);
+  if(String(gymEditId)===String(id))cancelGymEdit&&cancelGymEdit();
+  closeModal('modal-session-detail');
+  renderGymHistory();
+  if(typeof pushUndo==='function')pushUndo('Gym session deleted',()=>{DB.set('gym_sessions',[s,...DB.gymSessions()]);renderGymHistory();});
+  else toast('Session deleted');
 }
 
 function deleteClimbSession(id){
