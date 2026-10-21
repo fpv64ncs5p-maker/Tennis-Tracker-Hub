@@ -2694,6 +2694,7 @@ function _buildEstMin(plan){return Math.round(plan.reduce((t,ex)=>t+exTimeSec({.
 function renderBuildPlan(){
   const el=document.getElementById('build-result');
   if(!el)return;
+  try{renderPlanningBanners();}catch(e){}
   const st=_buildState;
   if(!st){el.innerHTML='';return;}
   const {plan,intensity,freq,header}=st;
@@ -9353,6 +9354,32 @@ function _isPlanningClimb(){return !!(_planningCtx&&_planningCtx.sport==='climb'
 function _isPlanningGym(){return !!(_planningCtx&&_planningCtx.sport==='gym');}
 function _curPlan(){return _isPlanningClimb()?_planningClimbPlan:climbSession.plan;}
 function _deep(o){return JSON.parse(JSON.stringify(o));}
+// Done = a session of that sport is logged on the planned date (derived, nothing stored —
+// so sessions logged any way, even without loading the plan, count; 2026-10-21, Jo).
+function _psDoneSession(ps){
+  if(!ps)return null;
+  const list=(ps.sport==='gym'?DB.gymSessions():DB.climbSessions()).filter(s=>s&&s.date===ps.date);
+  return list.sort((a,b)=>(Number(b.id)||0)-(Number(a.id)||0))[0]||null;
+}
+function _psDoneSummary(ps,s){
+  if(!s)return '';
+  if(ps.sport==='gym')return `${(s.exercises||[]).length} exercises${s.durationMins?` · ${s.durationMins} min`:''}`;
+  let n=0;try{n=getSessionRoutes(s).length;}catch(e){}
+  return `${n} route${n===1?'':'s'}${s.duration?` · ${s.duration} min`:''}`;
+}
+function viewPlannedDone(id){
+  const ps=_psById(id);const s=_psDoneSession(ps);
+  if(!s)return;
+  if(ps.sport==='gym'){switchTab('gym');gymMode('history');}
+  else{switchTab('climb');climbMode('history');}
+  showSessionDetail(ps.sport==='gym'?'gym':'climb',s.id);
+}
+// Plan already loaded today → just go back to the log, don't reload (keeps ticks/burns)
+function continuePlannedSession(id){
+  const ps=_psById(id);if(!ps)return;
+  if(ps.sport==='gym'){switchTab('gym');gymMode('log');}
+  else{switchTab('climb');climbMode('log');}
+}
 
 // Sets/reps/rest for the week a date falls in (season week, else today's phase).
 function exDefaultsFor(date){
@@ -9436,7 +9463,7 @@ function setPlanningDate(v){
     renderPlanningBanners();renderBuildPlan();
   }else renderClimbTemplates();
 }
-function savePlanning(){
+function savePlanning(startNow){
   const ctx=_planningCtx;if(!ctx)return;
   const list=_psList();
   let ps=ctx.id?list.find(p=>p.id===ctx.id):null;
@@ -9462,6 +9489,7 @@ function savePlanning(){
   const sport=ctx.sport;
   _planningCtx=null;_planningClimbPlan=null;
   if(sport==='gym'){_buildState=null;renderBuildPlan();renderPlanningBanners();}
+  if(startNow&&ps.date===today()){loadPlannedSession(ps.id);return;}
   toast(`📅 ${sport==='gym'?'Gym':'Climbing'} plan saved for ${fmtDay(ps.date)}`);
   currentWeekStart=getMonday(ps.date);
   switchTab('plan');
@@ -9517,7 +9545,7 @@ function loadPlannedSession(id){
 function renderPlannedBanner(sport){
   const el=document.getElementById(sport==='gym'?'gym-planned-banner':'climb-planned-banner');
   if(!el)return;
-  const due=_psForDate(today(),sport).filter(p=>p.loadedAt!==today());
+  const due=_psForDate(today(),sport).filter(p=>p.loadedAt!==today()&&!_psDoneSession(p));
   el.innerHTML=due.map(p=>`<div class="card" style="border-left:4px solid var(--${sport==='gym'?'gym':'climb'},#2563eb);display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px">
     <div><div style="font-weight:800;font-size:14px">📋 You planned this session</div><div class="text-xs-muted">${esc(p.label||'')}</div></div>
     <button class="btn ${sport==='gym'?'btn-gym':'btn-climb'} btn-sm" onclick="loadPlannedSession('${p.id}')">Load</button>
@@ -9539,6 +9567,8 @@ function _planningBannerHtml(){
     </div>
     ${cw?`<div class="text-xs-muted" style="margin-top:6px">That week: ${cw.week.emoji} ${esc(cw.week.label)} · ${c.sport==='gym'?esc(cw.week.gym):esc(cw.week.climb)}</div>`:''}
     <div class="text-xs-muted" style="margin-top:4px">${c.sport==='gym'?'Generate (or edit) the plan below, then tap 💾 Save for the date.':'Pick and size a template, adjust the routes, then tap 💾 Save.'}</div>
+    ${c.date===today()&&(c.sport==='gym'?(_buildState&&_buildState.plan.length):(_planningClimbPlan&&_planningClimbPlan.items.length))
+      ?`<button class="btn ${c.sport==='gym'?'btn-gym':'btn-climb'}" style="width:100%;margin-top:8px" onclick="savePlanning(true)">▶ Save & start the session now</button>`:''}
   </div>`;
 }
 function renderPlanningBanners(){
@@ -9552,12 +9582,25 @@ function _psSlotHtml(weekKey,dayIdx,s){
   const date=addDays(weekKey,dayIdx);
   const ps=s.psId?_psById(s.psId):null;
   if(ps){
+    const done=_psDoneSession(ps);
+    if(done){
+      return `<div style="margin-top:10px;padding:8px 10px;border-radius:var(--radius-sm);background:#16a34a12;border:1px solid #16a34a40">
+        <div style="font-size:12px;font-weight:700;color:var(--green,#16a34a)">✅ Done · ${esc(_psDoneSummary(ps,done))}</div>
+        <div class="text-xs-muted" style="margin-bottom:6px">Plan: ${esc(ps.label||'')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="viewPlannedDone('${ps.id}')">👁 View session</button>
+          <button class="btn btn-ghost btn-sm" onclick="deletePlannedSession('${ps.id}')" aria-label="Delete plan">🗑</button>
+        </div>
+      </div>`;
+    }
+    const isToday=ps.date===today();
+    const loaded=ps.loadedAt===today();
     return `<div style="margin-top:10px;padding:8px 10px;border-radius:var(--radius-sm);background:#2563eb10;border:1px solid #2563eb33">
-      <div style="font-size:12px;font-weight:700">📋 Plan ready${ps.loadedAt?' · loaded ✓':''}</div>
+      <div style="font-size:12px;font-weight:700">📋 Plan ready${loaded?' · started ✓':''}</div>
       <div class="text-xs-muted" style="margin-bottom:6px">${esc(ps.label||'')}</div>
+      ${isToday?`<button class="btn ${ps.sport==='gym'?'btn-gym':'btn-climb'}" style="width:100%;margin-bottom:6px" onclick="${loaded?`continuePlannedSession('${ps.id}')`:`loadPlannedSession('${ps.id}')`}">${loaded?'▶ Continue session':'▶ Start session'}</button>`:''}
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        ${ps.date===today()?`<button class="btn btn-sm" onclick="loadPlannedSession('${ps.id}')">▶ Load</button>`:''}
-        <button class="btn btn-ghost btn-sm" onclick="startPlanning('${ps.sport}','${ps.date}','${ps.id}')">✏️ Open</button>
+        <button class="btn btn-ghost btn-sm" onclick="startPlanning('${ps.sport}','${ps.date}','${ps.id}')">✏️ Edit plan</button>
         <label style="margin:0;font-size:12px;display:flex;align-items:center;gap:4px">Move
           <input type="date" value="${ps.date}" min="${today()}" onchange="movePlannedSession('${ps.id}',this.value)" style="margin:0;width:auto;font-size:12px;padding:4px"></label>
         <button class="btn btn-ghost btn-sm" onclick="deletePlannedSession('${ps.id}')" aria-label="Delete plan">🗑</button>
@@ -10268,7 +10311,12 @@ function renderHomeTodayFocus(){
         <div class="today-session-type">${label}</div>
         <div class="today-session-details">${duration}${rpe}</div>
         ${s.trainingSubtype?`<div class="today-session-gym">${s.trainingSubtype}</div>`:''}
-        ${s.psId&&_psById(s.psId)?`<button class="btn btn-sm" style="margin-top:6px" onclick="loadPlannedSession('${s.psId}')">📋 ${_psById(s.psId).loadedAt===today()?'Plan loaded ✓ — open':'Load my plan'}</button>`:''}
+        ${(()=>{const ps=s.psId&&_psById(s.psId);if(!ps)return '';
+          const done=_psDoneSession(ps);
+          if(done)return `<button class="btn btn-ghost btn-sm" style="margin-top:6px;color:var(--green,#16a34a)" onclick="viewPlannedDone('${ps.id}')">✅ Done · ${esc(_psDoneSummary(ps,done))}</button>`;
+          return ps.loadedAt===today()
+            ?`<button class="btn btn-sm" style="margin-top:6px" onclick="continuePlannedSession('${ps.id}')">▶ Continue session</button>`
+            :`<button class="btn btn-sm" style="margin-top:6px" onclick="loadPlannedSession('${ps.id}')">▶ Start my plan</button>`;})()}
       </div>
     </div>`;
   });
