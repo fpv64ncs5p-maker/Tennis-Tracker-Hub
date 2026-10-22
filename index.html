@@ -2902,9 +2902,9 @@ function renderTemplates(){
     <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px">YOUR TEMPLATES</div>
     <div style="display:flex;flex-direction:column;gap:6px">
       ${ts.map(t=>`<div style="display:flex;align-items:center;gap:6px">
-        <button class="btn btn-ghost" style="flex:1;text-align:left;font-size:13px;padding:8px 12px" onclick="loadTemplate(${t.id})">⭐ ${esc(t.name)}</button>
-        <button class="btn btn-ghost" style="padding:7px 10px;font-size:13px" onclick="renameTemplate(${t.id})" aria-label="Rename template">✏️</button>
-        <button class="btn btn-ghost" style="padding:7px 12px;color:var(--muted);font-size:14px" onclick="confirmDeleteTemplate(${t.id})">✕</button>
+        <button class="btn btn-ghost" style="flex:1;text-align:left;font-size:13px;padding:8px 12px" onclick="loadTemplate('${t.id}')">⭐ ${esc(t.name)}</button>
+        <button class="btn btn-ghost" style="padding:7px 10px;font-size:13px" onclick="renameTemplate('${t.id}')" aria-label="Rename template">✏️</button>
+        <button class="btn btn-ghost" style="padding:7px 12px;color:var(--muted);font-size:14px" onclick="confirmDeleteTemplate('${t.id}')">✕</button>
       </div>`).join('')}
     </div>
   </div>`;
@@ -2965,7 +2965,9 @@ function _seedFullBodyTemplates(){
   }catch(e){}
 }
 
+function _tmplId(id){const t=DB.gymTemplates().find(x=>String(x.id)===String(id));return t?t.id:id;}
 function loadTemplate(id){
+  id=_tmplId(id);
   const t=DB.gymTemplates().find(x=>x.id===id);
   if(!t)return;
   const _hasRoles=(t.exercises||[]).some(e=>e.role);
@@ -3007,6 +3009,7 @@ function loadTemplate(id){
 }
 
 function renameTemplate(id){
+  id=_tmplId(id);
   const t=DB.gymTemplates().find(x=>x.id===id);
   if(!t)return;
   showTextModal('Rename Template',t.name,'Save Name',name=>{
@@ -3019,6 +3022,7 @@ function renameTemplate(id){
   });
 }
 function confirmDeleteTemplate(id){
+  id=_tmplId(id);
   const t=DB.gymTemplates().find(x=>x.id===id);
   if(!t)return;
   if(!confirm(`Remove template "${t.name}"?`))return;
