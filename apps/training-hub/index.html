@@ -2723,7 +2723,8 @@ function renderBuildPlan(){
   const estMin=_buildEstMin(plan);
   const btn='background:none;border:1px solid var(--border);border-radius:8px;padding:4px 9px;font-size:14px;cursor:pointer;line-height:1.2';
   const rows=plan.map((ex,i)=>{
-    const swFull=suggestWeightFull(ex.name,intensity);
+    const _pct=ex.pct||intensity;
+    const swFull=suggestWeightFull(ex.name,_pct);
     const sw=swFull.weight;
     const wStr=typeof sw==='number'?`${sw} kg`:(sw||'—');
     const usageCount=freq[ex.name]||0;
@@ -2746,7 +2747,8 @@ function renderBuildPlan(){
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div class="meta-pill weight">${wStr}</div>
-        <div class="meta-pill intensity" style="margin-top:4px">${intensity}%</div>
+        <div class="meta-pill intensity" style="margin-top:4px">${_pct}%</div>
+        ${ex.role?`<div style="font-size:10px;font-weight:700;color:var(--muted);margin-top:3px;text-transform:uppercase">${esc(ex.role)}</div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -2848,7 +2850,8 @@ function loadPlanIntoLog(plan,intensity,phaseId){
         notes:ex.notes||''
       };
     }
-    const suggested=suggestWeightFull(ex.name,intensity);
+    const _pct=ex.pct||intensity;
+    const suggested=suggestWeightFull(ex.name,_pct);
     const suggestedWeight=(suggested&&suggested.weight!=null)?String(suggested.weight):(ex.weight||'');
     return {
       name:ex.name,cat:ex.cat,type:'strength',
@@ -2856,7 +2859,7 @@ function loadPlanIntoLog(plan,intensity,phaseId){
       reps:phDef?phDef.reps:ex.reps,
       rest:phDef?phDef.rest:ex.rest,
       perSide:ex.perSide!==undefined?!!ex.perSide:exDefaultPerSide(ex.name),
-      intensity:intensity,weight:suggestedWeight,notes:ex.notes||''
+      intensity:_pct,weight:suggestedWeight,notes:ex.notes||'',...(ex.role?{role:ex.role}:{})
     };
   });
   gymMode('log');
@@ -2890,6 +2893,7 @@ function saveSessionAsTemplate(sessionId){
 }
 
 function renderTemplates(){
+  _seedFullBodyTemplates();
   const ts=DB.gymTemplates();
   const el=document.getElementById('templates-section');
   if(!el)return;
@@ -2906,9 +2910,83 @@ function renderTemplates(){
   </div>`;
 }
 
+// ── Exercise roles in templates (2026-10-22, Jo chose B: two full-body sessions) ──
+// A template exercise may carry role 'heavy' | 'moderate' | 'light'. Sets/reps/% then
+// follow the season week of the session date instead of one phase default for all:
+//   heavy = the week's main prescription (e.g. Strength 4×5 @80–85%)
+//   moderate = 3×10 @ week% −10 · light = 2×12 @ week% −20 (min 50%)
+//   deload week → every role is the deload prescription (2×10 @60%).
+function _roleDefaults(role,date){
+  const cw=cycleWeekFor(date||today());
+  const w=cw?cw.week:null;
+  const pct=w?w.pct:currentPhaseIntensity();
+  const main=w?{sets:w.sets,reps:w.reps,rest:w.rest}:(currentPhaseExDefaults()||{sets:3,reps:'10',rest:"1'30\""});
+  if((w&&w.id==='deload')||role==='heavy'||!role)return {...main,pct};
+  if(role==='moderate')return {sets:3,reps:'10',rest:"2'",pct:Math.max(50,pct-10)};
+  return {sets:2,reps:'12',rest:"1'30\"",pct:Math.max(50,pct-20)}; // light
+}
+function _applyRole(e,date){
+  if(e.cat==='Warm-up'||e.type==='cardio'||e.cardio)return {...e};
+  const d=_roleDefaults(e.role,date);
+  return {...e,sets:d.sets,reps:d.reps,rest:d.rest,pct:d.pct,perSide:e.perSide!==undefined?e.perSide:exDefaultPerSide(e.name)};
+}
+// Ready-made full-body templates (Jo, 2026-10-22). Added once per device when missing.
+const FULLBODY_TEMPLATES=[
+  {id:'fb-a-v1',name:'Full body A · Mon (upper focus, no calves)',exercises:[
+    {name:'Bike',cat:'Warm-up',type:'cardio',cardio:true,duration:'5',rpmLabel:'Avg RPM',distLabel:'Distance (km)',sets:1,reps:"5'",rest:'-'},
+    {name:'Low Row',cat:'Superior – Machine',role:'heavy'},
+    {name:'Shoulder Press',cat:'Superior – Machine',role:'heavy'},
+    {name:'Seated Triceps Press',cat:'Superior – Machine',role:'heavy'},
+    {name:'Rear Deltoid N1',cat:'Superior – Machine',role:'light'},
+    {name:'Hip Abductor',cat:'Inferior Members',role:'light'},
+    {name:'Hip Adductor',cat:'Inferior Members',role:'light'},
+    {name:'Cable Anti-rotation',cat:'Core',role:'light',perSide:true},
+    {name:'Decline Crunch (Upper Abs)',cat:'Core',role:'light'}]},
+  {id:'fb-b-v1',name:'Full body B · Thu/Fri (legs focus)',exercises:[
+    {name:'Bike',cat:'Warm-up',type:'cardio',cardio:true,duration:'5',rpmLabel:'Avg RPM',distLabel:'Distance (km)',sets:1,reps:"5'",rest:'-'},
+    {name:'Leg Extension',cat:'Inferior Members',role:'heavy',notes:'If the knee complains: 3×8 lighter'},
+    {name:'Hip Abductor',cat:'Inferior Members',role:'heavy'},
+    {name:'Hip Adductor',cat:'Inferior Members',role:'heavy'},
+    {name:'Single leg Romanian deadlift',cat:'Inferior Members',role:'moderate',perSide:true},
+    {name:'Leg Press (Calf Raise)',cat:'Inferior Members',role:'moderate',perSide:true,notes:'Achilles: keep it moderate'},
+    {name:'Low Row',cat:'Superior – Machine',role:'light'},
+    {name:'Fly Deltoid N2',cat:'Superior – Machine',role:'light'},
+    {name:'Biceps',cat:'Superior – Machine',role:'light'},
+    {name:'Decline back',cat:'Core',role:'light'},
+    {name:'Cable Anti-rotation',cat:'Core',role:'light',perSide:true}]},
+];
+function _seedFullBodyTemplates(){
+  try{
+    if(localStorage.getItem('_seed_fb_v1'))return;
+    const ts=DB.gymTemplates();
+    const missing=FULLBODY_TEMPLATES.filter(t=>!ts.some(x=>x.id===t.id));
+    if(missing.length)DB.set('gym_templates',[...ts,...missing.map(t=>JSON.parse(JSON.stringify(t)))]);
+    localStorage.setItem('_seed_fb_v1','1');
+  }catch(e){}
+}
+
 function loadTemplate(id){
   const t=DB.gymTemplates().find(x=>x.id===id);
   if(!t)return;
+  const _hasRoles=(t.exercises||[]).some(e=>e.role);
+  if(_hasRoles){
+    const date=(typeof _isPlanningGym==='function'&&_isPlanningGym())?_planningCtx.date:today();
+    const plan=t.exercises.map(e=>_applyRole(e,date));
+    const pct=_roleDefaults('heavy',date).pct;
+    if(typeof _isPlanningGym==='function'&&_isPlanningGym()){
+      const freq={};DB.gymSessions().forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name)freq[e.name]=(freq[e.name]||0)+1;}));
+      const pool=EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&e.cat!=='Warm-up').sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0));
+      _buildState={plan,intensity:pct,freq,phaseDef:exDefaultsFor(date),pool,
+        header:{phaseLabel:'',dataSourceLabel:`⭐ From template "${esc(t.name)}" — heavy / moderate / light follow that week`,assessBanner:'',staleBanner:''},seen:{}};
+      renderBuildPlan();
+      document.getElementById('build-result')?.scrollIntoView({block:'start'});
+      toast(`⭐ "${t.name}" loaded into the plan`);
+      return;
+    }
+    loadPlanIntoLog(plan,pct,null);
+    toast(`⭐ "${t.name}" loaded — heavy / light follow this week`);
+    return;
+  }
   if(typeof _isPlanningGym==='function'&&_isPlanningGym()){
     // Plan ahead: a template becomes the editable plan for the planned date, not today's log
     const date=_planningCtx.date,def=exDefaultsFor(date),pct=_intensityFor(date);
