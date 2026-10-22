@@ -1212,6 +1212,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       <div id="ex-custom-badge" style="display:none;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;color:var(--muted)"></div>
       <!-- STRENGTH fields -->
       <div id="ex-strength-fields">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="ex-perside" style="width:auto;margin:0"> Per side (L + R) — sets count for each side</label>
         <div class="form-row cols3">
           <div>
             <label>Sets <span class="auto-badge">⚡ auto</span></label>
@@ -1412,6 +1413,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       <button class="modal-close" aria-label="Close" onclick="closeModal('modal-edit-history-ex')">✕</button>
     </div>
     <div id="edit-hist-strength">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="edit-hist-perside" style="width:auto;margin:0"> Per side (L + R) — sets count for each side</label>
       <div class="form-row cols2">
         <div class="form-group"><label>Sets</label><input type="number" inputmode="decimal" id="edit-hist-sets" min="1"></div>
         <div class="form-group"><label>Reps</label><input type="text" inputmode="numeric" pattern="[0-9'”\\s×x]*" id="edit-hist-reps" placeholder="e.g. 12" oninput="renderRirPreview('edit-hist')"></div>
@@ -2127,6 +2129,24 @@ function restToSec(r){
 }
 
 // Estimate exercise duration in seconds
+// ── Per-side (unilateral) exercises (2026-10-22, Jo chose C) ─────────────────
+// For one-sided work the sets are counted PER SIDE ("2×10 /side" = 2 left + 2 right).
+// e.perSide===true → sets are per side. Entries logged before this have no flag and
+// hold the TOTAL (e.g. Cable Anti-rotation 4×10 = 2 per side); they keep that meaning.
+const UNILATERAL_RE=/anti-?rotation|pallof|single[- ]?leg|one[- ]arm|1-arm|unilateral|clam|side plank|calf raise\)/i;
+function exDefaultPerSide(name){return !!name&&!/both/i.test(name)&&UNILATERAL_RE.test(name);}
+function isPerSide(e){return !!e&&e.perSide===true;}
+function _sideMult(e){return isPerSide(e)?2:1;}
+function _sideTag(e){return isPerSide(e)?' /side':'';}
+// Sets per side, for the deload "max sets" rule
+function setsPerSideForCheck(e){
+  const n=parseInt(e&&e.sets)||0;
+  if(isPerSide(e))return n;
+  if(e&&e.perSide===undefined&&exDefaultPerSide(e.name))return Math.ceil(n/2); // legacy total
+  return n;
+}
+function _dotCount(e){return (parseInt(e.sets)||0)*_sideMult(e);}
+
 function exTimeSec(ex){
   const restSec=restToSec(ex.rest);
   let repSec=3; // default 3s per rep
@@ -2136,7 +2156,8 @@ function exTimeSec(ex){
   else if(r.includes("10''")||r.includes("7''")||r.includes("''"))repSec=10;
   const repsNum=parseInt(r)||1;
   const workPerSet=(isNaN(repsNum)?1:repsNum)*repSec;
-  return ex.sets*workPerSet + Math.max(0,ex.sets-1)*restSec + 90; // +90s transition
+  const nSets=(parseInt(ex.sets)||0)*_sideMult(ex);
+  return nSets*workPerSet + Math.max(0,nSets-1)*restSec + 90; // +90s transition
 }
 
 // Suggest weight given exercise and intensity
@@ -2647,8 +2668,8 @@ function generatePlan(){
       const rawEx=byCat[cat][0];
       // Apply phase-derived sets/reps/rest for time estimation and display
       const ex=_phaseDef && rawEx.cat!=='Warm-up'
-        ? {...rawEx, sets:_phaseDef.sets, reps:_phaseDef.reps, rest:_phaseDef.rest}
-        : rawEx;
+        ? {...rawEx, sets:_phaseDef.sets, reps:_phaseDef.reps, rest:_phaseDef.rest, perSide:exDefaultPerSide(rawEx.name)}
+        : {...rawEx, perSide:exDefaultPerSide(rawEx.name)};
       const t=exTimeSec(ex);
       if(totalSec+t<=maxSec){plan.push(ex);totalSec+=t;byCat[cat].shift();added=true;}
     }
@@ -2683,7 +2704,8 @@ function generatePlan(){
 let _buildState=null;
 function _buildApplyPhase(ex){
   const d=_buildState&&_buildState.phaseDef;
-  return d&&ex.cat!=='Warm-up'&&!ex.cardio&&ex.type!=='cardio'?{...ex,sets:d.sets,reps:d.reps,rest:d.rest}:{...ex};
+  const ps=ex.perSide!==undefined?ex.perSide:exDefaultPerSide(ex.name);
+  return d&&ex.cat!=='Warm-up'&&!ex.cardio&&ex.type!=='cardio'?{...ex,sets:d.sets,reps:d.reps,rest:d.rest,perSide:ps}:{...ex,perSide:ps};
 }
 // Same "area" = same category; all Superior variants (machine / no machine) count as one area.
 function _buildSameArea(a,b){
@@ -2713,7 +2735,7 @@ function renderBuildPlan(){
       <div class="ex-row-info">
         <div class="ex-row-name">${esc(ex.name)}${usageBadge}${srcBadge}</div>
         <div class="ex-row-meta">
-          <span>📦 ${ex.sets} sets</span>
+          <span>📦 ${ex.sets} sets${_sideTag(ex)}</span>
           <span>🔁 ${esc(String(ex.reps))}</span>
           <span>⏱ ${esc(String(ex.rest))}</span>
         </div>
@@ -2833,6 +2855,7 @@ function loadPlanIntoLog(plan,intensity,phaseId){
       sets:phDef?phDef.sets:ex.sets,
       reps:phDef?phDef.reps:ex.reps,
       rest:phDef?phDef.rest:ex.rest,
+      perSide:ex.perSide!==undefined?!!ex.perSide:exDefaultPerSide(ex.name),
       intensity:intensity,weight:suggestedWeight,notes:ex.notes||''
     };
   });
@@ -2891,7 +2914,7 @@ function loadTemplate(id){
     const date=_planningCtx.date,def=exDefaultsFor(date),pct=_intensityFor(date);
     const freq={};DB.gymSessions().forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name)freq[e.name]=(freq[e.name]||0)+1;}));
     const pool=EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&e.cat!=='Warm-up').sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0));
-    _buildState={plan:t.exercises.map(e=>(e.cat==='Warm-up'||e.type==='cardio'||e.cardio)?{...e}:{...e,sets:def.sets,reps:def.reps,rest:def.rest}),
+    _buildState={plan:t.exercises.map(e=>(e.cat==='Warm-up'||e.type==='cardio'||e.cardio)?{...e}:{...e,sets:def.sets,reps:def.reps,rest:def.rest,perSide:exDefaultPerSide(e.name)}),
       intensity:pct,freq,phaseDef:def,pool,
       header:{phaseLabel:'',dataSourceLabel:`⭐ From template "${esc(t.name)}" — edit it, then save`,assessBanner:'',staleBanner:''},seen:{}};
     renderBuildPlan();
@@ -3020,6 +3043,7 @@ function onExerciseSelect(){
   } else {
     // Phase-aware sets / reps / rest — macro phase overrides the library default
     const phDef=currentPhaseExDefaults();
+    const _psEl=document.getElementById('ex-perside');if(_psEl)_psEl.checked=exDefaultPerSide(name);
     document.getElementById('ex-sets').value=phDef?phDef.sets:ex.sets;
     document.getElementById('ex-reps').value=phDef?phDef.reps:ex.reps;
     // Rest priority: explicit session goal → macro phase → exercise default
@@ -3264,6 +3288,7 @@ function addExerciseToSession(){
       weight:_normalizeKgInput(document.getElementById('ex-weight').value),
       rir:_normalizeKgInput(document.getElementById('ex-rir').value),
       notes:document.getElementById('ex-notes').value,
+      perSide:!!document.getElementById('ex-perside')?.checked,
     };
   }
   if(quickAddSessionId){
@@ -3339,7 +3364,7 @@ let _doneSectionCollapsed=false;
 // Whether an exercise counts as "done" — all sets ticked, or cardio marked done
 function _isExerciseDone(e){
   if(e.type==='cardio') return !!e.done;
-  const sets=parseInt(e.sets)||0;
+  const sets=_dotCount(e);
   return sets>0 && (e.doneSets||0)>=sets;
 }
 
@@ -3353,7 +3378,7 @@ function _renderExRow(e,i){
         e.rpm?`🔄 ${e.rpm} ${e.rpmLabel||'RPM'}`:'',
       ].filter(Boolean)
     : [
-        `📦 ${e.sets}×${e.reps}`,
+        `📦 ${e.sets}×${e.reps}${_sideTag(e)}`,
         `⏱ ${e.rest}`,
         e.weight?`<span class="meta-pill weight">${e.weight} kg</span>`:'',
         e.intensity?`<span class="meta-pill intensity">${e.intensity}%</span>`:'',
@@ -3362,13 +3387,14 @@ function _renderExRow(e,i){
 
   let setsHtml='';
   if(e.type!=='cardio'){
-    const nSets=parseInt(e.sets)||0;
+    const nSets=_dotCount(e);
     const doneSets=e.doneSets||0;
     if(nSets>0){
+      const ps=isPerSide(e);
       const dots=Array.from({length:nSets},(_,si)=>
-        `<button type="button" class="set-dot${si<doneSets?' done':''}" aria-label="Set ${si+1} ${si<doneSets?'done':'pending'}" onclick="toggleExerciseSet(${i},${si},event)"></button>`
+        `<button type="button" class="set-dot${si<doneSets?' done':''}" aria-label="Set ${ps?(Math.floor(si/2)+1)+(si%2?' right':' left'):si+1} ${si<doneSets?'done':'pending'}" onclick="toggleExerciseSet(${i},${si},event)" ${ps&&si%2?'style="margin-right:6px"':''}>${ps?`<span style="font-size:9px;font-weight:700;color:var(--muted)">${si%2?'R':'L'}</span>`:''}</button>`
       ).join('');
-      const lbl=doneSets>=nSets?'all done ✓':`${doneSets} of ${nSets} sets`;
+      const lbl=doneSets>=nSets?'all done ✓':ps?`${doneSets} of ${nSets} (L+R)`:`${doneSets} of ${nSets} sets`;
       setsHtml=`<div class="set-dots">${dots}<span class="set-dots-label">${lbl}</span></div>`;
     }
   } else {
@@ -3424,7 +3450,7 @@ function toggleExerciseSet(exIdx,setIdx,evt){
   if(evt){evt.stopPropagation();evt.preventDefault();}
   const e=gymSession.exercises[exIdx];
   if(!e||e.type==='cardio')return;
-  const nSets=parseInt(e.sets)||0;
+  const nSets=_dotCount(e);
   const cur=e.doneSets||0;
   // If clicked dot is the last filled one → unfill it (decrement). Otherwise fill up to clicked.
   let next;
@@ -3443,7 +3469,7 @@ function toggleExerciseDone(exIdx,evt){
   if(e.type==='cardio'){
     e.done=!e.done;
   } else {
-    const nSets=parseInt(e.sets)||0;
+    const nSets=_dotCount(e);
     e.doneSets=(e.doneSets||0)>=nSets?0:nSets;
   }
   renderSessionExercises();
@@ -3815,7 +3841,7 @@ function calcVolByCat(exercises){
   exercises.forEach(e=>{
     if(e.type==='strength'&&e.weight&&e.sets&&e.reps){
       const s=parseFloat(e.sets),r=parseFloat(e.reps),w=parseFloat(e.weight);
-      if(!isNaN(s)&&!isNaN(r)&&!isNaN(w)&&w>0) vol[e.cat]=(vol[e.cat]||0)+s*r*w;
+      if(!isNaN(s)&&!isNaN(r)&&!isNaN(w)&&w>0) vol[e.cat]=(vol[e.cat]||0)+s*r*w*_sideMult(e);
     }
   });
   return vol;
@@ -3982,7 +4008,7 @@ function renderExProgression(){
         <div style="flex:1;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden">
           <div style="height:100%;width:${pct}%;background:var(--gym);border-radius:3px"></div>
         </div>
-        <span class="text-xxs-muted-nowrap">${e.sets}×${e.reps}${e.intensity?' @ '+e.intensity+'%':''}</span>
+        <span class="text-xxs-muted-nowrap">${e.sets}×${e.reps}${_sideTag(e)}${e.intensity?' @ '+e.intensity+'%':''}</span>
       </div>
     </div>`;
   }).join('');
@@ -4050,7 +4076,7 @@ function showSessionDetail(type,id){
         if(e.rpm)parts.push(`${e.rpm} ${e.rpmLabel||'rpm'}`);
         metaHtml=parts.map(p=>`<span>${p}</span>`).join('');
       } else {
-        metaHtml=`<span>📦 ${e.sets}×${e.reps}</span><span>⏱ ${e.rest}</span>${e.weight?`<span class="meta-pill weight">${e.weight} kg`+`</span>`:''}${e.intensity?`<span class="meta-pill intensity">${e.intensity}%</span>`:''}${(e.rir!=null&&String(e.rir).trim()!=='')?`<span>RIR ${esc(e.rir)}</span>`:''}`;
+        metaHtml=`<span>📦 ${e.sets}×${e.reps}${_sideTag(e)}</span><span>⏱ ${e.rest}</span>${e.weight?`<span class="meta-pill weight">${e.weight} kg`+`</span>`:''}${e.intensity?`<span class="meta-pill intensity">${e.intensity}%</span>`:''}${(e.rir!=null&&String(e.rir).trim()!=='')?`<span>RIR ${esc(e.rir)}</span>`:''}`;
       }
       return `<div class="ex-row">
       <div class="ex-row-info">
@@ -4196,6 +4222,7 @@ function _fillEditHistModal(e){
     document.getElementById('edit-hist-rpm').value=e.rpm||'';
   } else {
     document.getElementById('edit-hist-sets').value=e.sets||'';
+    const _ep=document.getElementById('edit-hist-perside');if(_ep)_ep.checked=isPerSide(e);
     document.getElementById('edit-hist-reps').value=e.reps||'';
     document.getElementById('edit-hist-rest').value=e.rest||'';
 
@@ -4332,6 +4359,7 @@ function saveEditHistoryExercise(){
       e.rpm=_normalizeKgInput(document.getElementById('edit-hist-rpm').value);
     } else {
       e.sets=document.getElementById('edit-hist-sets').value;
+      e.perSide=!!document.getElementById('edit-hist-perside')?.checked;
       e.reps=document.getElementById('edit-hist-reps').value;
       e.weight=_normalizeKgInput(document.getElementById('edit-hist-weight').value);
       e.intensity=document.getElementById('edit-hist-intensity').value;
@@ -4359,6 +4387,7 @@ function saveEditHistoryExercise(){
     e.rpm=document.getElementById('edit-hist-rpm').value;
   } else {
     e.sets=document.getElementById('edit-hist-sets').value;
+    e.perSide=!!document.getElementById('edit-hist-perside')?.checked;
     e.reps=document.getElementById('edit-hist-reps').value;
     e.weight=_normalizeKgInput(document.getElementById('edit-hist-weight').value);
     e.intensity=document.getElementById('edit-hist-intensity').value;
@@ -7099,7 +7128,7 @@ function renderWeekTotals(weekStart){
     (s.exercises||[]).forEach(e=>{
       if(e.type==='cardio')return;
       const sets=parseInt(e.sets)||0,reps=parseInt(e.reps)||0,w=parseFloat(e.weight)||0;
-      gymVol+=sets*reps*w;
+      gymVol+=sets*reps*w*_sideMult(e);
     });
   });
 
@@ -7331,7 +7360,7 @@ function renderMonthlyResume(){
       gymMins+=s.durationMins||0;
       (s.exercises||[]).forEach(e=>{
         if(e.type==='cardio')return;
-        gymVol+=(parseInt(e.sets)||0)*(parseInt(e.reps)||0)*(parseFloat(e.weight)||0);
+        gymVol+=(parseInt(e.sets)||0)*(parseInt(e.reps)||0)*(parseFloat(e.weight)||0)*_sideMult(e);
       });
     });
 
@@ -8790,7 +8819,7 @@ const SEASON_DELOAD={id:'deload',label:'Deload',emoji:'😴',color:'#64748b',gym
   gym:'2 × 10 @ ~60% · max 45 min',gymFreq:'1–2×/week',climb:'Easy routes only',tennis:'Easier pace',
   wedDouble:false,maxHard:1,noFingers:true,remove:'Board, fingerboard, wrist loading, anything to failure'};
 const SEASON_LIMITS={blockMin:2,blockMax:5,finalMin:1,finalMax:2};
-const CYCLE_RULES={restDays:2,gymTarget:2,hardGymMin:50,hardGymPct:75,hardRir:2};
+const CYCLE_RULES={restDays:2,gymTarget:2,hardGymMin:50,hardGymPct:75,hardRir:2,deloadLeeway:5};
 
 function defaultSeason(startDate){
   return {v:2,startDate,leadDeload:true,finalDeload:2,
@@ -9153,7 +9182,7 @@ function _weekActivity(from,to,todayStr){
     const strength=ex.filter(e=>e&&e.cat!=='Warm-up'&&e.type!=='cardio');
     add(s.date,{kind:'gym',level:_gymLevel(long,strength),long,mins,
       lower:ex.filter(e=>e&&LOWER.includes(e.cat)).length>=2,
-      maxSets:strength.reduce((m,e)=>Math.max(m,parseInt(e.sets)||0),0),label:'💪 Gym'});
+      maxSets:strength.reduce((m,e)=>Math.max(m,setsPerSideForCheck(e)),0),label:'💪 Gym'});
   });
   DB.climbSessions().filter(s=>inR(s.date)).forEach(s=>{
     const board=(s.blocks||[]).some(b=>b.type==='board');
@@ -9292,7 +9321,8 @@ function computeWeekCheck(todayStr){
   const gyms=past.flatMap(d=>(act[d]||[]).filter(x=>x.kind==='gym').map(x=>({...x,date:d})));
   if(w.id==='deload'){
     gyms.forEach(g=>{
-      if(g.mins&&g.mins>w.gymMaxMin)warn(`Gym on ${_dow(g.date)} took ${g.mins} min — deload max ${w.gymMaxMin}.`);
+      // ~5 min leeway (Jo, 2026-10-22): a 50-min easy session is still a deload
+      if(g.mins&&g.mins>w.gymMaxMin+CYCLE_RULES.deloadLeeway)warn(`Gym on ${_dow(g.date)} took ${g.mins} min — deload max ~${w.gymMaxMin}.`);
       if(g.maxSets>w.sets)warn(`Gym on ${_dow(g.date)} had ${g.maxSets} sets on an exercise — deload is ${w.sets} sets.`);
     });
   }else{
@@ -10611,7 +10641,7 @@ function getGymTrends(){
     let vol=0,time=s.durationMins||s.duration||0;
     (s.exercises||[]).forEach(ex=>{
       const sets=parseInt(ex.sets)||0,reps=parseInt(ex.reps)||0,weight=parseFloat(ex.weight)||0;
-      if(weight>0)vol+=sets*reps*weight;
+      if(weight>0)vol+=sets*reps*weight*_sideMult(ex);
     });
     if(inThis){thisData.sessions++;thisData.volume+=vol;thisData.time+=time;}
     if(inPrev){prevData.sessions++;prevData.volume+=vol;prevData.time+=time;}
@@ -12698,7 +12728,7 @@ function monthReportStats(ym){
     addSess(s.date,'gym',s.durationMins||0);
     (s.exercises||[]).forEach(e=>{
       if(e.type==='cardio')return;
-      gymVol+=(parseInt(e.sets)||0)*(parseInt(e.reps)||0)*(parseFloat(e.weight)||0);
+      gymVol+=(parseInt(e.sets)||0)*(parseInt(e.reps)||0)*(parseFloat(e.weight)||0)*_sideMult(e);
     });
   });
   let routes=0,sends=0,meters=0,movs=0,boardMoves=0,topIdx=-1;
