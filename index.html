@@ -1748,6 +1748,19 @@ const EXERCISES = [
   {name:"Calfs Raise (w/ weight)",cat:"Rehab",equip:"m",sets:4,reps:"8",rest:"3'-5'"},
   {name:"Leg Curl (Machine)",cat:"Rehab",equip:"m",sets:4,reps:"8",rest:"3'-5'"},
   {name:"Calfs Machine",cat:"Rehab",equip:"m",sets:3,reps:"12",rest:"3'"},
+  // Home equipment (barbell + plates, light dumbbells, slings, bands, step, pull-up bar) — 2026-10-26
+  {name:"Band Shoulder Warm-up",cat:"Warm-up",equip:"bw",cardio:true,rpmLabel:"Rounds",distLabel:"Band",sets:1,reps:"5'",rest:"-"},
+  {name:"Step-up Warm-up",cat:"Warm-up",equip:"bw",cardio:true,rpmLabel:"Steps/min",distLabel:"Step height (cm)",sets:1,reps:"5'",rest:"-"},
+  {name:"Barbell Overhead Press",cat:"Superior – No Machine",equip:"bw",sets:4,reps:"6",rest:"3'"},
+  {name:"Barbell Floor Press",cat:"Superior – No Machine",equip:"bw",sets:3,reps:"8",rest:"2'"},
+  {name:"Barbell Bent-over Row",cat:"Superior – No Machine",equip:"bw",sets:3,reps:"8",rest:"2'"},
+  {name:"Push-up",cat:"Superior – No Machine",equip:"bw",sets:3,reps:"10",rest:"1'30\""},
+  {name:"Band Face Pull",cat:"Superior – No Machine",equip:"bw",sets:2,reps:"15",rest:"1'"},
+  {name:"Barbell Romanian Deadlift",cat:"Inferior Members",equip:"bw",sets:4,reps:"6",rest:"3'"},
+  {name:"Barbell Hip Thrust (step)",cat:"Inferior Members",equip:"bw",sets:3,reps:"10",rest:"2'"},
+  {name:"Bulgarian Split Squat (step)",cat:"Inferior Members",equip:"bw",sets:3,reps:"8",rest:"2'"},
+  {name:"Copenhagen Plank (step)",cat:"Inferior Members",equip:"bw",sets:2,reps:"20''",rest:"1'"},
+  {name:"Single-leg Calf Raise (step)",cat:"Inferior Members",equip:"bw",sets:3,reps:"12",rest:"1'"},
   {name:"Stretching",cat:"Stretching",equip:"bw",sets:6,reps:"1×1'",rest:"30''"},
 ];
 
@@ -2133,7 +2146,7 @@ function restToSec(r){
 // For one-sided work the sets are counted PER SIDE ("2×10 /side" = 2 left + 2 right).
 // e.perSide===true → sets are per side. Entries logged before this have no flag and
 // hold the TOTAL (e.g. Cable Anti-rotation 4×10 = 2 per side); they keep that meaning.
-const UNILATERAL_RE=/anti-?rotation|pallof|single[- ]?leg|one[- ]arm|1-arm|unilateral|clam|side plank|calf raise\)/i;
+const UNILATERAL_RE=/anti-?rotation|pallof|single[- ]?leg|bulgarian|split squat|copenhagen|one[- ]arm|1-arm|unilateral|clam|side plank|calf raise\)/i;
 function exDefaultPerSide(name){return !!name&&!/both/i.test(name)&&UNILATERAL_RE.test(name);}
 function isPerSide(e){return !!e&&e.perSide===true;}
 function _sideMult(e){return isPerSide(e)?2:1;}
@@ -2151,10 +2164,12 @@ function exTimeSec(ex){
   const restSec=restToSec(ex.rest);
   let repSec=3; // default 3s per rep
   const r=ex.reps;
+  const _sec=r.match(/(\d+)\s*(''|")/);
+  if(_sec)return (()=>{const n=(parseInt(ex.sets)||0)*_sideMult(ex);return n*parseInt(_sec[1])+Math.max(0,n-1)*restSec+90;})(); // timed hold e.g. 30''
   if(r.includes("1'")||r.includes("1×1'"))repSec=60;
   else if(r.includes("'")){const m=r.match(/(\d+)'/);if(m)repSec=parseInt(m[1])*60}
   else if(r.includes("10''")||r.includes("7''")||r.includes("''"))repSec=10;
-  const repsNum=parseInt(r)||1;
+  const repsNum=/^\s*\d+\s*'\s*$/.test(r)?1:(parseInt(r)||1); // "5'" = one 5-minute block, not 5 × 5 min
   const workPerSet=(isNaN(repsNum)?1:repsNum)*repSec;
   const nSets=(parseInt(ex.sets)||0)*_sideMult(ex);
   return nSets*workPerSet + Math.max(0,nSets-1)*restSec + 90; // +90s transition
@@ -2712,7 +2727,7 @@ function _buildSameArea(a,b){
   if(a.startsWith('Superior')&&b.startsWith('Superior'))return true;
   return a===b;
 }
-function _buildEstMin(plan){return Math.round(plan.reduce((t,ex)=>t+exTimeSec({...ex,reps:String(ex.reps)}),0)/60);}
+function _buildEstMin(plan){return Math.round(plan.reduce((t,ex)=>t+(ex.ss?Math.max(0,exTimeSec({...ex,reps:String(ex.reps),rest:'-'})-90)+15:exTimeSec({...ex,reps:String(ex.reps)})),0)/60);} // superset (ss) = work only, done in the rests above
 function renderBuildPlan(){
   const el=document.getElementById('build-result');
   if(!el)return;
@@ -2748,7 +2763,7 @@ function renderBuildPlan(){
       <div style="text-align:right;flex-shrink:0">
         <div class="meta-pill weight">${wStr}</div>
         <div class="meta-pill intensity" style="margin-top:4px">${_pct}%</div>
-        ${ex.role?`<div style="font-size:10px;font-weight:700;color:var(--muted);margin-top:3px;text-transform:uppercase">${esc(ex.role)}</div>`:''}
+        ${ex.role?`<div style="font-size:10px;font-weight:700;color:var(--muted);margin-top:3px;text-transform:uppercase">${esc(ex.role==='fixed'?'hold':ex.role)}${ex.ss?' · 🔗 superset':''}</div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -2859,7 +2874,7 @@ function loadPlanIntoLog(plan,intensity,phaseId){
       reps:phDef?phDef.reps:ex.reps,
       rest:phDef?phDef.rest:ex.rest,
       perSide:ex.perSide!==undefined?!!ex.perSide:exDefaultPerSide(ex.name),
-      intensity:_pct,weight:suggestedWeight,notes:ex.notes||'',...(ex.role?{role:ex.role}:{})
+      intensity:_pct,weight:suggestedWeight,notes:ex.notes||'',...(ex.role?{role:ex.role}:{}),...(ex.ss?{ss:true}:{})
     };
   });
   gymMode('log');
@@ -2894,6 +2909,7 @@ function saveSessionAsTemplate(sessionId){
 
 function renderTemplates(){
   _seedFullBodyTemplates();
+  _seedTemplates(HOME_TEMPLATES,'_seed_home_v1');
   const ts=DB.gymTemplates();
   const el=document.getElementById('templates-section');
   if(!el)return;
@@ -2927,6 +2943,10 @@ function _roleDefaults(role,date){
 }
 function _applyRole(e,date){
   if(e.cat==='Warm-up'||e.type==='cardio'||e.cardio)return {...e};
+  if(e.role==='fixed'){ // timed/bodyweight holds: keep the template's sets × reps; deload caps at 2 sets
+    const cw=cycleWeekFor(date||today()),dl=cw&&cw.week&&cw.week.id==='deload';
+    return {...e,sets:dl?Math.min(2,e.sets||2):e.sets,pct:null,perSide:e.perSide!==undefined?e.perSide:exDefaultPerSide(e.name)};
+  }
   const d=_roleDefaults(e.role,date);
   return {...e,sets:d.sets,reps:d.reps,rest:d.rest,pct:d.pct,perSide:e.perSide!==undefined?e.perSide:exDefaultPerSide(e.name)};
 }
@@ -2955,6 +2975,38 @@ const FULLBODY_TEMPLATES=[
     {name:'Decline back',cat:'Core',role:'light'},
     {name:'Cable Anti-rotation',cat:'Core',role:'light',perSide:true}]},
 ];
+// Home sessions (Jo, 2026-10-26): barbell + plates, light dumbbells, slings, bands, step, pull-up bar.
+const HOME_TEMPLATES=[ // ss:true = superset, done in the rests of the exercise above it (Jo chose supersets to fit 60 min)
+  {id:'home-up-v1',name:'Home · Upper + Core 60min',exercises:[
+    {name:'Band Shoulder Warm-up',cat:'Warm-up',type:'cardio',cardio:true,duration:'5',rpmLabel:'Rounds',distLabel:'Band',sets:1,reps:"5'",rest:'-',notes:'Band pull-aparts, dislocates, external rotations + 2 light sets of press'},
+    {name:'Pull-up',cat:'Superior – No Machine',role:'heavy',notes:'Band-assisted if needed to hit the reps; add weight when easy'},
+    {name:'Band Face Pull',cat:'Superior – No Machine',role:'light',ss:true,notes:'🔗 Superset: in the rests of Pull-up'},
+    {name:'Barbell Overhead Press',cat:'Superior – No Machine',role:'heavy',notes:'Standing, glutes + abs tight'},
+    {name:'Dead bug heel tap',cat:'Core',role:'light',ss:true,notes:'🔗 Superset: in the rests of Overhead Press'},
+    {name:'Barbell Floor Press',cat:'Superior – No Machine',role:'moderate',notes:'Lying on the floor, elbows touch down each rep'},
+    {name:'Pallof Press',cat:'Core',role:'light',perSide:true,ss:true,notes:'🔗 Superset: in the rests of Floor Press · with the band'},
+    {name:'Reverse pull up',cat:'Superior – No Machine',role:'moderate',notes:'Slings / inverted row — feet on the step = harder'},
+    {name:'One-Arm Elbow & Side Plank',cat:'Core',role:'fixed',sets:2,reps:"30''",rest:"30''",perSide:true,ss:true,notes:'🔗 Superset: in the rests of Reverse pull up'}]},
+  {id:'home-low-v1',name:'Home · Lower + Core 60min',exercises:[
+    {name:'Step-up Warm-up',cat:'Warm-up',type:'cardio',cardio:true,duration:'5',rpmLabel:'Steps/min',distLabel:'Step height (cm)',sets:1,reps:"5'",rest:'-',notes:'Easy step-ups + band walks + 2 empty-bar squat sets'},
+    {name:'Barbell Squat',cat:'Inferior Members',role:'heavy',notes:'Back squat (or front squat if no rack)'},
+    {name:'Clams',cat:'Inferior Members',role:'light',perSide:true,ss:true,notes:'🔗 Superset: in the rests of Squat · with the band'},
+    {name:'Barbell Romanian Deadlift',cat:'Inferior Members',role:'heavy'},
+    {name:'Single-leg Calf Raise (step)',cat:'Inferior Members',role:'light',perSide:true,ss:true,notes:'🔗 Superset: in the rests of RDL · slow down, heel below the step'},
+    {name:'Bulgarian Split Squat (step)',cat:'Inferior Members',role:'moderate',perSide:true,notes:'Rear foot on the step, dumbbells in hands'},
+    {name:'Sling Trainer "Marine Core"',cat:'Core',role:'light',ss:true,notes:'🔗 Superset: in the rests of Split Squat'},
+    {name:'Barbell Hip Thrust (step)',cat:'Inferior Members',role:'moderate',notes:'Upper back on the step'},
+    {name:'Copenhagen Plank (step)',cat:'Inferior Members',role:'fixed',sets:2,reps:"20''",rest:"45''",perSide:true,ss:true,notes:'🔗 Superset: in the rests of Hip Thrust · knee on the step = easier'}]},
+];
+function _seedTemplates(list,flag){
+  try{
+    if(localStorage.getItem(flag))return;
+    const ts=DB.gymTemplates();
+    const missing=list.filter(t=>!ts.some(x=>x.id===t.id));
+    if(missing.length)DB.set('gym_templates',[...ts,...missing.map(t=>JSON.parse(JSON.stringify(t)))]);
+    localStorage.setItem(flag,'1');
+  }catch(e){}
+}
 function _seedFullBodyTemplates(){
   try{
     if(localStorage.getItem('_seed_fb_v1'))return;
@@ -3716,6 +3768,12 @@ const EX_MUSCLES={
   'Mountain Climber Plank':['abs'],
   'One-Arm Elbow & Side Plank':['abs','obliques'],
   'Sling Trainer "Marine Core"':['abs','obliques'],
+  'Barbell Overhead Press':['delts','triceps'],'Barbell Floor Press':['pecs','triceps'],
+  'Barbell Bent-over Row':['lats','traps','biceps'],'Push-up':['pecs','triceps','delts'],
+  'Band Face Pull':['delts','traps'],'Reverse pull up':['lats','traps','biceps'],
+  'Barbell Romanian Deadlift':['hamstrings','glutes','lowerback'],'Barbell Hip Thrust (step)':['glutes','hamstrings'],
+  'Bulgarian Split Squat (step)':['quads','glutes'],'Copenhagen Plank (step)':['quads','obliques'],
+  'Single-leg Calf Raise (step)':['calves'],
   'Windshield Wipers':['abs','obliques'],
   'Superman':['lowerback','glutes'],
   'Reverse Plank':['lowerback','glutes'],
