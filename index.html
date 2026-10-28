@@ -561,7 +561,9 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <button class="seg-btn" style="flex-shrink:0" data-mode="progress" onclick="gymMode('progress')">📈</button>
         <button class="seg-btn" style="flex-shrink:0" data-mode="assess" onclick="gymMode('assess')">📋 Assess</button>
         <button class="seg-btn" style="flex-shrink:0" data-mode="stretch" onclick="gymMode('stretch')">🧘 Stretch</button>
+        <button class="seg-btn" style="flex-shrink:0" data-mode="library" onclick="gymMode('library')">📚 Library</button>
       </div>
+      <div id="gym-library" style="display:none"></div>
 
       <!-- LOG MODE -->
       <div id="gym-log">
@@ -1341,6 +1343,16 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       <div id="nex-muscles" style="display:flex;flex-wrap:wrap;gap:6px"></div>
     </div>
     <button class="btn btn-ghost" id="nex-reset" style="display:none;width:100%;margin-bottom:8px;font-size:12px" onclick="resetBuiltinExercise()">↺ Reset to the app's default</button>
+    <div id="nex-more" style="display:none;border-top:1px solid var(--border);padding-top:10px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px">CLEAN-UP</div>
+      <div id="nex-usage" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
+      <button class="btn btn-ghost" id="nex-hide" style="width:100%;margin-bottom:8px;font-size:12px" onclick="toggleHideExercise()">🙈 Hide from pickers</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="nex-merge-into" style="flex:1;font-size:13px"></select>
+        <button class="btn btn-ghost" style="font-size:12px;white-space:nowrap" onclick="mergeFromModal()">🔀 Merge</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Merge moves all sessions, templates and weight history of this exercise into the one you pick, then removes this one.</div>
+    </div>
     <div class="flex-gap8">
       <button class="btn btn-ghost" style="flex:1" onclick="cancelNewExercise()">Cancel</button>
       <button class="btn btn-gym" style="flex:2" id="nex-save" onclick="saveNewExercise()">💾 Save to Library</button>
@@ -2423,9 +2435,9 @@ function syncCustomExercises(){
   const ov=DB.exerciseOverrides();
   EXERCISES.forEach(e=>{
     if(!e._orig)e._orig={cat:e.cat,equip:e.equip,sets:e.sets,reps:e.reps,rest:e.rest};
-    Object.assign(e,e._orig);delete e.muscles;delete e.edited;
+    Object.assign(e,e._orig);delete e.muscles;delete e.muscles2;delete e.edited;delete e.hidden;
     const o=ov[e.name];
-    if(o){['cat','equip','sets','reps','rest'].forEach(k=>{if(o[k]!==undefined&&o[k]!=='')e[k]=o[k]});if(Array.isArray(o.muscles))e.muscles=o.muscles;e.edited=true;}
+    if(o){['cat','equip','sets','reps','rest'].forEach(k=>{if(o[k]!==undefined&&o[k]!=='')e[k]=o[k]});if(Array.isArray(o.muscles))e.muscles=o.muscles;if(Array.isArray(o.muscles2))e.muscles2=o.muscles2;if(o.hidden)e.hidden=true;e.edited=Object.keys(o).some(k=>k!=='hidden');}
   });
   DB.customExercises().forEach(e=>EXERCISES.push({...e,custom:true}));
 }
@@ -2546,7 +2558,7 @@ let buildCats=[];
 let buildEquip='';
 
 function gymMode(mode){
-  ['log','build','history','progress','macro','assess','stretch'].forEach(m=>{
+  ['log','build','history','progress','macro','assess','stretch','library'].forEach(m=>{
     const el=document.getElementById('gym-'+m);
     if(el)el.style.display=m===mode?'':'none';
   });
@@ -2578,6 +2590,7 @@ function gymMode(mode){
   if(mode==='macro')renderGymMacrocycle();
   if(mode==='assess')renderGymAssessments();
   if(mode==='stretch')renderStretchHistory();
+  if(mode==='library')renderExLibrary();
 }
 
 function toggleBuildArea(el){
@@ -2605,6 +2618,7 @@ function generatePlan(){
   if(!buildCats.length){toast('Select at least one focus area');return}
   const AREA_MAP={'Inferior':'Inferior Members','Superior':'Superior','Core':'Core','Wrist':'Wrist','Fingers':'Fingers','Warm-up':'Warm-up','Rehab':'Rehab','Fingerboard':'Fingerboard'};
   const pool=EXERCISES.filter(e=>{
+    if(e.hidden)return false;
     const areaOk=buildCats.some(a=>a==='Superior'?e.cat.startsWith('Superior'):e.cat===AREA_MAP[a]);
     const equipOk=!buildEquip||e.equip===buildEquip;
     return areaOk&&equipOk;
@@ -2786,7 +2800,7 @@ function renderBuildPlan(){
   // ＋ Add: every gym exercise not already in the plan, grouped by category
   const inPlan=new Set(plan.map(e=>e.name));
   const cats={};
-  EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&e.cat!=='Fingerboard'&&!inPlan.has(e.name))
+  EXERCISES.filter(e=>e&&e.cat&&!e.hidden&&!e.cat.startsWith('CG')&&e.cat!=='Fingerboard'&&!inPlan.has(e.name))
     .forEach(e=>{(cats[e.cat]=cats[e.cat]||[]).push(e);});
   const addOpts=Object.keys(cats).map(c=>`<optgroup label="${esc(c)}">${
     cats[c].sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0)).map(e=>`<option value="${esc(e.name)}">${esc(e.name)}${freq[e.name]?` ×${freq[e.name]}`:''}</option>`).join('')
@@ -2823,7 +2837,7 @@ function buildSwapEx(i){
   const seen=st.seen[key]=st.seen[key]||new Set();
   seen.add(cur.name);
   // Candidates: the generator's pool first (respects area + equipment), then the whole library
-  const libExtra=EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&!st.pool.some(p=>p.name===e.name));
+  const libExtra=EXERCISES.filter(e=>e&&e.cat&&!e.hidden&&!e.cat.startsWith('CG')&&!st.pool.some(p=>p.name===e.name));
   const ordered=[...st.pool,...libExtra.sort((a,b)=>(st.freq[b.name]||0)-(st.freq[a.name]||0))];
   let next=ordered.find(e=>_buildSameArea(e.cat,cur.cat)&&!inPlan.has(e.name)&&!seen.has(e.name));
   if(!next){
@@ -3045,7 +3059,7 @@ function loadTemplate(id){
     const pct=_roleDefaults('heavy',date).pct;
     if(typeof _isPlanningGym==='function'&&_isPlanningGym()){
       const freq={};DB.gymSessions().forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name)freq[e.name]=(freq[e.name]||0)+1;}));
-      const pool=EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&e.cat!=='Warm-up').sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0));
+      const pool=EXERCISES.filter(e=>e&&e.cat&&!e.hidden&&!e.cat.startsWith('CG')&&e.cat!=='Warm-up').sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0));
       _buildState={plan,intensity:pct,freq,phaseDef:exDefaultsFor(date),pool,
         header:{phaseLabel:'',dataSourceLabel:`⭐ From template "${esc(t.name)}" — heavy / moderate / light follow that week`,assessBanner:'',staleBanner:''},seen:{}};
       renderBuildPlan();
@@ -3061,7 +3075,7 @@ function loadTemplate(id){
     // Plan ahead: a template becomes the editable plan for the planned date, not today's log
     const date=_planningCtx.date,def=exDefaultsFor(date),pct=_intensityFor(date);
     const freq={};DB.gymSessions().forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name)freq[e.name]=(freq[e.name]||0)+1;}));
-    const pool=EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&e.cat!=='Warm-up').sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0));
+    const pool=EXERCISES.filter(e=>e&&e.cat&&!e.hidden&&!e.cat.startsWith('CG')&&e.cat!=='Warm-up').sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0));
     _buildState={plan:t.exercises.map(e=>(e.cat==='Warm-up'||e.type==='cardio'||e.cardio)?{...e}:{...e,sets:def.sets,reps:def.reps,rest:def.rest,perSide:exDefaultPerSide(e.name)}),
       intensity:pct,freq,phaseDef:def,pool,
       header:{phaseLabel:'',dataSourceLabel:`⭐ From template "${esc(t.name)}" — edit it, then save`,assessBanner:'',staleBanner:''},seen:{}};
@@ -3151,6 +3165,7 @@ function filterExercises(){
   const AREA_MAP={'Inferior':'Inferior Members','Superior':'Superior','Core':'Core','Wrist':'Wrist','Fingers':'Fingers','Warm-up':'Warm-up','Rehab':'Rehab','Fingerboard':'Fingerboard'};
   const isFB=addExContext==='fb';
   const filtered=EXERCISES.filter(e=>{
+    if(e.hidden)return false;
     const isCG=e.cat&&e.cat.startsWith('CG-');
     // Climbing Gym picker shows ONLY CG exercises; Gym picker shows only non-CG
     if(isFB!==isCG) return false;
@@ -3210,7 +3225,7 @@ function _renderCustomExBadge(ex){
   el.style.display='flex';
   const nm=esc(ex.name).replace(/'/g,"\\'");
   const _m=exMuscles(ex.name,ex.cat);
-  const _mTxt=_m.ms.map(m=>MUSCLE_LABELS[m]||m).join(', ');
+  const _mTxt=_m.ms.map(m=>MUSCLE_LABELS[m]||m).join(', ')+((_m.ms2||[]).length?' (+ '+_m.ms2.map(m=>MUSCLE_LABELS[m]||m).join(', ')+')':'');
   if(!ex.custom){
     el.innerHTML=`<span>📚 ${ex.edited?'Library · edited':'Library'}${_mTxt?' · '+esc(_mTxt):''}</span>
     <button class="btn btn-ghost" style="padding:3px 9px;font-size:11px;color:var(--muted)" onclick="editBuiltinExercise('${nm}')">✏️ Edit</button>`;
@@ -3224,28 +3239,31 @@ function _renderCustomExBadge(ex){
 // Name of the custom exercise currently being edited (null = creating a new one)
 let _editingCustomEx=null;
 let _editingBuiltin=null;      // name of a built-in being edited (name locked; saved as an override)
-let _nexMuscles=[],_nexMusclesTouched=false;
+let _nexMuscles=[],_nexMuscles2=[],_nexMusclesTouched=false;
+// Tap cycles: off → main → also works → off
 function _renderNexMuscles(src){
   const el=document.getElementById('nex-muscles');if(!el)return;
-  el.innerHTML=Object.keys(MUSCLE_LABELS).map(m=>{const on=_nexMuscles.includes(m);
-    return `<button type="button" class="chip${on?' active':''}" style="padding:5px 10px;font-size:12px;border-radius:14px;border:1px solid var(--border);background:${on?'var(--gym,#2ea043)':'var(--surface2)'};color:${on?'#fff':'var(--text)'}" onclick="toggleNexMuscle('${m}')">${MUSCLE_LABELS[m]}</button>`}).join('');
+  el.innerHTML=Object.keys(MUSCLE_LABELS).map(m=>{const on=_nexMuscles.includes(m),on2=_nexMuscles2.includes(m);
+    const bg=on?'var(--gym,#2ea043)':on2?'#2ea04333':'var(--surface2)',col=on?'#fff':'var(--text)',bd=on2?'1px dashed #2ea043':'1px solid var(--border)';
+    return `<button type="button" class="chip${on?' active':''}${on2?' also':''}" style="padding:5px 10px;font-size:12px;border-radius:14px;border:${bd};background:${bg};color:${col}" onclick="toggleNexMuscle('${m}')">${MUSCLE_LABELS[m]}${on2?' ·also':''}</button>`}).join('');
   const s=document.getElementById('nex-muscles-src');
-  if(s)s.textContent=src==='guess'?'· guessed from the name — tap to correct':src==='built-in'?'· app default — tap to correct':src==='category'?'· tap the ones it works':'';
+  if(s)s.textContent=(src==='guess'?'· guessed from the name':src==='built-in'?'· app default':src==='category'?'':'')+' — tap: main → also works → off';
 }
 function toggleNexMuscle(m){
   _nexMusclesTouched=true;
-  _nexMuscles=_nexMuscles.includes(m)?_nexMuscles.filter(x=>x!==m):[..._nexMuscles,m];
+  if(_nexMuscles.includes(m)){_nexMuscles=_nexMuscles.filter(x=>x!==m);_nexMuscles2=[..._nexMuscles2,m];}
+  else if(_nexMuscles2.includes(m)){_nexMuscles2=_nexMuscles2.filter(x=>x!==m);}
+  else _nexMuscles=[..._nexMuscles,m];
   _renderNexMuscles('yours');
 }
 function _nexNameInput(){
   if(_nexMusclesTouched||_editingBuiltin)return;
-  _nexMuscles=guessMuscles(document.getElementById('nex-name').value);
+  _nexMuscles=guessMuscles(document.getElementById('nex-name').value);_nexMuscles2=[];
   _renderNexMuscles(_nexMuscles.length?'guess':'category');
 }
-function _nexStartMuscles(name,cat,own){
+function _nexStartMuscles(name,cat){
   _nexMusclesTouched=false;
-  if(Array.isArray(own)&&own.length){_nexMuscles=[...own];_renderNexMuscles('yours');return}
-  const r=exMuscles(name,cat);_nexMuscles=r.src==='category'?[]:[...r.ms];_renderNexMuscles(r.src);
+  const r=exMuscles(name,cat);_nexMuscles=r.src==='category'?[]:[...r.ms];_nexMuscles2=[...(r.ms2||[])];_renderNexMuscles(r.src);
 }
 // Built-in exercises: category, equipment, defaults and muscles are editable; the NAME stays
 // (it links to your history and weight suggestions). Stored in exercise_overrides (synced).
@@ -3254,12 +3272,12 @@ function editBuiltinExercise(name){
   if(!ex)return;
   _editingCustomEx=null;_editingBuiltin=name;
   document.getElementById('nex-title').textContent='✏️ Edit Exercise';
-  document.getElementById('nex-hint').textContent='App exercise — the name stays the same so your history and weight suggestions keep working.';
+  document.getElementById('nex-hint').textContent='App exercise. Renaming makes it your own copy and moves your history to the new name.';
   document.getElementById('nex-save').textContent='💾 Save changes';
   const catSel=_fillNexCats();
   if(![...catSel.options].some(o=>o.value===ex.cat))catSel.insertAdjacentHTML('beforeend',`<option value="${esc(ex.cat)}">${esc(ex.cat)}</option>`);
   catSel.value=ex.cat;
-  const n=document.getElementById('nex-name');n.value=ex.name;n.disabled=true;
+  const n=document.getElementById('nex-name');n.value=ex.name;
   document.getElementById('nex-equip').value=ex.equip||'bw';
   document.getElementById('nex-type').value=ex.cardio?'cardio':'strength';
   document.getElementById('nex-type').disabled=true;
@@ -3267,7 +3285,8 @@ function editBuiltinExercise(name){
   document.getElementById('nex-reps').value=ex.reps||'';
   document.getElementById('nex-rest').value=ex.rest||'';
   onNewExTypeChange();
-  _nexStartMuscles(ex.name,ex.cat,ex.muscles);
+  _nexStartMuscles(ex.name,ex.cat);
+  _nexMore(ex);
   document.getElementById('nex-muscles-wrap').style.display=ex.cardio?'none':'';
   document.getElementById('nex-reset').style.display=ex.edited?'':'none';
   openModal('modal-new-exercise');
@@ -3281,7 +3300,7 @@ function resetBuiltinExercise(){
   filterExercises();
   const sel=document.getElementById('ex-name');
   if(sel&&[...sel.options].some(o=>o.value===name)){sel.value=name;onExerciseSelect();}
-  toast(`↺ "${name}" back to default`);
+  toast(`↺ "${name}" back to default`);_libRefresh();
 }
 // Category changes follow the name into logged sessions + templates (Week Check reads the logged category)
 function _recatExerciseEverywhere(name,cat){
@@ -3332,7 +3351,7 @@ function openNewExercise(){
   document.getElementById('nex-dist-label').value='';
   document.getElementById('nex-rpm-label').value='';
   onNewExTypeChange();
-  _nexMuscles=[];_nexMusclesTouched=false;_renderNexMuscles('category');
+  _nexMuscles=[];_nexMuscles2=[];_nexMusclesTouched=false;_renderNexMuscles('category');_nexMore(null);
   openModal('modal-new-exercise');
 }
 
@@ -3356,7 +3375,8 @@ function editCustomExercise(name){
   document.getElementById('nex-dist-label').value=ex.distLabel||'';
   document.getElementById('nex-rpm-label').value=ex.rpmLabel||'';
   onNewExTypeChange();
-  _nexStartMuscles(ex.name,ex.cat,ex.muscles);
+  _nexStartMuscles(ex.name,ex.cat);
+  _nexMore({...ex,custom:true});
   openModal('modal-new-exercise');
 }
 
@@ -3384,6 +3404,10 @@ function _renameExerciseEverywhere(oldName,newName){
   let tTouched=false;
   templates.forEach(t=>(t.exercises||[]).forEach(e=>{if(e.name===oldName){e.name=newName;tTouched=true}}));
   if(tTouched)DB.set('gym_templates',templates);
+
+  const pss=DB.get('planned_sessions')||[];let pTouched=false;
+  pss.forEach(ps=>((ps.gym&&ps.gym.plan)||[]).forEach(e=>{if(e.name===oldName){e.name=newName;pTouched=true}}));
+  if(pTouched)DB.set('planned_sessions',pss);
 
   const cache=DB.ormCache();
   if(cache[oldName]){
@@ -3417,12 +3441,33 @@ function saveNewExercise(){
   if(_editingBuiltin){
     const name=_editingBuiltin,ex=EXERCISES.find(e=>e.name===name&&!e.custom);
     const cat=document.getElementById('nex-cat').value;
+    const newName=document.getElementById('nex-name').value.trim();
+    if(!newName){toast('Give the exercise a name');return}
+    if(newName!==name){
+      if(EXERCISES.some(e=>e.name.toLowerCase()===newName.toLowerCase()&&e.name!==name)){toast('An exercise with that name already exists — use 🔀 Merge instead');return}
+      // Renaming an app exercise = your own copy under the new name; the original is hidden
+      const r=exMuscles(name,ex.cat);
+      const copy={name:newName,cat,equip:document.getElementById('nex-equip').value,
+        sets:parseInt(document.getElementById('nex-sets').value)||ex.sets,reps:document.getElementById('nex-reps').value.trim()||ex.reps,
+        rest:document.getElementById('nex-rest').value.trim()||ex.rest,createdAt:new Date().toISOString(),from:name,
+        muscles:_nexMusclesTouched?[..._nexMuscles]:[...r.ms],muscles2:_nexMusclesTouched?[..._nexMuscles2]:[...(r.ms2||[])]};
+      if(ex.cardio){copy.cardio=true;copy.distLabel=ex.distLabel;copy.rpmLabel=ex.rpmLabel;delete copy.muscles;delete copy.muscles2;}
+      DB.saveCustomExercise(copy);
+      DB.saveExerciseOverride(name,{...(DB.exerciseOverrides()[name]||{}),hidden:true});
+      _renameExerciseEverywhere(name,newName);
+      if(cat!==ex.cat)_recatExerciseEverywhere(newName,cat);
+      syncCustomExercises();
+      cancelNewExercise();_libRefresh();
+      toast(`✏️ Renamed to "${newName}"`);
+      return;
+    }
     const o={cat,equip:document.getElementById('nex-equip').value,
       sets:parseInt(document.getElementById('nex-sets').value)||ex._orig.sets,
       reps:document.getElementById('nex-reps').value.trim()||ex._orig.reps,
       rest:document.getElementById('nex-rest').value.trim()||ex._orig.rest};
-    if(_nexMusclesTouched)o.muscles=[..._nexMuscles];
-    else if(Array.isArray(ex.muscles))o.muscles=ex.muscles;
+    if(_nexMusclesTouched){o.muscles=[..._nexMuscles];o.muscles2=[..._nexMuscles2];}
+    else{if(Array.isArray(ex.muscles))o.muscles=ex.muscles;if(Array.isArray(ex.muscles2))o.muscles2=ex.muscles2;}
+    if(ex.hidden)o.hidden=true;
     const prevCat=ex.cat;
     DB.saveExerciseOverride(name,o);
     syncCustomExercises();
@@ -3431,7 +3476,7 @@ function saveNewExercise(){
     filterExercises();
     const sel=document.getElementById('ex-name');
     if(sel&&[...sel.options].some(o=>o.value===name)){sel.value=name;onExerciseSelect();}
-    toast(`✏️ "${name}" updated`);
+    toast(`✏️ "${name}" updated`);_libRefresh();
     return;
   }
   const oldName=_editingCustomEx;                 // null when creating
@@ -3455,7 +3500,9 @@ function saveNewExercise(){
     sets,reps,rest,
     createdAt:new Date().toISOString()
   };
-  if(!isCardio&&(_nexMusclesTouched||(original&&Array.isArray(original.muscles))))ex.muscles=_nexMusclesTouched?[..._nexMuscles]:original.muscles;
+  if(!isCardio&&_nexMusclesTouched){ex.muscles=[..._nexMuscles];ex.muscles2=[..._nexMuscles2];}
+  else if(!isCardio&&original){if(Array.isArray(original.muscles))ex.muscles=original.muscles;if(Array.isArray(original.muscles2))ex.muscles2=original.muscles2;}
+  if(original){['hidden','from'].forEach(k=>{if(original[k])ex[k]=original[k]});}
   if(isCardio){
     ex.cardio=true;
     ex.distLabel=document.getElementById('nex-dist-label').value.trim()||'Distance (km)';
@@ -3493,7 +3540,112 @@ function saveNewExercise(){
   const sel=document.getElementById('ex-name');
   if(sel&&[...sel.options].some(o=>o.value===name)){sel.value=name;onExerciseSelect();}
   toast(oldName?`✏️ "${name}" updated`:`★ "${name}" added to your library`);
-  _editingCustomEx=null;
+  _editingCustomEx=null;_libRefresh();
+}
+
+// ── 📚 Exercise library (Gym → Library, 2026-10-28, Jo chose C) ─────────────
+let _libQ='',_libShowHidden=false;
+function _exStats(){
+  const st={};
+  DB.gymSessions().forEach(s=>(s.exercises||[]).forEach(e=>{if(!e.name)return;const x=st[e.name]||(st[e.name]={n:0,last:''});x.n++;if((s.date||'')>x.last)x.last=s.date||'';}));
+  return st;
+}
+function _libExercises(){return EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&e.cat!=='Fingerboard');}
+function _libCurrentName(){return _editingBuiltin||_editingCustomEx;}
+function _libRefresh(){const el=document.getElementById('gym-library');if(el&&el.style.display!=='none')renderExLibrary();}
+function _nexMore(ex){
+  const box=document.getElementById('nex-more');if(!box)return;
+  if(!ex){box.style.display='none';return}
+  box.style.display='';
+  const st=_exStats()[ex.name];
+  document.getElementById('nex-usage').textContent=st?`Logged ${st.n}× · last ${st.last?new Date(st.last+'T12:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'?'}`:'Never logged';
+  document.getElementById('nex-hide').textContent=ex.hidden?'👁 Show in pickers again':'🙈 Hide from pickers';
+  const others=_libExercises().filter(e=>e.name!==ex.name&&!e.hidden&&!!e.cardio===!!ex.cardio)
+    .sort((a,b)=>(a.cat===ex.cat?0:1)-(b.cat===ex.cat?0:1)||a.name.localeCompare(b.name));
+  document.getElementById('nex-merge-into').innerHTML='<option value="">Merge into…</option>'+others.map(e=>`<option value="${esc(e.name)}">${e.cat===ex.cat?'':esc(e.cat)+' — '}${esc(e.name)}</option>`).join('');
+}
+function _setHidden(name,hide){
+  const c=DB.customExercises().find(e=>e.name===name);
+  if(c){DB.updateCustomExercise(name,{...c,hidden:hide||undefined});}
+  else{const o={...(DB.exerciseOverrides()[name]||{})};if(hide)o.hidden=true;else delete o.hidden;
+    if(Object.keys(o).length)DB.saveExerciseOverride(name,o);else DB.deleteExerciseOverride(name);}
+  syncCustomExercises();
+}
+function toggleHideExercise(name){
+  name=name||_libCurrentName();if(!name)return;
+  const ex=EXERCISES.find(e=>e.name===name);if(!ex)return;
+  const was=!!ex.hidden;
+  _setHidden(name,!was);
+  if(_libCurrentName())cancelNewExercise();
+  try{filterExercises();}catch(e){}
+  _libRefresh();
+  toast(was?`👁 "${name}" is back in the pickers`:`🙈 "${name}" hidden — find it under Library → Show hidden`);
+}
+function mergeExercise(from,into){
+  if(!from||!into||from===into)return false;
+  const u=_exUsage(from);
+  if(!confirm(`Merge "${from}" → "${into}"?\n\n${u.sessions} logged session${u.sessions===1?'':'s'} and ${u.templates} template${u.templates===1?'':'s'} will use "${into}" from now on, and "${from}" is removed from your library.`))return false;
+  _renameExerciseEverywhere(from,into);
+  const intoEx=EXERCISES.find(e=>e.name===into);
+  if(intoEx)_recatExerciseEverywhere(into,intoEx.cat);
+  if(DB.customExercises().some(e=>e.name===from))DB.deleteCustomExercise(from);
+  else DB.saveExerciseOverride(from,{...(DB.exerciseOverrides()[from]||{}),hidden:true});
+  syncCustomExercises();
+  try{filterExercises();}catch(e){}
+  toast(`🔀 Merged into "${into}"`);
+  return true;
+}
+function mergeFromModal(){
+  const from=_libCurrentName(),into=document.getElementById('nex-merge-into').value;
+  if(!into){toast('Pick the exercise to merge into');return}
+  if(mergeExercise(from,into)){cancelNewExercise();_libRefresh();}
+}
+function libSearch(v){_libQ=v;renderExLibrary(true);}
+function libToggleHidden(){_libShowHidden=!_libShowHidden;renderExLibrary();}
+function libEdit(name){
+  if(DB.customExercises().some(e=>e.name===name))editCustomExercise(name);else editBuiltinExercise(name);
+}
+function renderExLibrary(listOnly){
+  const root=document.getElementById('gym-library');if(!root)return;
+  const st=_exStats();
+  const all=_libExercises();
+  const nHidden=all.filter(e=>e.hidden).length;
+  const q=_libQ.trim().toLowerCase();
+  const list=all.filter(e=>(_libShowHidden||!e.hidden)&&(!q||e.name.toLowerCase().includes(q)||(e.cat||'').toLowerCase().includes(q)
+    ||exMuscles(e.name,e.cat).ms.some(m=>(MUSCLE_LABELS[m]||m).toLowerCase().includes(q))));
+  const order=CUSTOM_EX_CATS.map(c=>c.value);
+  const cats=[...new Set(list.map(e=>e.cat))].sort((a,b)=>((order.indexOf(a)+1)||99)-((order.indexOf(b)+1)||99));
+  const fmtD=d=>d?new Date(d+'T12:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'';
+  const rows=cats.map(cat=>{
+    const items=list.filter(e=>e.cat===cat).sort((a,b)=>((st[b.name]||{}).n||0)-((st[a.name]||{}).n||0)||a.name.localeCompare(b.name));
+    return `<div style="font-size:11px;font-weight:700;color:var(--muted);margin:14px 0 6px;text-transform:uppercase">${esc(cat)} · ${items.length}</div>`+
+      items.map(e=>{const m=exMuscles(e.name,e.cat),s=st[e.name];const nm=esc(e.name).replace(/'/g,"\\'");
+        const mus=e.cardio?'<span style="color:var(--muted)">cardio / warm-up</span>':
+          m.ms.map(x=>`<b>${MUSCLE_LABELS[x]||x}</b>`).join(', ')+((m.ms2||[]).length?` <span style="color:var(--muted)">+ ${m.ms2.map(x=>MUSCLE_LABELS[x]||x).join(', ')}</span>`:'')+
+          (m.src==='guess'?' <span style="color:var(--muted);font-size:10px">(guess)</span>':m.src==='category'?' <span style="color:var(--muted);font-size:10px">(area)</span>':'');
+        const tags=(e.custom?'<span style="font-size:10px;color:#b45309">★ yours</span> ':'')+(e.edited?'<span style="font-size:10px;color:var(--muted)">edited</span> ':'')+(e.hidden?'<span style="font-size:10px;color:var(--muted)">🙈 hidden</span>':'');
+        return `<div class="card" style="padding:9px 12px;margin-bottom:6px;cursor:pointer;${e.hidden?'opacity:.55;':''}" onclick="libEdit('${nm}')">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+            <div style="font-weight:600;font-size:14px">${esc(e.name)} ${tags}</div>
+            <div style="font-size:11px;color:var(--muted);white-space:nowrap">${s?`${s.n}× · ${fmtD(s.last)}`:'never'}</div>
+          </div>
+          <div style="font-size:12px;margin-top:2px">${mus||'<span style="color:var(--muted)">tap to set muscles</span>'}</div>
+        </div>`}).join('');
+  }).join('');
+  const listHtml=rows||'<div class="empty"><p>No exercises match.</p></div>';
+  if(listOnly&&document.getElementById('lib-list')){document.getElementById('lib-list').innerHTML=listHtml;return}
+  root.innerHTML=`<div class="card" style="padding:12px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="lib-search" placeholder="🔍 Search name, area or muscle" value="${esc(_libQ)}" oninput="libSearch(this.value)" style="flex:1">
+        <button class="btn btn-gym" style="white-space:nowrap;font-size:13px" onclick="openNewExercise()">➕ New</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--muted)">
+        <span>${all.length-nHidden} exercises · tap one to edit, hide or merge</span>
+        ${nHidden?`<button class="btn btn-ghost" style="font-size:11px;padding:3px 9px" onclick="libToggleHidden()">${_libShowHidden?'Hide hidden':'Show hidden ('+nHidden+')'}</button>`:''}
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px"><b>Bold</b> = main muscles · grey = also works</div>
+    </div>
+    <div id="lib-list">${listHtml}</div>`;
 }
 
 function removeCustomExercise(name){
@@ -3502,7 +3654,7 @@ function removeCustomExercise(name){
   syncCustomExercises();
   filterExercises();
   document.getElementById('ex-autofill').style.display='none';
-  toast('Removed from library');
+  toast('Removed from library');_libRefresh();
 }
 
 function calcSuggestedWeight(){
@@ -3995,11 +4147,12 @@ function guessMuscles(name){
 // sourceOf → 'yours' | 'built-in' | 'guess' | 'category'
 function exMuscles(name,cat){
   const lib=EXERCISES.find(x=>x.name===name);
-  if(lib&&Array.isArray(lib.muscles)&&lib.muscles.length)return {ms:lib.muscles,src:'yours'};
-  if(EX_MUSCLES[name])return {ms:EX_MUSCLES[name],src:'built-in'};
+  const ms2=(lib&&Array.isArray(lib.muscles2))?lib.muscles2:[];
+  if(lib&&((Array.isArray(lib.muscles)&&lib.muscles.length)||ms2.length))return {ms:lib.muscles||[],ms2,src:'yours'};
+  if(EX_MUSCLES[name])return {ms:EX_MUSCLES[name],ms2:[],src:'built-in'};
   const g=guessMuscles(name);
-  if(g.length)return {ms:g,src:'guess'};
-  return {ms:CAT_MUSCLES[cat||(lib&&lib.cat)]||[],src:'category'};
+  if(g.length)return {ms:g,ms2:[],src:'guess'};
+  return {ms:CAT_MUSCLES[cat||(lib&&lib.cat)]||[],ms2:[],src:'category'};
 }
 function drawBodyDiagram(exercises){
   const ZONE_INFO=[
@@ -4011,14 +4164,19 @@ function drawBodyDiagram(exercises){
   const sk='#3d4656'; // skin/base silhouette
   // Accepts an exercises array; a Set of category names still works (legacy callers)
   const list=exercises instanceof Set?[...exercises].map(c=>({cat:c})):(exercises||[]);
-  const worked=new Set();
-  list.forEach(e=>{if(e.cat==='Warm-up'||e.cat==='Stretching'||e.type==='cardio')return;const ms=e.name?exMuscles(e.name,e.cat).ms:CAT_MUSCLES[e.cat];if(ms)ms.forEach(m=>worked.add(m));});
+  const worked=new Set(),worked2=new Set();
+  list.forEach(e=>{if(e.cat==='Warm-up'||e.cat==='Stretching'||e.type==='cardio')return;
+    if(!e.name){(CAT_MUSCLES[e.cat]||[]).forEach(m=>worked.add(m));return}
+    const r=exMuscles(e.name,e.cat);r.ms.forEach(m=>worked.add(m));(r.ms2||[]).forEach(m=>worked2.add(m));});
+  worked.forEach(m=>worked2.delete(m));
   const zc={};ZONE_INFO.forEach(z=>zc[z.z]=z.col);
-  const mc=m=>worked.has(m)?zc[MUSCLE_ZONE[m]]:'#2a3140';
+  // main = full colour · "also works" (secondary) = same colour, lighter
+  const mc=m=>worked.has(m)?zc[MUSCLE_ZONE[m]]:worked2.has(m)?zc[MUSCLE_ZONE[m]]+'59':'#2a3140';
+
   const pec=mc('pecs'),del=mc('delts'),bic=mc('biceps'),tri=mc('triceps'),tra=mc('traps'),
     lat=mc('lats'),fore=mc('forearms'),ab=mc('abs'),obl=mc('obliques'),lob=mc('lowerback'),
     qua=mc('quads'),glu=mc('glutes'),ham=mc('hamstrings'),cal=mc('calves');
-  const zonesWorked=new Set([...worked].map(m=>MUSCLE_ZONE[m]));
+  const zonesWorked=new Set([...worked,...worked2].map(m=>MUSCLE_ZONE[m]));
   const legend=ZONE_INFO.filter(z=>zonesWorked.has(z.z))
     .map(z=>`<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--muted)"><span style="display:inline-block;width:7px;height:7px;border-radius:1px;background:${z.col}"></span>${z.label}</span>`)
     .join('');
@@ -9772,7 +9930,7 @@ function startPlanning(sport,date,id){
     document.getElementById('build-intensity').value=ps?ps.gym.intensity:_intensityFor(_planningCtx.date);
     if(ps){
       const freq={};DB.gymSessions().forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name)freq[e.name]=(freq[e.name]||0)+1;}));
-      const pool=EXERCISES.filter(e=>e&&e.cat&&!e.cat.startsWith('CG')&&e.cat!=='Warm-up').sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0));
+      const pool=EXERCISES.filter(e=>e&&e.cat&&!e.hidden&&!e.cat.startsWith('CG')&&e.cat!=='Warm-up').sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0));
       _buildState={plan:_deep(ps.gym.plan),intensity:ps.gym.intensity,freq,phaseDef:exDefaultsFor(_planningCtx.date),pool,
         header:{phaseLabel:'',dataSourceLabel:'Planned session — edit it, then save',assessBanner:'',staleBanner:''},seen:{}};
       renderBuildPlan();
@@ -10290,7 +10448,7 @@ function renderAssessModal(){
     </div>`;
   }).join('');
 
-  const pickable=EXERCISES.filter(e=>!['Fingerboard','Rehab','Stretching','Warm-up'].includes(e.cat));
+  const pickable=EXERCISES.filter(e=>!e.hidden&&!['Fingerboard','Rehab','Stretching','Warm-up'].includes(e.cat));
   const opts=pickable.map(e=>`<option value="${e.name}">${e.cat} — ${e.name}</option>`).join('');
 
   body.innerHTML=`
