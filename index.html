@@ -1346,7 +1346,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div id="nex-more" style="display:none;border-top:1px solid var(--border);padding-top:10px;margin-bottom:10px">
       <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px">CLEAN-UP</div>
       <div id="nex-usage" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
-      <button class="btn btn-ghost" id="nex-hide" style="width:100%;margin-bottom:8px;font-size:12px" onclick="toggleHideExercise()">🙈 Hide from pickers</button>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button class="btn btn-ghost" id="nex-hide" style="flex:1;font-size:12px" onclick="toggleHideExercise()">🙈 Hide from pickers</button>
+        <button class="btn btn-ghost" id="nex-delete" style="flex:1;font-size:12px;color:#dc2626" onclick="deleteExercise()">🗑 Delete</button>
+      </div>
       <div style="display:flex;gap:6px;align-items:center">
         <select id="nex-merge-into" style="flex:1;font-size:13px"></select>
         <button class="btn btn-ghost" style="font-size:12px;white-space:nowrap" onclick="mergeFromModal()">🔀 Merge</button>
@@ -2435,11 +2438,11 @@ function syncCustomExercises(){
   const ov=DB.exerciseOverrides();
   EXERCISES.forEach(e=>{
     if(!e._orig)e._orig={cat:e.cat,equip:e.equip,sets:e.sets,reps:e.reps,rest:e.rest};
-    Object.assign(e,e._orig);delete e.muscles;delete e.muscles2;delete e.edited;delete e.hidden;
+    Object.assign(e,e._orig);delete e.muscles;delete e.muscles2;delete e.edited;delete e.hidden;delete e.deleted;
     const o=ov[e.name];
-    if(o){['cat','equip','sets','reps','rest'].forEach(k=>{if(o[k]!==undefined&&o[k]!=='')e[k]=o[k]});if(Array.isArray(o.muscles))e.muscles=o.muscles;if(Array.isArray(o.muscles2))e.muscles2=o.muscles2;if(o.hidden)e.hidden=true;e.edited=Object.keys(o).some(k=>k!=='hidden');}
+    if(o){['cat','equip','sets','reps','rest'].forEach(k=>{if(o[k]!==undefined&&o[k]!=='')e[k]=o[k]});if(Array.isArray(o.muscles))e.muscles=o.muscles;if(Array.isArray(o.muscles2))e.muscles2=o.muscles2;if(o.hidden)e.hidden=true;if(o.deleted){e.deleted=true;e.hidden=true;}e.edited=Object.keys(o).some(k=>k!=='hidden'&&k!=='deleted');}
   });
-  DB.customExercises().forEach(e=>EXERCISES.push({...e,custom:true}));
+  DB.customExercises().forEach(e=>EXERCISES.push({...e,custom:true,...(e.deleted?{hidden:true}:{})}));
 }
 
 // ── Current gym macro phase helpers ──────────────────────────────────────────
@@ -3486,9 +3489,8 @@ function saveNewExercise(){
   if(!name){toast('Give the exercise a name');return}
   if(name==='__new__'){toast('Pick a different name');return}
   // Duplicate check ignores the entry being edited (so you can fix casing/typos)
-  if(EXERCISES.some(e=>e.name.toLowerCase()===name.toLowerCase()&&e.name!==oldName)){
-    toast('An exercise with that name already exists');return;
-  }
+  const _dup=EXERCISES.find(e=>e.name.toLowerCase()===name.toLowerCase()&&e.name!==oldName);
+  if(_dup){toast(_dup.deleted?'A deleted exercise has that name — restore it from Library → Deleted':'An exercise with that name already exists');return;}
   const cat=document.getElementById('nex-cat').value;
   const isCardio=document.getElementById('nex-type').value==='cardio';
   const sets=parseInt(document.getElementById('nex-sets').value)||(isCardio?1:3);
@@ -3544,7 +3546,7 @@ function saveNewExercise(){
 }
 
 // ── 📚 Exercise library (Gym → Library, 2026-10-28, Jo chose C) ─────────────
-let _libQ='',_libShowHidden=false;
+let _libQ='',_libShowHidden=false,_libShowDeleted=false;
 function _exStats(){
   const st={};
   DB.gymSessions().forEach(s=>(s.exercises||[]).forEach(e=>{if(!e.name)return;const x=st[e.name]||(st[e.name]={n:0,last:''});x.n++;if((s.date||'')>x.last)x.last=s.date||'';}));
@@ -3581,6 +3583,34 @@ function toggleHideExercise(name){
   _libRefresh();
   toast(was?`👁 "${name}" is back in the pickers`:`🙈 "${name}" hidden — find it under Library → Show hidden`);
 }
+// Delete (Jo chose A): out of the Library and every picker; logged sessions keep it untouched.
+// Restorable from Library → Deleted (custom: deleted flag kept; built-in: override).
+function _setDeleted(name,del){
+  const c=DB.customExercises().find(e=>e.name===name);
+  if(c){const x={...c};if(del){x.deleted=true}else{delete x.deleted;delete x.hidden}DB.updateCustomExercise(name,x);}
+  else{const o={...(DB.exerciseOverrides()[name]||{})};if(del)o.deleted=true;else{delete o.deleted;delete o.hidden}
+    if(Object.keys(o).length)DB.saveExerciseOverride(name,o);else DB.deleteExerciseOverride(name);}
+  syncCustomExercises();
+}
+function deleteExercise(name){
+  name=name||_libCurrentName();if(!name)return;
+  const st=_exStats()[name];
+  if(!confirm(`Delete "${name}"?\n\nIt disappears from the Library, Add Exercise and Build.`+
+    (st?`\nThe ${st.n} session${st.n>1?'s':''} where you logged it stay as they are.`:'')+
+    `\n\nYou can restore it from Library → Deleted.`))return;
+  _setDeleted(name,true);
+  if(_libCurrentName())cancelNewExercise();
+  try{filterExercises();}catch(e){}
+  _libRefresh();
+  toast(`🗑 "${name}" deleted`);
+}
+function restoreExercise(name){
+  if(!confirm(`Restore "${name}" to your library?`))return;
+  _setDeleted(name,false);
+  try{filterExercises();}catch(e){}
+  _libRefresh();
+  toast(`↩ "${name}" restored`);
+}
 function mergeExercise(from,into){
   if(!from||!into||from===into)return false;
   const u=_exUsage(from);
@@ -3602,13 +3632,16 @@ function mergeFromModal(){
 }
 function libSearch(v){_libQ=v;renderExLibrary(true);}
 function libToggleHidden(){_libShowHidden=!_libShowHidden;renderExLibrary();}
+function libToggleDeleted(){_libShowDeleted=!_libShowDeleted;renderExLibrary();}
 function libEdit(name){
   if(DB.customExercises().some(e=>e.name===name))editCustomExercise(name);else editBuiltinExercise(name);
 }
 function renderExLibrary(listOnly){
   const root=document.getElementById('gym-library');if(!root)return;
   const st=_exStats();
-  const all=_libExercises();
+  const every=_libExercises();
+  const deleted=every.filter(e=>e.deleted);
+  const all=every.filter(e=>!e.deleted);
   const nHidden=all.filter(e=>e.hidden).length;
   const q=_libQ.trim().toLowerCase();
   const list=all.filter(e=>(_libShowHidden||!e.hidden)&&(!q||e.name.toLowerCase().includes(q)||(e.cat||'').toLowerCase().includes(q)
@@ -3632,7 +3665,12 @@ function renderExLibrary(listOnly){
           <div style="font-size:12px;margin-top:2px">${mus||'<span style="color:var(--muted)">tap to set muscles</span>'}</div>
         </div>`}).join('');
   }).join('');
-  const listHtml=rows||'<div class="empty"><p>No exercises match.</p></div>';
+  const delHtml=_libShowDeleted&&deleted.length?`<div style="font-size:11px;font-weight:700;color:#dc2626;margin:18px 0 6px">🗑 DELETED · ${deleted.length} — tap to restore</div>`+
+    deleted.sort((a,b)=>a.name.localeCompare(b.name)).map(e=>{const nm=esc(e.name).replace(/'/g,"\\'");const s=st[e.name];
+      return `<div class="card" style="padding:9px 12px;margin-bottom:6px;cursor:pointer;opacity:.6" onclick="restoreExercise('${nm}')">
+        <div style="display:flex;justify-content:space-between;gap:8px"><div style="font-weight:600;font-size:14px;text-decoration:line-through">${esc(e.name)}</div>
+        <div style="font-size:11px;color:var(--muted);white-space:nowrap">${esc(e.cat)}${s?` · ${s.n}× logged`:''} · ↩ Restore</div></div></div>`}).join(''):'';
+  const listHtml=(rows||'<div class="empty"><p>No exercises match.</p></div>')+delHtml;
   if(listOnly&&document.getElementById('lib-list')){document.getElementById('lib-list').innerHTML=listHtml;return}
   root.innerHTML=`<div class="card" style="padding:12px">
       <div style="display:flex;gap:8px;align-items:center">
@@ -3641,7 +3679,7 @@ function renderExLibrary(listOnly){
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--muted)">
         <span>${all.length-nHidden} exercises · tap one to edit, hide or merge</span>
-        ${nHidden?`<button class="btn btn-ghost" style="font-size:11px;padding:3px 9px" onclick="libToggleHidden()">${_libShowHidden?'Hide hidden':'Show hidden ('+nHidden+')'}</button>`:''}
+        <span style="display:flex;gap:4px">${nHidden?`<button class="btn btn-ghost" style="font-size:11px;padding:3px 9px" onclick="libToggleHidden()">${_libShowHidden?'Hide hidden':'Show hidden ('+nHidden+')'}</button>`:''}${deleted.length?`<button class="btn btn-ghost" style="font-size:11px;padding:3px 9px" onclick="libToggleDeleted()">${_libShowDeleted?'Close deleted':'🗑 Deleted ('+deleted.length+')'}</button>`:''}</span>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:4px"><b>Bold</b> = main muscles · grey = also works</div>
     </div>
