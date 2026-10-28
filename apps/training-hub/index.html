@@ -1290,7 +1290,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div style="font-size:12px;color:var(--muted);margin-bottom:10px" id="nex-hint">Saved to your library — available in Add Exercise, Build Session and templates.</div>
     <div class="form-group">
       <label>Name</label>
-      <input type="text" id="nex-name" placeholder="e.g. Bulgarian Split Squat" maxlength="60">
+      <input type="text" id="nex-name" placeholder="e.g. Bulgarian Split Squat" maxlength="60" oninput="_nexNameInput()">
     </div>
     <div class="form-group">
       <label>Category</label>
@@ -1336,6 +1336,11 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <input type="text" id="nex-rpm-label" placeholder="Avg RPM">
       </div>
     </div>
+    <div class="form-group" id="nex-muscles-wrap">
+      <label>Muscles worked <span id="nex-muscles-src" style="font-weight:400;color:var(--muted);font-size:11px"></span></label>
+      <div id="nex-muscles" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+    <button class="btn btn-ghost" id="nex-reset" style="display:none;width:100%;margin-bottom:8px;font-size:12px" onclick="resetBuiltinExercise()">↺ Reset to the app's default</button>
     <div class="flex-gap8">
       <button class="btn btn-ghost" style="flex:1" onclick="cancelNewExercise()">Cancel</button>
       <button class="btn btn-gym" style="flex:2" id="nex-save" onclick="saveNewExercise()">💾 Save to Library</button>
@@ -1882,6 +1887,9 @@ const DB = {
   saveCustomExercise(ex){const a=this.customExercises();a.push(ex);this.set('custom_exercises',a)},
   deleteCustomExercise(name){const a=this.customExercises().filter(e=>e.name!==name);this.set('custom_exercises',a)},
   updateCustomExercise(oldName,ex){const a=this.customExercises().map(e=>e.name===oldName?ex:e);this.set('custom_exercises',a)},
+  exerciseOverrides(){return this.get('exercise_overrides')||{}},
+  saveExerciseOverride(name,o){const a=this.exerciseOverrides();a[name]=o;this.set('exercise_overrides',a)},
+  deleteExerciseOverride(name){const a=this.exerciseOverrides();delete a[name];this.set('exercise_overrides',a)},
   gymTemplates(){return this.get('gym_templates')||[]},
   saveTemplate(t){const a=this.gymTemplates();a.push(t);this.set('gym_templates',a)},
   deleteTemplate(id){const a=this.gymTemplates().filter(t=>t.id!==id);this.set('gym_templates',a)},
@@ -1949,7 +1957,7 @@ const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'climb_sessions','climb_assessments','plan_data','rehab_data','macro_data',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
   'gym_height','tennis_matches','tennis_overlay','tennis_merges','custom_gyms','fb_custom_ex',
-  'custom_exercises','training_cycle','planned_sessions'];
+  'custom_exercises','training_cycle','planned_sessions','exercise_overrides'];
 
 function exportAllData(){
   const data={};
@@ -2411,6 +2419,14 @@ const CUSTOM_EX_CATS=[
 // Rebuild the custom slice of EXERCISES from storage (mutates in place).
 function syncCustomExercises(){
   for(let i=EXERCISES.length-1;i>=0;i--){if(EXERCISES[i].custom)EXERCISES.splice(i,1);}
+  // Built-ins: restore the shipped defaults, then apply Jo's edits (exercise_overrides, 2026-10-28)
+  const ov=DB.exerciseOverrides();
+  EXERCISES.forEach(e=>{
+    if(!e._orig)e._orig={cat:e.cat,equip:e.equip,sets:e.sets,reps:e.reps,rest:e.rest};
+    Object.assign(e,e._orig);delete e.muscles;delete e.edited;
+    const o=ov[e.name];
+    if(o){['cat','equip','sets','reps','rest'].forEach(k=>{if(o[k]!==undefined&&o[k]!=='')e[k]=o[k]});if(Array.isArray(o.muscles))e.muscles=o.muscles;e.edited=true;}
+  });
   DB.customExercises().forEach(e=>EXERCISES.push({...e,custom:true}));
 }
 
@@ -3191,16 +3207,103 @@ function onExerciseSelect(){
 function _renderCustomExBadge(ex){
   const el=document.getElementById('ex-custom-badge');
   if(!el)return;
-  if(!ex.custom){el.style.display='none';el.innerHTML='';return}
   el.style.display='flex';
   const nm=esc(ex.name).replace(/'/g,"\\'");
-  el.innerHTML=`<span>★ Your exercise</span>
+  const _m=exMuscles(ex.name,ex.cat);
+  const _mTxt=_m.ms.map(m=>MUSCLE_LABELS[m]||m).join(', ');
+  if(!ex.custom){
+    el.innerHTML=`<span>📚 ${ex.edited?'Library · edited':'Library'}${_mTxt?' · '+esc(_mTxt):''}</span>
+    <button class="btn btn-ghost" style="padding:3px 9px;font-size:11px;color:var(--muted)" onclick="editBuiltinExercise('${nm}')">✏️ Edit</button>`;
+    return;
+  }
+  el.innerHTML=`<span>★ Your exercise${_mTxt?' · '+esc(_mTxt):''}</span>
     <button class="btn btn-ghost" style="padding:3px 9px;font-size:11px;color:var(--muted)" onclick="editCustomExercise('${nm}')">✏️ Edit</button>
     <button class="btn btn-ghost" style="padding:3px 9px;font-size:11px;color:var(--muted)" onclick="removeCustomExercise('${nm}')">🗑 Remove from library</button>`;
 }
 
 // Name of the custom exercise currently being edited (null = creating a new one)
 let _editingCustomEx=null;
+let _editingBuiltin=null;      // name of a built-in being edited (name locked; saved as an override)
+let _nexMuscles=[],_nexMusclesTouched=false;
+function _renderNexMuscles(src){
+  const el=document.getElementById('nex-muscles');if(!el)return;
+  el.innerHTML=Object.keys(MUSCLE_LABELS).map(m=>{const on=_nexMuscles.includes(m);
+    return `<button type="button" class="chip${on?' active':''}" style="padding:5px 10px;font-size:12px;border-radius:14px;border:1px solid var(--border);background:${on?'var(--gym,#2ea043)':'var(--surface2)'};color:${on?'#fff':'var(--text)'}" onclick="toggleNexMuscle('${m}')">${MUSCLE_LABELS[m]}</button>`}).join('');
+  const s=document.getElementById('nex-muscles-src');
+  if(s)s.textContent=src==='guess'?'· guessed from the name — tap to correct':src==='built-in'?'· app default — tap to correct':src==='category'?'· tap the ones it works':'';
+}
+function toggleNexMuscle(m){
+  _nexMusclesTouched=true;
+  _nexMuscles=_nexMuscles.includes(m)?_nexMuscles.filter(x=>x!==m):[..._nexMuscles,m];
+  _renderNexMuscles('yours');
+}
+function _nexNameInput(){
+  if(_nexMusclesTouched||_editingBuiltin)return;
+  _nexMuscles=guessMuscles(document.getElementById('nex-name').value);
+  _renderNexMuscles(_nexMuscles.length?'guess':'category');
+}
+function _nexStartMuscles(name,cat,own){
+  _nexMusclesTouched=false;
+  if(Array.isArray(own)&&own.length){_nexMuscles=[...own];_renderNexMuscles('yours');return}
+  const r=exMuscles(name,cat);_nexMuscles=r.src==='category'?[]:[...r.ms];_renderNexMuscles(r.src);
+}
+// Built-in exercises: category, equipment, defaults and muscles are editable; the NAME stays
+// (it links to your history and weight suggestions). Stored in exercise_overrides (synced).
+function editBuiltinExercise(name){
+  const ex=EXERCISES.find(e=>e.name===name&&!e.custom);
+  if(!ex)return;
+  _editingCustomEx=null;_editingBuiltin=name;
+  document.getElementById('nex-title').textContent='✏️ Edit Exercise';
+  document.getElementById('nex-hint').textContent='App exercise — the name stays the same so your history and weight suggestions keep working.';
+  document.getElementById('nex-save').textContent='💾 Save changes';
+  const catSel=_fillNexCats();
+  if(![...catSel.options].some(o=>o.value===ex.cat))catSel.insertAdjacentHTML('beforeend',`<option value="${esc(ex.cat)}">${esc(ex.cat)}</option>`);
+  catSel.value=ex.cat;
+  const n=document.getElementById('nex-name');n.value=ex.name;n.disabled=true;
+  document.getElementById('nex-equip').value=ex.equip||'bw';
+  document.getElementById('nex-type').value=ex.cardio?'cardio':'strength';
+  document.getElementById('nex-type').disabled=true;
+  document.getElementById('nex-sets').value=ex.sets||3;
+  document.getElementById('nex-reps').value=ex.reps||'';
+  document.getElementById('nex-rest').value=ex.rest||'';
+  onNewExTypeChange();
+  _nexStartMuscles(ex.name,ex.cat,ex.muscles);
+  document.getElementById('nex-muscles-wrap').style.display=ex.cardio?'none':'';
+  document.getElementById('nex-reset').style.display=ex.edited?'':'none';
+  openModal('modal-new-exercise');
+}
+function resetBuiltinExercise(){
+  const name=_editingBuiltin;if(!name)return;
+  if(!confirm(`Reset "${name}" to the app's default (category, sets/reps, muscles)?`))return;
+  DB.deleteExerciseOverride(name);
+  syncCustomExercises();
+  cancelNewExercise();
+  filterExercises();
+  const sel=document.getElementById('ex-name');
+  if(sel&&[...sel.options].some(o=>o.value===name)){sel.value=name;onExerciseSelect();}
+  toast(`↺ "${name}" back to default`);
+}
+// Category changes follow the name into logged sessions + templates (Week Check reads the logged category)
+function _recatExerciseEverywhere(name,cat){
+  const sessions=DB.gymSessions();let t=false;
+  sessions.forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name===name&&e.cat!==cat){e.cat=cat;t=true}}));
+  if(t)DB.set('gym_sessions',sessions);
+  const ts=DB.gymTemplates();let tt=false;
+  ts.forEach(x=>(x.exercises||[]).forEach(e=>{if(e.name===name&&e.cat!==cat){e.cat=cat;tt=true}}));
+  if(tt)DB.set('gym_templates',ts);
+  if(typeof gymSession==='object'&&gymSession&&gymSession.exercises){
+    let l=false;gymSession.exercises.forEach(e=>{if(e.name===name&&e.cat!==cat){e.cat=cat;l=true}});
+    if(l&&typeof renderSessionExercises==='function')renderSessionExercises();
+  }
+}
+function _catUsage(name,cat){
+  return DB.gymSessions().filter(s=>(s.exercises||[]).some(e=>e.name===name&&e.cat!==cat)).length
+    +DB.gymTemplates().filter(t=>(t.exercises||[]).some(e=>e.name===name&&e.cat!==cat)).length;
+}
+function _askRecat(name,cat){
+  const n=_catUsage(name,cat);
+  if(n&&confirm(`"${name}" is now in ${cat}.\n\nAlso update it in ${n} logged session${n>1?'s':''}/template${n>1?'s':''}?\n\nOK = update (recommended — the Week Check reads it)\nCancel = only new logs`))_recatExerciseEverywhere(name,cat);
+}
 
 // Fills the modal's category dropdown and returns it.
 function _fillNexCats(){
@@ -3209,8 +3312,10 @@ function _fillNexCats(){
   return catSel;
 }
 
+function _nexUnlock(){const n=document.getElementById('nex-name');if(n)n.disabled=false;const t=document.getElementById('nex-type');if(t)t.disabled=false;
+  const w=document.getElementById('nex-muscles-wrap');if(w)w.style.display='';const r=document.getElementById('nex-reset');if(r)r.style.display='none';}
 function openNewExercise(){
-  _editingCustomEx=null;
+  _editingCustomEx=null;_editingBuiltin=null;_nexUnlock();
   document.getElementById('nex-title').textContent='➕ New Exercise';
   document.getElementById('nex-hint').textContent='Saved to your library — available in Add Exercise, Build Session and templates.';
   document.getElementById('nex-save').textContent='💾 Save to Library';
@@ -3227,6 +3332,7 @@ function openNewExercise(){
   document.getElementById('nex-dist-label').value='';
   document.getElementById('nex-rpm-label').value='';
   onNewExTypeChange();
+  _nexMuscles=[];_nexMusclesTouched=false;_renderNexMuscles('category');
   openModal('modal-new-exercise');
 }
 
@@ -3234,8 +3340,8 @@ function openNewExercise(){
 // Only custom entries are editable — built-in library exercises are read-only.
 function editCustomExercise(name){
   const ex=DB.customExercises().find(e=>e.name===name);
-  if(!ex){toast('Only your own exercises can be edited');return}
-  _editingCustomEx=name;
+  if(!ex){editBuiltinExercise(name);return}
+  _editingCustomEx=name;_editingBuiltin=null;_nexUnlock();
   document.getElementById('nex-title').textContent='✏️ Edit Exercise';
   document.getElementById('nex-hint').textContent='Changes apply to your library. Renaming can also update sessions you already logged.';
   document.getElementById('nex-save').textContent='💾 Save changes';
@@ -3250,6 +3356,7 @@ function editCustomExercise(name){
   document.getElementById('nex-dist-label').value=ex.distLabel||'';
   document.getElementById('nex-rpm-label').value=ex.rpmLabel||'';
   onNewExTypeChange();
+  _nexStartMuscles(ex.name,ex.cat,ex.muscles);
   openModal('modal-new-exercise');
 }
 
@@ -3295,7 +3402,7 @@ function _renameExerciseEverywhere(oldName,newName){
 }
 
 function cancelNewExercise(){
-  _editingCustomEx=null;
+  _editingCustomEx=null;_editingBuiltin=null;_nexUnlock();
   closeModal('modal-new-exercise');
 }
 
@@ -3307,6 +3414,26 @@ function onNewExTypeChange(){
 }
 
 function saveNewExercise(){
+  if(_editingBuiltin){
+    const name=_editingBuiltin,ex=EXERCISES.find(e=>e.name===name&&!e.custom);
+    const cat=document.getElementById('nex-cat').value;
+    const o={cat,equip:document.getElementById('nex-equip').value,
+      sets:parseInt(document.getElementById('nex-sets').value)||ex._orig.sets,
+      reps:document.getElementById('nex-reps').value.trim()||ex._orig.reps,
+      rest:document.getElementById('nex-rest').value.trim()||ex._orig.rest};
+    if(_nexMusclesTouched)o.muscles=[..._nexMuscles];
+    else if(Array.isArray(ex.muscles))o.muscles=ex.muscles;
+    const prevCat=ex.cat;
+    DB.saveExerciseOverride(name,o);
+    syncCustomExercises();
+    if(cat!==prevCat)_askRecat(name,cat);
+    cancelNewExercise();
+    filterExercises();
+    const sel=document.getElementById('ex-name');
+    if(sel&&[...sel.options].some(o=>o.value===name)){sel.value=name;onExerciseSelect();}
+    toast(`✏️ "${name}" updated`);
+    return;
+  }
   const oldName=_editingCustomEx;                 // null when creating
   const original=oldName?DB.customExercises().find(e=>e.name===oldName):null;
   if(oldName&&!original){toast('That exercise no longer exists');_editingCustomEx=null;closeModal('modal-new-exercise');return}
@@ -3328,6 +3455,7 @@ function saveNewExercise(){
     sets,reps,rest,
     createdAt:new Date().toISOString()
   };
+  if(!isCardio&&(_nexMusclesTouched||(original&&Array.isArray(original.muscles))))ex.muscles=_nexMusclesTouched?[..._nexMuscles]:original.muscles;
   if(isCardio){
     ex.cardio=true;
     ex.distLabel=document.getElementById('nex-dist-label').value.trim()||'Distance (km)';
@@ -3353,6 +3481,7 @@ function saveNewExercise(){
       }
     }
     DB.updateCustomExercise(oldName,ex);
+    if(original.cat!==cat)_askRecat(name,cat);
   } else {
     DB.saveCustomExercise(ex);
   }
@@ -3831,6 +3960,47 @@ const CAT_MUSCLES={
   'CG-Arms':['lats','biceps','traps'],'CG-Rotator':['delts','traps'],
   'CG-Push':['pecs','delts','triceps'],'CG-Core':['abs','obliques'],
 };
+// ── Which muscles an exercise works (2026-10-28, Jo chose C: guess from the name + editable) ──
+// Order: your own pick (custom exercise or edited built-in) → built-in map → guess from the name → whole category.
+const MUSCLE_LABELS={pecs:'Chest',delts:'Shoulders',biceps:'Biceps',triceps:'Triceps',traps:'Traps',lats:'Lats',forearms:'Forearms',
+  abs:'Abs',obliques:'Obliques',lowerback:'Lower back',quads:'Quads',glutes:'Glutes',hamstrings:'Hamstrings',calves:'Calves'};
+const MUSCLE_GUESS=[
+  [/jeff(erson)?\s*curl/i,['lowerback','hamstrings']],
+  [/dead\s*lift|\brdl\b|good\s*morning/i,['hamstrings','glutes','lowerback']],
+  [/hip\s*thrust|bridge|glute/i,['glutes','hamstrings']],
+  [/split\s*squat|lunge|step[- ]?up|bulgarian/i,['quads','glutes']],
+  [/squat|leg\s*press(?!.*calf)/i,['quads','glutes']],
+  [/leg\s*curl|hamstring|nordic/i,['hamstrings']],
+  [/leg\s*ext|quad/i,['quads']],
+  [/calf|calves/i,['calves']],
+  [/abduct|clam/i,['glutes']],
+  [/adduct|copenhagen/i,['quads']],
+  [/bench|chest|push[- ]?up|pec|floor\s*press|\bdips?\b/i,['pecs','triceps','delts']],
+  [/overhead|shoulder\s*press|military|arnold|lateral\s*raise|front\s*raise/i,['delts','triceps']],
+  [/face\s*pull|rear\s*delt|reverse\s*fly|pull[- ]?apart/i,['delts','traps']],
+  [/\brows?\b|rowing\b(?!.*machine)|pull[- ]?ups?|chin[- ]?up|pull\s*down|\blats?\b|inverted/i,['lats','biceps','traps']],
+  [/shrug|\btraps?\b/i,['traps']],
+  [/tricep|skull/i,['triceps']],
+  [/wrist|grip|forearm|finger/i,['forearms']],
+  [/bicep|\bcurls?\b/i,['biceps'],/leg\s*curl|jeff|wrist|nordic|hamstring/i],
+  [/rotation|twist|oblique|side\s*plank|pallof|wood\s*chop|windshield/i,['obliques','abs']],
+  [/back\s*ext|superman|hyper|decline\s*back/i,['lowerback','glutes']],
+  [/crunch|sit[- ]?up|\babs?\b|plank|dead\s*bug|hollow|leg\s*raise|knee\s*raise|heel\s*tap|core/i,['abs']],
+];
+function guessMuscles(name){
+  const out=new Set();
+  MUSCLE_GUESS.forEach(([re,ms,unless])=>{if(re.test(name||'')&&!(unless&&unless.test(name)))ms.forEach(m=>out.add(m))});
+  return [...out];
+}
+// sourceOf → 'yours' | 'built-in' | 'guess' | 'category'
+function exMuscles(name,cat){
+  const lib=EXERCISES.find(x=>x.name===name);
+  if(lib&&Array.isArray(lib.muscles)&&lib.muscles.length)return {ms:lib.muscles,src:'yours'};
+  if(EX_MUSCLES[name])return {ms:EX_MUSCLES[name],src:'built-in'};
+  const g=guessMuscles(name);
+  if(g.length)return {ms:g,src:'guess'};
+  return {ms:CAT_MUSCLES[cat||(lib&&lib.cat)]||[],src:'category'};
+}
 function drawBodyDiagram(exercises){
   const ZONE_INFO=[
     {z:'sup',col:'#388bfd',label:'Superior'},
@@ -3842,7 +4012,7 @@ function drawBodyDiagram(exercises){
   // Accepts an exercises array; a Set of category names still works (legacy callers)
   const list=exercises instanceof Set?[...exercises].map(c=>({cat:c})):(exercises||[]);
   const worked=new Set();
-  list.forEach(e=>{const ms=EX_MUSCLES[e.name]||CAT_MUSCLES[e.cat];if(ms)ms.forEach(m=>worked.add(m));});
+  list.forEach(e=>{if(e.cat==='Warm-up'||e.cat==='Stretching'||e.type==='cardio')return;const ms=e.name?exMuscles(e.name,e.cat).ms:CAT_MUSCLES[e.cat];if(ms)ms.forEach(m=>worked.add(m));});
   const zc={};ZONE_INFO.forEach(z=>zc[z.z]=z.col);
   const mc=m=>worked.has(m)?zc[MUSCLE_ZONE[m]]:'#2a3140';
   const pec=mc('pecs'),del=mc('delts'),bic=mc('biceps'),tri=mc('triceps'),tra=mc('traps'),
