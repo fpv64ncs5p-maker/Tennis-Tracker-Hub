@@ -368,3 +368,9 @@ Training Hub loads zero external resources. If the Tennis tab needs Supabase JS 
 - The report window has a **Month / Year** switch (button now "📄 Report — month / year (PDF)").
 - Yearly report = the monthly stats run for each month and added up: Year at a glance (vs previous year; for the current year it compares the same Jan–current-month period) · Month by month (active/rest days, sessions, time, avg RPE, work) · Training time per sport per month · Climbing over the year (routes, meters, movements, sends, board moves, top grade; best grade of the year) · Tennis over the year (sessions, time, matches, W–L, errors/100) · Rehab per month · Notes.
 - Year notes are stored as `Y<year>` in the same device-only `report_notes`.
+
+### 2026-10-30 — Serve training (Tennis hub)
+- New third Tennis hub card **🎯 Serve training**: log serve practice in blocks ("10 hit · 7 in") tagged side (Deuce/Ad), 1st/2nd, type (Flat/Spin/Slice), target (T/Body/Wide).
+- Jo's choices: practice log (not a match-stats view) · block entry · track 1st/2nd · progress = accuracy grid + trend · name "Serve training".
+- Stored in its own synced key `tennis_serve_sessions`; never mixed into matches or match stats. Unsaved session is a device-only draft.
+- Not yet counted in Planner/Home tennis totals.

@@ -392,6 +392,23 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .hub-card .hub-t{font-size:17px;font-weight:800;margin-top:6px}
 .hub-card .hub-d{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.4}
 .hub-card .hub-badge{display:inline-block;margin-top:8px;font-size:11px;font-weight:800;letter-spacing:.04em;background:var(--tennis-dim);color:var(--tennis);border-radius:20px;padding:3px 10px}
+.sv-lbl{font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.05em;margin-bottom:4px;text-transform:uppercase}
+.sv-stat{flex:1;background:var(--surface2);border-radius:var(--radius-sm);padding:6px;text-align:center}
+.sv-row{display:flex;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--border);font-size:13px}
+.sv-x{background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 6px;font-family:inherit}
+.sv-grid{display:grid;grid-template-columns:44px repeat(4,minmax(0,1fr));gap:4px;margin-top:4px}
+.sv-hd{font-size:11px;font-weight:800;color:var(--muted);text-align:center;align-self:end}
+.sv-rl{font-size:12px;font-weight:800;align-self:center}
+.sv-cell{background:var(--surface2);border-radius:8px;padding:6px 2px;text-align:center;min-height:54px}
+.sv-cell.sv-tot{background:var(--tennis-dim)}
+.sv-empty{color:var(--muted2);display:flex;align-items:center;justify-content:center}
+.sv-p{font-size:16px;font-weight:800;line-height:1.2}
+.sv-n{font-size:10px;color:var(--muted);font-weight:600}
+.sv-tr{font-size:10px;font-weight:800}
+.sv-trow{display:grid;grid-template-columns:48px 1fr 58px;gap:8px;align-items:center;margin:6px 0;font-size:12px}
+.sv-bar{height:12px;background:var(--surface2);border-radius:6px;overflow:hidden}
+.sv-bar>div{height:100%;border-radius:6px}
+.sv-tv{font-weight:800;text-align:right;white-space:nowrap;line-height:1.1}
 .back-link{background:none;border:none;color:var(--tennis);font-weight:700;font-size:14px;cursor:pointer;padding:2px 0;margin-bottom:8px;font-family:inherit;-webkit-tap-highlight-color:transparent}
 
 /* ══ Live scoring ══ */
@@ -1039,7 +1056,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div id="tennis-hub">
       <div class="page-header">
         <h1>🎾 Tennis</h1>
-        <p id="tennis-hub-sub">Matches &amp; scoring</p>
+        <p id="tennis-hub-sub">Matches, scoring &amp; serve training</p>
       </div>
       <button class="hub-card" onclick="tennisGo('matches')">
         <div class="hub-ico">📋</div>
@@ -1052,6 +1069,12 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <div class="hub-t">Score a match</div>
         <div class="hub-d">Keep score for someone else, export a PDF to share, then delete it. Kept separate from your own stats.</div>
         <div class="hub-badge" id="hub-score-badge" style="display:none"></div>
+      </button>
+      <button class="hub-card" onclick="tennisGo('serve')">
+        <div class="hub-ico">🎯</div>
+        <div class="hub-t">Serve training</div>
+        <div class="hub-d">Log serve practice by side, 1st/2nd, type and target — and watch your accuracy grow. Kept separate from match stats.</div>
+        <div class="hub-badge" id="hub-serve-badge" style="display:none"></div>
       </button>
     </div>
 
@@ -1148,6 +1171,21 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <button class="back-link" onclick="tsShow('home')">← Scoresheets</button>
         <div id="ts-detail-body"></div>
       </div>
+    </div>
+
+    <!-- ── SERVE TRAINING ── -->
+    <div id="tennis-serve-view" style="display:none">
+      <button class="back-link" onclick="tennisGo('hub')">← Tennis</button>
+      <div class="page-header">
+        <h1>🎯 Serve training</h1>
+        <p>Serve practice — never counts towards your match stats</p>
+      </div>
+      <div class="segment" id="sv-mode">
+        <button class="seg-btn active" data-sv-mode="log" onclick="svMode('log')">Log</button>
+        <button class="seg-btn" data-sv-mode="progress" onclick="svMode('progress')">Progress</button>
+        <button class="seg-btn" data-sv-mode="history" onclick="svMode('history')">History</button>
+      </div>
+      <div id="sv-body"></div>
     </div>
 
     </div>
@@ -1972,7 +2010,7 @@ const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'climb_sessions','climb_assessments','plan_data','rehab_data','macro_data',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
   'gym_height','tennis_matches','tennis_overlay','tennis_merges','custom_gyms','fb_custom_ex',
-  'custom_exercises','training_cycle','planned_sessions','exercise_overrides'];
+  'custom_exercises','training_cycle','planned_sessions','exercise_overrides','tennis_serve_sessions'];
 
 function exportAllData(){
   const data={};
@@ -12522,13 +12560,14 @@ function miniStat(label,value){
 let _tennisView='hub';
 function tennisGo(view){
   _tennisView=view;
-  const ids={hub:'tennis-hub',matches:'tennis-matches-view',score:'tennis-score-view'};
+  const ids={hub:'tennis-hub',matches:'tennis-matches-view',score:'tennis-score-view',serve:'tennis-serve-view'};
   Object.keys(ids).forEach(k=>{
     const el=document.getElementById(ids[k]);
     if(el) el.style.display = (k===view?'block':'none');
   });
   if(view==='hub')     renderTennisHub();
   if(view==='matches') renderTennis();
+  if(view==='serve')   renderServe();
   if(view==='score')   { if(_tsScreen==='live'&&!_tsEngine) tsShow('home'); else tsShow(_tsScreen); }
   window.scrollTo(0,0);
 }
@@ -12550,6 +12589,210 @@ function renderTennisHub(){
     else if(n>0){ sb.style.display='inline-block'; sb.textContent=`${n} saved`; }
     else sb.style.display='none';
   }
+  // "Serve training" badge — an unsaved session takes priority over the saved count
+  const vb=document.getElementById('hub-serve-badge');
+  if(vb){
+    const dr=svGetDraft(), n=svSessions().length;
+    if(dr&&dr.blocks.length){ vb.style.display='inline-block'; vb.textContent=dr.editId?'● EDITING A SESSION':'● SESSION IN PROGRESS'; }
+    else if(n>0){ vb.style.display='inline-block'; vb.textContent=`${n} session${n===1?'':'s'}`; }
+    else vb.style.display='none';
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  SERVE TRAINING (2026-10-30)
+//  Serve-practice log. A session is a list of blocks "n hit · m in",
+//  each tagged side (Deuce/Ad) · serve (1st/2nd) · type (Flat/Spin/Slice)
+//  · target (T/Body/Wide). Synced key `tennis_serve_sessions` (in
+//  DATA_KEYS) — its own key, never mixed into matches or match stats.
+//  The in-progress session is a per-device draft (raw localStorage,
+//  NOT synced), so a sleeping phone or a reload never loses blocks.
+// ══════════════════════════════════════════════════
+const SV_KEY='tennis_serve_sessions', SV_DRAFT_KEY='_tennis_serve_draft', SV_SEL_KEY='_tennis_serve_sel';
+const SV_SIDES=[['deuce','Deuce'],['ad','Ad']];
+const SV_SERVES=[['1','1st'],['2','2nd']];
+const SV_TYPES=[['flat','Flat'],['spin','Spin'],['slice','Slice']];
+const SV_TARGETS=[['T','T'],['body','Body'],['wide','Wide']];
+let _svMode='log', _svDraft=null, _svOpenId=null;
+let _svFilter={side:'all',serve:'all',type:'all'};
+let _svSel=(()=>{const d={side:'deuce',serve:'1',type:'flat',target:'T'};
+  try{return Object.assign(d,JSON.parse(localStorage.getItem(SV_SEL_KEY))||{});}catch(e){return d;}})();
+
+function svSessions(){return DB.get(SV_KEY)||[];}
+function _svLabel(list,v){const f=list.find(x=>x[0]===String(v));return f?f[1]:String(v);}
+function _svPct(m,h){return h>0?Math.round(m/h*100):null;}
+function _svCol(p){return p==null?'var(--muted)':p>=70?'var(--green)':p>=50?'var(--yellow)':'var(--red)';}
+function _svShortDate(d){return d?new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'';}
+function _svAgg(blocks,pred){let h=0,m=0;(blocks||[]).forEach(b=>{if(!pred||pred(b)){h+=+b.hit||0;m+=+b.made||0;}});return{h,m};}
+function _svCombo(b){return `${_svLabel(SV_SIDES,b.side)} · ${_svLabel(SV_SERVES,b.serve)} · ${_svLabel(SV_TYPES,b.type)} → ${_svLabel(SV_TARGETS,b.target)}`;}
+
+// ── draft ──
+function svGetDraft(){try{const d=JSON.parse(localStorage.getItem(SV_DRAFT_KEY));return d&&Array.isArray(d.blocks)?d:null;}catch(e){return null;}}
+function _svD(){if(!_svDraft)_svDraft=svGetDraft()||{date:today(),blocks:[],notes:'',editId:null,hit:10};return _svDraft;}
+function _svPersist(){const d=_svDraft;try{
+  if(d&&(d.blocks.length||d.editId))localStorage.setItem(SV_DRAFT_KEY,JSON.stringify(d));
+  else localStorage.removeItem(SV_DRAFT_KEY);}catch(e){}}
+function _svClearDraft(){_svDraft=null;try{localStorage.removeItem(SV_DRAFT_KEY);}catch(e){}}
+
+// ── navigation ──
+function svMode(m){_svMode=m;renderServe();window.scrollTo(0,0);}
+function renderServe(){
+  const body=document.getElementById('sv-body');if(!body)return;
+  document.querySelectorAll('#sv-mode .seg-btn').forEach(b=>b.classList.toggle('active',b.dataset.svMode===_svMode));
+  body.innerHTML=_svMode==='progress'?_svProgressHtml():_svMode==='history'?_svHistoryHtml():_svLogHtml();
+}
+function _svSegRow(label,key,opts,cur,handler){
+  return `<div class="sv-lbl">${label}</div><div class="segment" style="margin-bottom:10px">${opts.map(([v,l])=>
+    `<button type="button" class="seg-btn${String(cur)===v?' active':''}" data-sv-key="${key}" data-sv-val="${v}" onclick="${handler}('${key}','${v}',this)">${l}</button>`).join('')}</div>`;
+}
+function _svStat(label,a){const p=_svPct(a.m,a.h);
+  return `<div class="sv-stat"><div style="font-size:18px;font-weight:800;color:${_svCol(p)}">${p==null?'—':p+'%'}</div><div style="font-size:11px;color:var(--muted)">${label}${a.h?` · ${a.m}/${a.h}`:''}</div></div>`;}
+
+// ── LOG ──
+// Selection chips only toggle classes in the DOM — a full re-render would
+// wipe a number already typed into "In" (the climbing add-row lesson).
+function svPick(key,v,el){
+  _svSel[key]=v;try{localStorage.setItem(SV_SEL_KEY,JSON.stringify(_svSel));}catch(e){}
+  if(el)el.parentNode.querySelectorAll('.seg-btn').forEach(b=>b.classList.toggle('active',b===el));
+  const c=document.getElementById('sv-combo');if(c)c.textContent=_svCombo(_svSel);
+}
+function _svLogHtml(){
+  const d=_svD();let h='';
+  if(d.editId)h+=`<div class="card" style="background:#fff7ed"><b>✏️ Editing the session of ${esc(fmtDate(d.date))}</b>
+    <div style="margin-top:6px"><button class="btn" style="background:var(--surface2);color:var(--text);padding:6px 12px;font-size:13px" onclick="svCancelEdit()">Cancel edit</button></div></div>`;
+  h+=`<div class="card">
+    <div class="form-group"><label>Date</label><input type="date" id="sv-date" value="${esc(d.date)}" onchange="_svD().date=this.value;_svPersist()"></div>
+    ${_svSegRow('Side','side',SV_SIDES,_svSel.side,'svPick')}
+    ${_svSegRow('Serve','serve',SV_SERVES,_svSel.serve,'svPick')}
+    ${_svSegRow('Type','type',SV_TYPES,_svSel.type,'svPick')}
+    ${_svSegRow('Target','target',SV_TARGETS,_svSel.target,'svPick')}
+    <div id="sv-combo" style="font-size:13px;font-weight:800;color:var(--tennis);margin:0 0 8px">${esc(_svCombo(_svSel))}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end">
+      <div class="form-group" style="margin:0"><label>Serves hit</label><input id="sv-hit" inputmode="numeric" value="${esc(d.hit==null?10:d.hit)}" onfocus="this.select()" oninput="_svD().hit=this.value"></div>
+      <div class="form-group" style="margin:0"><label>In</label><input id="sv-in" inputmode="numeric" placeholder="0" onfocus="this.select()" onkeydown="if(event.key==='Enter')svAdd()"></div>
+      <button class="btn" style="background:var(--tennis);color:#fff;height:42px" onclick="svAdd()">＋ Add</button>
+    </div></div>`;
+  if(d.blocks.length){
+    const t=_svAgg(d.blocks),f=_svAgg(d.blocks,b=>b.serve==='1'),s=_svAgg(d.blocks,b=>b.serve==='2');
+    h+=`<div class="card"><div class="sv-lbl">This session</div>
+      <div style="display:flex;gap:8px;margin:4px 0 6px">${_svStat('All',t)}${_svStat('1st',f)}${_svStat('2nd',s)}</div>
+      ${d.blocks.map((b,i)=>{const p=_svPct(b.made,b.hit);return `<div class="sv-row"><div style="flex:1;min-width:0">${esc(_svCombo(b))}</div>
+        <div style="font-weight:800;white-space:nowrap">${b.made}/${b.hit} <span style="color:${_svCol(p)}">${p}%</span></div>
+        <button class="sv-x" onclick="svRemoveBlock(${i})" aria-label="Remove block">✕</button></div>`;}).join('')}
+      <div class="form-group" style="margin-top:10px"><label>Notes</label><textarea id="sv-notes" rows="2" placeholder="e.g. toss drifting left on slice" oninput="_svD().notes=this.value;_svPersist()">${esc(d.notes||'')}</textarea></div>
+      <div style="display:flex;gap:8px"><button class="btn" style="flex:1;justify-content:center;background:var(--tennis);color:#fff" onclick="svSave()">💾 ${d.editId?'Update':'Save'} session</button>
+      ${d.editId?'':`<button class="btn" style="background:var(--surface2);color:var(--muted)" onclick="svDiscard()">Discard</button>`}</div></div>`;
+  } else h+=`<div style="text-align:center;color:var(--muted);font-size:13px;padding:6px 8px">Pick side, serve, type and target, then add a block — e.g. 10 hit · 7 in.</div>`;
+  return h;
+}
+function svAdd(){
+  const hEl=document.getElementById('sv-hit'),iEl=document.getElementById('sv-in');
+  const h=parseInt(hEl&&hEl.value,10),m=parseInt(iEl&&iEl.value,10);
+  if(!(h>=1&&h<=500)){toast('Serves hit: 1–500');return;}
+  if(isNaN(m)||m<0){toast('How many went in?');return;}
+  if(m>h){toast('“In” can’t be more than serves hit');return;}
+  const d=_svD();
+  d.blocks.push({side:_svSel.side,serve:_svSel.serve,type:_svSel.type,target:_svSel.target,hit:h,made:m});
+  d.hit=h;_svPersist();renderServe();
+  toast(`Added · ${m}/${h} (${_svPct(m,h)}%)`);
+}
+function svRemoveBlock(i){
+  const d=_svD(),b=d.blocks.splice(i,1)[0];if(!b)return;
+  _svPersist();renderServe();
+  pushUndo('Block removed',()=>{_svD().blocks.splice(i,0,b);_svPersist();renderServe();});
+}
+function svSave(){
+  const d=_svD();if(!d.blocks.length){toast('Add at least one block first');return;}
+  const wasEdit=!!d.editId,all=svSessions();
+  const sess={id:d.editId||Date.now(),date:d.date||today(),blocks:d.blocks.map(b=>({...b})),notes:(d.notes||'').trim()};
+  const i=wasEdit?all.findIndex(s=>String(s.id)===String(d.editId)):-1;
+  if(i>=0){sess.createdAt=all[i].createdAt;all[i]=sess;}
+  else{sess.createdAt=new Date().toISOString();all.unshift(sess);}
+  DB.set(SV_KEY,all);
+  const t=_svAgg(sess.blocks);
+  _svClearDraft();
+  toast(`${wasEdit?'Updated':'Saved'} · ${t.m}/${t.h} in (${_svPct(t.m,t.h)}%)`);
+  svMode('progress');
+}
+function svDiscard(){
+  const saved=_svDraft;_svClearDraft();renderServe();
+  if(saved&&saved.blocks.length)pushUndo('Session discarded',()=>{_svDraft=saved;_svPersist();svMode('log');});
+}
+function svCancelEdit(){_svClearDraft();renderServe();toast('Edit cancelled — nothing changed');}
+function svEdit(id){
+  const s=svSessions().find(x=>String(x.id)===String(id));if(!s)return;
+  const cur=_svDraft||svGetDraft();
+  if(cur&&cur.blocks.length&&String(cur.editId)!==String(id)&&!confirm('You have an unsaved serve session. Replace it with this one to edit?'))return;
+  _svDraft={date:s.date,blocks:s.blocks.map(b=>({...b})),notes:s.notes||'',editId:s.id,hit:(s.blocks[s.blocks.length-1]||{}).hit||10};
+  _svPersist();svMode('log');
+}
+function svDelete(id){
+  const all=svSessions(),idx=all.findIndex(x=>String(x.id)===String(id));if(idx<0)return;
+  const removed=all.splice(idx,1)[0];DB.set(SV_KEY,all);
+  if(_svDraft&&String(_svDraft.editId)===String(id)){_svDraft.editId=null;_svPersist();}
+  renderServe();
+  pushUndo('Session deleted',()=>{const a=svSessions();a.splice(idx,0,removed);DB.set(SV_KEY,a);renderServe();});
+}
+
+// ── PROGRESS ──
+function svFilt(key,v){_svFilter[key]=v;renderServe();}
+function _svSorted(){return svSessions().slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(+a.id)-(+b.id));}
+function _svFiltOk(b){const f=_svFilter;return(f.side==='all'||b.side===f.side)&&(f.serve==='all'||String(b.serve)===f.serve);}
+// all-time % for a cell + the latest session that has it vs everything before it
+function _svCell(sess,type,target){
+  const pred=b=>_svFiltOk(b)&&(type==='all'||b.type===type)&&(target==='all'||b.target===target);
+  let H=0,M=0,last=null;const prior={h:0,m:0};
+  sess.forEach(s=>{const a=_svAgg(s.blocks,pred);if(a.h){if(last){prior.h+=last.h;prior.m+=last.m;}last=a;H+=a.h;M+=a.m;}});
+  return{h:H,m:M,last,prior};
+}
+function _svTrend(lp,pp){const df=lp-pp;return df>=3?['▲','var(--green)']:df<=-3?['▼','var(--red)']:['=','var(--muted)'];}
+function _svCellHtml(c,tot){
+  if(!c.h)return `<div class="sv-cell sv-empty${tot?' sv-tot':''}">—</div>`;
+  const p=_svPct(c.m,c.h);let tr='';
+  if(c.prior.h){const lp=_svPct(c.last.m,c.last.h),[a,col]=_svTrend(lp,_svPct(c.prior.m,c.prior.h));
+    tr=`<div class="sv-tr" style="color:${col}">last ${lp}% ${a}</div>`;}
+  return `<div class="sv-cell${tot?' sv-tot':''}"><div class="sv-p" style="color:${_svCol(p)}">${p}%</div><div class="sv-n">${c.m}/${c.h}</div>${tr}</div>`;
+}
+function _svProgressHtml(){
+  const sess=_svSorted();
+  if(!sess.length)return `<div class="card" style="text-align:center;color:var(--muted)">No serve sessions yet — log one in <b>Log</b> and your accuracy grid appears here.</div>`;
+  let h=`<div class="card">${_svSegRow('Side','side',[['all','All'],...SV_SIDES],_svFilter.side,'svFilt')}${_svSegRow('Serve','serve',[['all','All'],...SV_SERVES],_svFilter.serve,'svFilt')}</div>`;
+  const cols=[...SV_TARGETS,['all','All']],rows=[...SV_TYPES,['all','All']];
+  h+=`<div class="card"><div class="sv-lbl">Accuracy · % in</div><div class="sv-grid"><div></div>${cols.map(c=>`<div class="sv-hd">${c[1]}</div>`).join('')}`;
+  rows.forEach(r=>{h+=`<div class="sv-rl">${r[1]}</div>`+cols.map(c=>_svCellHtml(_svCell(sess,r[0],c[0]),r[0]==='all'||c[0]==='all')).join('');});
+  h+=`</div><div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4">Big % = all sessions. “last” = your latest session vs everything before it (▲/▼ = 3+ points).</div></div>`;
+  const pred=b=>_svFiltOk(b)&&(_svFilter.type==='all'||b.type===_svFilter.type);
+  const pts=sess.map(s=>({s,a:_svAgg(s.blocks,pred)})).filter(x=>x.a.h).slice(-12);
+  h+=`<div class="card"><div class="sv-lbl">Trend · last ${pts.length} session${pts.length===1?'':'s'}</div>${_svSegRow('Type','type',[['all','All'],...SV_TYPES],_svFilter.type,'svFilt')}`;
+  if(!pts.length)h+=`<div style="color:var(--muted);font-size:13px">Nothing logged for this filter yet.</div>`;
+  pts.forEach((x,i)=>{const p=_svPct(x.a.m,x.a.h);let ar='';
+    if(i>0){const [a,col]=_svTrend(p,_svPct(pts[i-1].a.m,pts[i-1].a.h));ar=` <span style="color:${col}">${a}</span>`;}
+    h+=`<div class="sv-trow"><div>${esc(_svShortDate(x.s.date))}</div><div class="sv-bar"><div style="width:${p}%;background:${_svCol(p)}"></div></div><div class="sv-tv">${p}%${ar}<div class="sv-n">${x.a.m}/${x.a.h}</div></div></div>`;});
+  return h+`</div>`;
+}
+
+// ── HISTORY ──
+function svToggle(id){_svOpenId=String(_svOpenId)===String(id)?null:String(id);renderServe();}
+function _svHistoryHtml(){
+  const sess=svSessions().slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(+b.id)-(+a.id));
+  if(!sess.length)return `<div class="card" style="text-align:center;color:var(--muted)">No serve sessions saved yet.</div>`;
+  return sess.map(s=>{
+    const t=_svAgg(s.blocks),f=_svAgg(s.blocks,b=>b.serve==='1'),s2=_svAgg(s.blocks,b=>b.serve==='2'),p=_svPct(t.m,t.h);
+    const open=String(_svOpenId)===String(s.id);
+    let det='';
+    if(open){
+      det=`<div style="margin-top:8px">${s.blocks.map(b=>{const bp=_svPct(b.made,b.hit);return `<div class="sv-row"><div style="flex:1;min-width:0">${esc(_svCombo(b))}</div><div style="font-weight:800;white-space:nowrap">${b.made}/${b.hit} <span style="color:${_svCol(bp)}">${bp}%</span></div></div>`;}).join('')}
+        ${s.notes?`<div style="font-size:13px;margin-top:8px;white-space:pre-wrap">📝 ${esc(s.notes)}</div>`:''}
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn" style="flex:1;justify-content:center;background:var(--tennis-dim);color:var(--tennis)" onclick="event.stopPropagation();svEdit('${esc(String(s.id))}')">✏️ Edit</button>
+          <button class="btn" style="background:var(--surface2);color:var(--red)" onclick="event.stopPropagation();svDelete('${esc(String(s.id))}')">🗑 Delete</button></div></div>`;
+    }
+    return `<div class="card sv-hist" style="cursor:pointer" onclick="svToggle('${esc(String(s.id))}')">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div>
+        <div style="font-weight:800">${esc(fmtDate(s.date))}</div>
+        <div style="font-size:12px;color:var(--muted)">${t.h} serves · ${s.blocks.length} block${s.blocks.length===1?'':'s'}${f.h?` · 1st ${_svPct(f.m,f.h)}%`:''}${s2.h?` · 2nd ${_svPct(s2.m,s2.h)}%`:''}</div></div>
+        <div style="font-size:20px;font-weight:800;color:${_svCol(p)}">${p}%</div></div>${det}</div>`;
+  }).join('');
 }
 
 // showToast() was called in three places in the tennis code but never defined
