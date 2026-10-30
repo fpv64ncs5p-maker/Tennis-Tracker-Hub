@@ -418,6 +418,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .sv-pi.done{color:var(--muted)}
 .sv-pn{min-width:26px;font-weight:800;font-size:15px}
 .sv-ps{font-size:12px;font-weight:700;white-space:nowrap;color:var(--tennis)}
+.sv-eb{border-top:1px solid var(--border);padding:10px 0 4px;background:var(--surface)}
 .back-link{background:none;border:none;color:var(--tennis);font-weight:700;font-size:14px;cursor:pointer;padding:2px 0;margin-bottom:8px;font-family:inherit;-webkit-tap-highlight-color:transparent}
 
 /* ══ Live scoring ══ */
@@ -12642,10 +12643,10 @@ function _svD(){if(!_svDraft)_svDraft=svGetDraft()||{date:today(),blocks:[],note
 function _svPersist(){const d=_svDraft;try{
   if(d&&(d.blocks.length||d.editId||d.plan))localStorage.setItem(SV_DRAFT_KEY,JSON.stringify(d));
   else localStorage.removeItem(SV_DRAFT_KEY);}catch(e){}}
-function _svClearDraft(){_svDraft=null;try{localStorage.removeItem(SV_DRAFT_KEY);}catch(e){}}
+function _svClearDraft(){_svDraft=null;_svEB=null;try{localStorage.removeItem(SV_DRAFT_KEY);}catch(e){}}
 
 // ── navigation ──
-function svMode(m){_svMode=m;renderServe();window.scrollTo(0,0);}
+function svMode(m){_svMode=m;_svEB=null;renderServe();window.scrollTo(0,0);}
 function renderServe(){
   const body=document.getElementById('sv-body');if(!body)return;
   document.querySelectorAll('#sv-mode .seg-btn').forEach(b=>b.classList.toggle('active',b.dataset.svMode===_svMode));
@@ -12689,9 +12690,9 @@ function _svLogHtml(){
     const t=_svAgg(d.blocks),f=_svAgg(d.blocks,b=>b.serve==='1'),s=_svAgg(d.blocks,b=>b.serve==='2');
     h+=`<div class="card"><div class="sv-lbl">This session</div>
       <div style="display:flex;gap:8px;margin:4px 0 6px">${_svStat('All',t)}${_svStat('1st',f)}${_svStat('2nd',s)}</div>
-      ${d.blocks.map((b,i)=>{const p=_svPct(b.made,b.hit);return `<div class="sv-row"><div style="flex:1;min-width:0">${esc(_svCombo(b))}</div>
+      ${d.blocks.map((b,i)=>{if(_svEB&&_svEB.i===i)return _svEBHtml();const p=_svPct(b.made,b.hit);return `<div class="sv-row"><div style="flex:1;min-width:0">${esc(_svCombo(b))}</div>
         <div style="font-weight:800;white-space:nowrap">${b.made}/${b.hit} <span style="color:${_svCol(p)}">${p}%</span></div>
-        <button class="sv-x" onclick="svRemoveBlock(${i})" aria-label="Remove block">✕</button></div>`;}).join('')}
+        <button class="sv-x" onclick="svEditBlock(${i})" aria-label="Edit block">✏️</button><button class="sv-x" onclick="svRemoveBlock(${i})" aria-label="Remove block">✕</button></div>`;}).join('')}
       <div class="form-group" style="margin-top:10px"><label>Notes</label><textarea id="sv-notes" rows="2" placeholder="e.g. toss drifting left on slice" oninput="_svD().notes=this.value;_svPersist()">${esc(d.notes||'')}</textarea></div>
       <div style="display:flex;gap:8px"><button class="btn" style="flex:1;justify-content:center;background:var(--tennis);color:#fff" onclick="svSave()">💾 ${d.editId?'Update':'Save'} session</button>
       ${d.editId?'':`<button class="btn" style="background:var(--surface2);color:var(--muted)" onclick="svDiscard()">Discard</button>`}</div></div>`;
@@ -12705,6 +12706,7 @@ function svAdd(){
   if(isNaN(m)||m<0){toast('How many went in?');return;}
   if(m>h){toast('“In” can’t be more than serves hit');return;}
   const d=_svD();
+  _svEB=null;
   const blk={side:_svSel.side,serve:_svSel.serve,type:_svSel.type,target:_svSel.target,hit:h,made:m},p=d.plan;
   // A block counts for the plan's active item only when its combo matches it
   if(p){const it=p.items[p.active];if(it&&!_svPlanDone(d,it)&&_svSameCombo(it,blk))blk.pid=it.pid;}
@@ -12714,7 +12716,7 @@ function svAdd(){
   _svPersist();renderServe();
 }
 function svRemoveBlock(i){
-  const d=_svD(),b=d.blocks.splice(i,1)[0];if(!b)return;
+  _svEB=null;const d=_svD(),b=d.blocks.splice(i,1)[0];if(!b)return;
   _svPersist();renderServe();
   pushUndo('Block removed',()=>{_svD().blocks.splice(i,0,b);_svPersist();renderServe();});
 }
@@ -12865,6 +12867,36 @@ function _svPlanCardHtml(d){
     <div style="margin-top:8px">${rows}</div>
     ${p.items.some(it=>it.role==='pressure')?`<div style="font-size:11px;color:var(--muted);margin-top:6px">🔥 Pressure = 2nd serves only, play each one like it's 30-40.</div>`:''}
     <button class="btn" style="background:var(--surface2);color:var(--text);padding:6px 12px;font-size:13px;margin-top:8px" onclick="svTogglePicker()">Change plan</button></div>`;
+}
+
+// ── Edit one logged block in place (2026-10-30) ──
+let _svEB=null; // {i, side, serve, type, target, hit, made}
+function svEditBlock(i){const b=_svD().blocks[i];if(!b)return;_svEB={i,side:b.side,serve:String(b.serve),type:b.type,target:b.target,hit:b.hit,made:b.made};renderServe();}
+function svEBPick(k,v,el){if(!_svEB)return;_svEB[k]=v;if(el)el.parentNode.querySelectorAll('.seg-btn').forEach(b=>b.classList.toggle('active',b===el));}
+function svEBCancel(){_svEB=null;renderServe();}
+function svEBSave(){
+  if(!_svEB)return;const d=_svD(),i=_svEB.i,b=d.blocks[i];if(!b){_svEB=null;renderServe();return;}
+  const h=parseInt(document.getElementById('sv-eb-hit').value,10),m=parseInt(document.getElementById('sv-eb-in').value,10);
+  if(!(h>=1&&h<=500)){toast('Serves hit: 1–500');return;}
+  if(isNaN(m)||m<0){toast('How many went in?');return;}
+  if(m>h){toast('“In” can’t be more than serves hit');return;}
+  const nb={...b,side:_svEB.side,serve:_svEB.serve,type:_svEB.type,target:_svEB.target,hit:h,made:m};
+  let msg='Block updated';
+  if(b.pid){const it=d.plan&&d.plan.items.find(x=>x.pid===b.pid);
+    if(!it||!_svSameCombo(it,nb)){delete nb.pid;msg='Block updated — no longer counts for its plan block';}}
+  const old=d.blocks[i];d.blocks[i]=nb;_svEB=null;_svPersist();renderServe();
+  pushUndo(msg,()=>{_svD().blocks[i]=old;_svPersist();renderServe();});
+}
+function _svEBHtml(){
+  const e=_svEB;
+  return `<div class="sv-eb">
+    ${_svSegRow('Side','side',SV_SIDES,e.side,'svEBPick')}${_svSegRow('Serve','serve',SV_SERVES,e.serve,'svEBPick')}
+    ${_svSegRow('Type','type',SV_TYPES,e.type,'svEBPick')}${_svSegRow('Target','target',SV_TARGETS,e.target,'svEBPick')}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="form-group" style="margin:0"><label>Serves hit</label><input id="sv-eb-hit" inputmode="numeric" value="${esc(e.hit)}" onfocus="this.select()"></div>
+      <div class="form-group" style="margin:0"><label>In</label><input id="sv-eb-in" inputmode="numeric" value="${esc(e.made)}" onfocus="this.select()"></div></div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" style="flex:1;justify-content:center;background:var(--tennis);color:#fff" onclick="svEBSave()">💾 Save block</button>
+    <button class="btn" style="background:var(--surface2);color:var(--muted)" onclick="svEBCancel()">Cancel</button></div></div>`;
 }
 
 // ── PROGRESS ──
