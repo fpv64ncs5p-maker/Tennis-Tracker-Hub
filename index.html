@@ -409,6 +409,15 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .sv-bar{height:12px;background:var(--surface2);border-radius:6px;overflow:hidden}
 .sv-bar>div{height:100%;border-radius:6px}
 .sv-tv{font-weight:800;text-align:right;white-space:nowrap;line-height:1.1}
+.sv-hint{font-size:12px;font-weight:700;background:var(--tennis-dim);color:var(--tennis);border-radius:8px;padding:6px 9px;margin:2px 0 8px}
+.sv-prev{font-size:12px;color:var(--muted);line-height:1.6}
+.sv-prev span{display:inline-block;min-width:22px;font-weight:800;color:var(--text)}
+.sv-prev i,.sv-pi i{font-style:normal;font-weight:700;color:var(--tennis)}
+.sv-pi{display:flex;gap:8px;align-items:center;width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--border);padding:8px 4px;font-size:13px;font-family:inherit;color:var(--text);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.sv-pi.act{background:var(--tennis-dim);border-radius:8px}
+.sv-pi.done{color:var(--muted)}
+.sv-pn{min-width:26px;font-weight:800;font-size:15px}
+.sv-ps{font-size:12px;font-weight:700;white-space:nowrap;color:var(--tennis)}
 .back-link{background:none;border:none;color:var(--tennis);font-weight:700;font-size:14px;cursor:pointer;padding:2px 0;margin-bottom:8px;font-family:inherit;-webkit-tap-highlight-color:transparent}
 
 /* ══ Live scoring ══ */
@@ -12594,6 +12603,7 @@ function renderTennisHub(){
   if(vb){
     const dr=svGetDraft(), n=svSessions().length;
     if(dr&&dr.blocks.length){ vb.style.display='inline-block'; vb.textContent=dr.editId?'● EDITING A SESSION':'● SESSION IN PROGRESS'; }
+    else if(dr&&dr.plan){ vb.style.display='inline-block'; vb.textContent='● PLAN READY'; }
     else if(n>0){ vb.style.display='inline-block'; vb.textContent=`${n} session${n===1?'':'s'}`; }
     else vb.style.display='none';
   }
@@ -12630,7 +12640,7 @@ function _svCombo(b){return `${_svLabel(SV_SIDES,b.side)} · ${_svLabel(SV_SERVE
 function svGetDraft(){try{const d=JSON.parse(localStorage.getItem(SV_DRAFT_KEY));return d&&Array.isArray(d.blocks)?d:null;}catch(e){return null;}}
 function _svD(){if(!_svDraft)_svDraft=svGetDraft()||{date:today(),blocks:[],notes:'',editId:null,hit:10};return _svDraft;}
 function _svPersist(){const d=_svDraft;try{
-  if(d&&(d.blocks.length||d.editId))localStorage.setItem(SV_DRAFT_KEY,JSON.stringify(d));
+  if(d&&(d.blocks.length||d.editId||d.plan))localStorage.setItem(SV_DRAFT_KEY,JSON.stringify(d));
   else localStorage.removeItem(SV_DRAFT_KEY);}catch(e){}}
 function _svClearDraft(){_svDraft=null;try{localStorage.removeItem(SV_DRAFT_KEY);}catch(e){}}
 
@@ -12660,6 +12670,9 @@ function _svLogHtml(){
   const d=_svD();let h='';
   if(d.editId)h+=`<div class="card" style="background:#fff7ed"><b>✏️ Editing the session of ${esc(fmtDate(d.date))}</b>
     <div style="margin-top:6px"><button class="btn" style="background:var(--surface2);color:var(--text);padding:6px 12px;font-size:13px" onclick="svCancelEdit()">Cancel edit</button></div></div>`;
+  if(_svPickerOpen||(!d.plan&&!d.blocks.length))h+=_svPickerHtml(d);
+  else if(d.plan)h+=_svPlanCardHtml(d);
+  else h+=`<button class="btn" style="width:100%;justify-content:center;background:var(--tennis-dim);color:var(--tennis);margin-bottom:10px" onclick="svTogglePicker()">📋 Use a practice plan</button>`;
   h+=`<div class="card">
     <div class="form-group"><label>Date</label><input type="date" id="sv-date" value="${esc(d.date)}" onchange="_svD().date=this.value;_svPersist()"></div>
     ${_svSegRow('Side','side',SV_SIDES,_svSel.side,'svPick')}
@@ -12692,9 +12705,13 @@ function svAdd(){
   if(isNaN(m)||m<0){toast('How many went in?');return;}
   if(m>h){toast('“In” can’t be more than serves hit');return;}
   const d=_svD();
-  d.blocks.push({side:_svSel.side,serve:_svSel.serve,type:_svSel.type,target:_svSel.target,hit:h,made:m});
-  d.hit=h;_svPersist();renderServe();
+  const blk={side:_svSel.side,serve:_svSel.serve,type:_svSel.type,target:_svSel.target,hit:h,made:m},p=d.plan;
+  // A block counts for the plan's active item only when its combo matches it
+  if(p){const it=p.items[p.active];if(it&&!_svPlanDone(d,it)&&_svSameCombo(it,blk))blk.pid=it.pid;}
+  d.blocks.push(blk);d.hit=h;
   toast(`Added · ${m}/${h} (${_svPct(m,h)}%)`);
+  if(p&&blk.pid){const nx=p.items.findIndex(it=>!_svPlanDone(d,it));if(nx>=0){svPlanPick(nx);return;}}
+  _svPersist();renderServe();
 }
 function svRemoveBlock(i){
   const d=_svD(),b=d.blocks.splice(i,1)[0];if(!b)return;
@@ -12705,6 +12722,7 @@ function svSave(){
   const d=_svD();if(!d.blocks.length){toast('Add at least one block first');return;}
   const wasEdit=!!d.editId,all=svSessions();
   const sess={id:d.editId||Date.now(),date:d.date||today(),blocks:d.blocks.map(b=>({...b})),notes:(d.notes||'').trim()};
+  if(d.plan)sess.plan={focus:d.plan.focus,size:d.plan.size,items:d.plan.items.map(x=>({...x}))};
   const i=wasEdit?all.findIndex(s=>String(s.id)===String(d.editId)):-1;
   if(i>=0){sess.createdAt=all[i].createdAt;all[i]=sess;}
   else{sess.createdAt=new Date().toISOString();all.unshift(sess);}
@@ -12718,12 +12736,15 @@ function svDiscard(){
   const saved=_svDraft;_svClearDraft();renderServe();
   if(saved&&saved.blocks.length)pushUndo('Session discarded',()=>{_svDraft=saved;_svPersist();svMode('log');});
 }
-function svCancelEdit(){_svClearDraft();renderServe();toast('Edit cancelled — nothing changed');}
+function svCancelEdit(){_svClearDraft();_svPickerOpen=false;renderServe();toast('Edit cancelled — nothing changed');}
 function svEdit(id){
   const s=svSessions().find(x=>String(x.id)===String(id));if(!s)return;
   const cur=_svDraft||svGetDraft();
   if(cur&&cur.blocks.length&&String(cur.editId)!==String(id)&&!confirm('You have an unsaved serve session. Replace it with this one to edit?'))return;
-  _svDraft={date:s.date,blocks:s.blocks.map(b=>({...b})),notes:s.notes||'',editId:s.id,hit:(s.blocks[s.blocks.length-1]||{}).hit||10};
+  _svDraft={date:s.date,blocks:s.blocks.map(b=>({...b})),notes:s.notes||'',editId:s.id,hit:(s.blocks[s.blocks.length-1]||{}).hit||10,
+    plan:s.plan?{...s.plan,items:s.plan.items.map(x=>({...x})),active:0}:null};
+  if(_svDraft.plan){const nx=_svDraft.plan.items.findIndex(it=>!_svPlanDone(_svDraft,it));_svDraft.plan.active=nx<0?0:nx;}
+  _svPickerOpen=false;
   _svPersist();svMode('log');
 }
 function svDelete(id){
@@ -12732,6 +12753,118 @@ function svDelete(id){
   if(_svDraft&&String(_svDraft.editId)===String(id)){_svDraft.editId=null;_svPersist();}
   renderServe();
   pushUndo('Session deleted',()=>{const a=svSessions();a.splice(idx,0,removed);DB.set(SV_KEY,a);renderServe();});
+}
+
+// ── PRACTICE PLANS (2026-10-30) ──
+// Focus × size. Each block: [role, side, serve, type, target, [Light, Medium, Heavy]]
+// (0 = block skipped at that size). Totals: Light 40 · Medium 70 · Heavy 100.
+const SV_SIZES=[['light','Light',40],['medium','Medium',70],['heavy','Heavy',100]];
+const SV_FOCUS={
+  second:{icon:'🛡️',label:'2nd-serve reliability',desc:'Spin & slice with margin — cuts double faults.',blocks:[
+    ['wu','deuce','1','flat','body',[5,5,5]],['wu','ad','1','flat','body',[5,5,5]],
+    ['main','deuce','2','spin','body',[10,15,15]],['main','ad','2','spin','wide',[10,15,15]],
+    ['main','deuce','2','spin','wide',[0,0,10]],['main','ad','2','spin','body',[0,0,10]],
+    ['main','deuce','2','slice','wide',[0,10,10]],['main','ad','2','slice','body',[0,10,10]],
+    ['pressure','deuce','2','spin','body',[5,5,10]],['pressure','ad','2','spin','body',[5,5,10]]]},
+  first:{icon:'🎯',label:'1st-serve targets',desc:'Pace to the T, wide and body — finish with 2nd serves.',blocks:[
+    ['wu','deuce','1','flat','body',[5,5,5]],['wu','ad','1','flat','body',[5,5,5]],
+    ['main','deuce','1','flat','T',[10,15,15]],['main','ad','1','flat','T',[10,15,15]],
+    ['main','deuce','1','slice','wide',[0,10,15]],['main','ad','1','spin','wide',[0,10,15]],
+    ['main','deuce','1','flat','body',[0,0,10]],['main','ad','1','flat','body',[0,0,10]],
+    ['finish','deuce','2','spin','body',[5,5,5]],['finish','ad','2','spin','body',[5,5,5]]]},
+  match:{icon:'🎾',label:'Match mix',desc:'Both sides, 1st and 2nd serves in match proportions.',blocks:[
+    ['wu','deuce','1','flat','body',[5,5,5]],['wu','ad','1','flat','body',[5,5,5]],
+    ['main','deuce','1','flat','T',[5,10,10]],['main','ad','1','flat','T',[5,10,10]],
+    ['main','deuce','1','slice','wide',[5,5,10]],['main','ad','1','spin','wide',[5,5,10]],
+    ['main','deuce','2','spin','body',[5,10,10]],['main','ad','2','spin','body',[5,10,10]],
+    ['main','deuce','1','flat','body',[0,0,5]],['main','ad','1','flat','body',[0,0,5]],
+    ['main','deuce','2','slice','wide',[0,5,5]],['main','ad','2','spin','wide',[0,5,5]],
+    ['pressure','deuce','2','spin','body',[0,0,5]],['pressure','ad','2','spin','body',[0,0,5]]]}
+};
+const SV_ROLE={wu:'Warm-up',main:'',pressure:'🔥 Pressure',finish:'Finish'};
+let _svPlanSel={focus:'second',size:null}, _svPickerOpen=false;
+
+function _svSizeIdx(size){return SV_SIZES.findIndex(s=>s[0]===size);}
+function svPlanItems(focus,size){
+  const F=SV_FOCUS[focus],si=_svSizeIdx(size);if(!F||si<0)return[];
+  return F.blocks.filter(b=>b[5][si]>0).map(b=>({role:b[0],side:b[1],serve:b[2],type:b[3],target:b[4],n:b[5][si]}));
+}
+function _svSameCombo(a,b){return a.side===b.side&&String(a.serve)===String(b.serve)&&a.type===b.type&&a.target===b.target;}
+function _svPlanDone(d,it){return d.blocks.find(b=>b.pid&&b.pid===it.pid)||null;}
+
+// Planner tennis entry with subtype "Match" on that date
+function _svMatchOn(date){
+  const days=(DB.planData()[getMonday(date)])||[];const d=days.find(x=>x&&x.date===date);
+  return !!(d&&(d.sessions||[]).some(s=>s&&s.trainingType==='tennis'&&/match/i.test(s.trainingSubtype||'')));
+}
+// Pure suggestion for which size to pick on `date`. {size:'light'|'medium'|null, text}
+function svSizeHint(date){
+  const sess=svSessions().filter(s=>!(_svDraft&&_svDraft.editId&&String(s.id)===String(_svDraft.editId)));
+  const isHeavy=s=>(s.plan&&s.plan.size==='heavy')||_svAgg(s.blocks).h>=90;
+  const dd=a=>Math.round((new Date(date+'T12:00:00')-new Date(a+'T12:00:00'))/864e5);
+  const m=_svMatchOn(date)?'today':_svMatchOn(addDays(date,1))?'tomorrow':null;
+  if(m)return{size:'light',text:`🎾 Match ${m} — keep it Light: sharpen, don't tire the shoulder.`};
+  const hv=sess.filter(s=>s.date&&isHeavy(s)&&dd(s.date)>=0);
+  const recent=hv.filter(s=>dd(s.date)<=2).sort((a,b)=>dd(a.date)-dd(b.date))[0];
+  if(recent){const n=dd(recent.date);return{size:'medium',text:`💪 Heavy session ${n===0?'today':n===1?'yesterday':n+' days ago'} — Light or Medium today.`};}
+  if(hv.filter(s=>dd(s.date)<=6).length>=2)return{size:'light',text:'💪 Already 2 Heavy sessions this week — keep today Light.'};
+  const past=sess.map(s=>s.date).filter(x=>x&&dd(x)>=0).sort();
+  if(!past.length)return{size:'light',text:'🌱 First serve session — start Light, add ~10 balls a week.'};
+  const gap=dd(past[past.length-1]);
+  if(gap>14)return{size:'light',text:`🌱 ${gap} days since your last serve session — start Light.`};
+  return{size:null,text:'✅ No limits today — any size works. Heavy max 1–2× a week.'};
+}
+
+function svPlanFocus(k,v){_svPlanSel.focus=v;renderServe();}
+function svPlanSize(k,v){_svPlanSel.size=v;renderServe();}
+function svTogglePicker(){_svPickerOpen=!_svPickerOpen;renderServe();}
+function svLoadPlan(){
+  const d=_svD(),hint=svSizeHint(d.date||today());
+  const size=_svPlanSel.size||hint.size||'medium',focus=_svPlanSel.focus;
+  if(d.plan&&d.blocks.some(b=>b.pid)&&!confirm('Replace the current plan? Blocks you already logged stay in the session.'))return;
+  const stamp=Date.now().toString(36);
+  d.plan={focus,size,items:svPlanItems(focus,size).map((it,i)=>({...it,pid:stamp+'-'+i})),active:0};
+  _svPickerOpen=false;svPlanPick(0);
+}
+function svClearPlan(){const d=_svD();d.plan=null;_svPersist();renderServe();}
+function svPlanPick(i){
+  const d=_svD(),it=d.plan&&d.plan.items[i];if(!it)return;
+  d.plan.active=i;
+  ['side','serve','type','target'].forEach(k=>_svSel[k]=String(it[k]));
+  try{localStorage.setItem(SV_SEL_KEY,JSON.stringify(_svSel));}catch(e){}
+  d.hit=it.n;_svPersist();renderServe();
+}
+function _svPickerHtml(d){
+  const hint=svSizeHint(d.date||today()),size=_svPlanSel.size||hint.size||'medium',F=SV_FOCUS[_svPlanSel.focus];
+  const sizes=SV_SIZES.map(s=>[s[0],`${s[1]} ${s[2]}${hint.size===s[0]?' ★':''}`]);
+  const items=svPlanItems(_svPlanSel.focus,size);
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><div class="sv-lbl" style="margin:0">📋 Practice plan</div>
+    ${(d.blocks.length||d.plan)?`<button class="sv-x" onclick="svTogglePicker()">✕</button>`:''}</div>
+    <div style="height:8px"></div>
+    ${_svSegRow('Focus','focus',Object.keys(SV_FOCUS).map(k=>[k,SV_FOCUS[k].icon+' '+SV_FOCUS[k].label.split(' ')[0].replace('-serve','')]),_svPlanSel.focus,'svPlanFocus')}
+    <div style="font-size:13px;margin:-4px 0 10px"><b>${F.icon} ${F.label}</b> — ${F.desc}</div>
+    ${_svSegRow('Size','size',sizes,size,'svPlanSize')}
+    <div class="sv-hint">${esc(hint.text)}</div>
+    <div class="sv-prev">${items.map(it=>`<div><span>${it.n}</span> ${SV_ROLE[it.role]?`<i>${SV_ROLE[it.role]}</i> · `:''}${esc(_svCombo(it))}</div>`).join('')}</div>
+    <button class="btn" style="width:100%;justify-content:center;background:var(--tennis);color:#fff;margin-top:10px" onclick="svLoadPlan()">▶ Load plan · ${items.reduce((a,b)=>a+b.n,0)} balls</button></div>`;
+}
+function _svPlanCardHtml(d){
+  const p=d.plan,F=SV_FOCUS[p.focus]||{icon:'📋',label:'Plan'},S=SV_SIZES[_svSizeIdx(p.size)]||['','',0];
+  let nDone=0,hit=0;const total=p.items.reduce((a,b)=>a+b.n,0);
+  const rows=p.items.map((it,i)=>{const b=_svPlanDone(d,it);if(b){nDone++;hit+=+b.hit||0;}
+    const act=!b&&i===p.active,pc=b?_svPct(b.made,b.hit):null;
+    return `<button class="sv-pi${act?' act':''}${b?' done':''}" onclick="svPlanPick(${i})">
+      <span class="sv-pn">${it.n}</span><span style="flex:1;min-width:0">${SV_ROLE[it.role]?`<i>${SV_ROLE[it.role]}</i> · `:''}${esc(_svCombo(it))}</span>
+      <span class="sv-ps">${b?`✓ ${b.made}/${b.hit} <b style="color:${_svCol(pc)}">${pc}%</b>`:act?'▶ now':''}</span></button>`;}).join('');
+  const all=nDone===p.items.length;
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+    <div><div style="font-weight:800">${F.icon} ${F.label} · ${S[1]} ${S[2]}</div>
+    <div style="font-size:12px;color:var(--muted)">${nDone}/${p.items.length} blocks · ${hit}/${total} balls</div></div>
+    <button class="sv-x" onclick="svClearPlan()" aria-label="Remove plan">✕</button></div>
+    ${all?`<div class="sv-hint" style="background:var(--gym-dim);color:var(--green)">✅ Plan complete — save the session below.</div>`:''}
+    <div style="margin-top:8px">${rows}</div>
+    ${p.items.some(it=>it.role==='pressure')?`<div style="font-size:11px;color:var(--muted);margin-top:6px">🔥 Pressure = 2nd serves only, play each one like it's 30-40.</div>`:''}
+    <button class="btn" style="background:var(--surface2);color:var(--text);padding:6px 12px;font-size:13px;margin-top:8px" onclick="svTogglePicker()">Change plan</button></div>`;
 }
 
 // ── PROGRESS ──
@@ -12790,6 +12923,7 @@ function _svHistoryHtml(){
     return `<div class="card sv-hist" style="cursor:pointer" onclick="svToggle('${esc(String(s.id))}')">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div>
         <div style="font-weight:800">${esc(fmtDate(s.date))}</div>
+        ${s.plan&&SV_FOCUS[s.plan.focus]?`<div style="font-size:12px;font-weight:700;color:var(--tennis)">${SV_FOCUS[s.plan.focus].icon} ${SV_FOCUS[s.plan.focus].label} · ${(SV_SIZES[_svSizeIdx(s.plan.size)]||['',''])[1]}</div>`:''}
         <div style="font-size:12px;color:var(--muted)">${t.h} serves · ${s.blocks.length} block${s.blocks.length===1?'':'s'}${f.h?` · 1st ${_svPct(f.m,f.h)}%`:''}${s2.h?` · 2nd ${_svPct(s2.m,s2.h)}%`:''}</div></div>
         <div style="font-size:20px;font-weight:800;color:${_svCol(p)}">${p}%</div></div>${det}</div>`;
   }).join('');

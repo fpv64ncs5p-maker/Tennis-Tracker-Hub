@@ -374,3 +374,4 @@ Training Hub loads zero external resources. If the Tennis tab needs Supabase JS 
 - Jo's choices: practice log (not a match-stats view) · block entry · track 1st/2nd · progress = accuracy grid + trend · name "Serve training".
 - Stored in its own synced key `tennis_serve_sessions`; never mixed into matches or match stats. Unsaved session is a device-only draft.
 - Not yet counted in Planner/Home tennis totals.
+- (same day) **Practice plans:** focus (🛡️ 2nd-serve reliability · 🎯 1st-serve targets · 🎾 Match mix) × size (Light 40 · Medium 70 · Heavy 100, from Jo's match data: best-of-3 ≈ 85–125 serves). Load a plan → tap/auto-advance blocks, chips + balls fill in, type only "in". App suggests a size (match today/tomorrow, recent Heavy, 2 Heavy/week, long break → Light); Jo still chooses.
