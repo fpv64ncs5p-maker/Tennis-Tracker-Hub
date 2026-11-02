@@ -9874,7 +9874,7 @@ function computeWeekCheck(todayStr,nowStr){
     if(prevHard>=4){cap=3;capWhy='last week had 4';}
     else{cap=4;capWhy='if spaced';}
   }
-  const hard={total:hardTotal,cap,capWhy,prevHard};
+  const hard={total:hardTotal,cap,capWhy,prevHard,days:hardDays};
   if(hardTotal<=Math.min(w.maxHard,3)||(w.id==='deload'&&hardTotal<=w.maxHard))ok(`Hard days: ${hardTxt} · max ${w.maxHard}${cap===4?' (4 if spaced)':''}`);
   else if(w.id==='deload'||hardTotal>cap){
     const lim=w.id==='deload'?w.maxHard:cap;
@@ -9975,7 +9975,13 @@ function renderHomeWeekCheck(){
     ${r.items.map(i=>`<div style="display:flex;gap:8px;font-size:13px;padding:3px 0;${i.ok?'color:var(--muted)':'font-weight:600'}"><span>${i.ok?'✅':'⚠️'}</span><span>${esc(i.text)}</span></div>`).join('')}
     ${r.next.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
       <div class="text-xs-muted" style="font-weight:700;margin-bottom:4px">STILL PLANNED THIS WEEK</div>
-      ${r.next.map(p=>`<div style="font-size:13px;padding:2px 0">${_dow(p.date)} · ${icons[p.type]||'•'} ${esc(p.sub||(TRAINING_TYPES[p.type]||{}).label||p.type)}${p.mins?` · ${p.mins} min`:''}${p.level==='hard'?' <span style="color:#e11d48;font-size:11px;font-weight:700">HARD</span>':''}</div>`).join('')}
+      ${r.next.map((p,i)=>{
+        // A double day can be hard even when no single session is (2026-11-02): tag its last row
+        const lastOfDay=!r.next.slice(i+1).some(q=>q.date===p.date);
+        const dayHard=r.hard&&(r.hard.days||[]).includes(p.date)&&!r.next.some(q=>q.date===p.date&&q.level==='hard');
+        const tag=p.level==='hard'?' <span style="color:#e11d48;font-size:11px;font-weight:700">HARD</span>'
+          :(dayHard&&lastOfDay)?' <span style="color:#e11d48;font-size:11px;font-weight:700">HARD DAY · 2 sessions</span>':'';
+        return `<div style="font-size:13px;padding:2px 0">${_dow(p.date)} · ${icons[p.type]||'•'} ${esc(p.sub||(TRAINING_TYPES[p.type]||{}).label||p.type)}${p.mins?` · ${p.mins} min`:''}${tag}</div>`;}).join('')}
     </div>`:''}
   </div>`;
 }
