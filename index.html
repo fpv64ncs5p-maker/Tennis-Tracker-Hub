@@ -7564,6 +7564,7 @@ function buildSessionSlotHTML(weekKey,dayIdx,si,s,label,removeFn){
         <label>RPE (1–10)</label>
         <input type="number" inputmode="decimal" min="1" max="10" value="${s.rpe||''}" placeholder="7"
           onchange="savePlanSessionField('${weekKey}',${dayIdx},${si},'rpe',this.value)">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">1–4 easy · 5–6 medium · 7+ hard · 2 h+ = one level up</div>
       </div>
     </div>
     <div class="form-group" style="margin-bottom:0">
@@ -7607,7 +7608,7 @@ function _loggedTennisMatches(){
 function _loggedRehabSessions(){
   const d=DB.rehabData();
   if(!d||!Array.isArray(d.sessions))return [];
-  return d.sessions.filter(x=>x&&x.date).map(x=>({date:x.date}));
+  return d.sessions.filter(x=>x&&x.date).map(x=>({date:x.date,rpe:x.rpe}));
 }
 // Board moves (reps×moves) and ARC minutes in a climb session — getSessionRoutes()
 // only returns 'routes' blocks, so these were counted nowhere outside the live log.
@@ -9676,6 +9677,35 @@ function renderPlannerCycle(weekKey){
 // ── Week Check: what was logged vs the cycle rules ────────────────────────────
 // Session levels: hard = tennis, gym ≥50 min, board climbing, fingerboard;
 // moderate = climbing without board; easy = golf, short gym/home core (<50 min), rehab.
+// ── Session effort from RPE + time (Jo chose B, 2026-11-02) ───────────────────
+// RPE 1–4 easy · 5–6 moderate · 7+ hard; ≥2 h moves up one level; RPE 7+ under 30 min = moderate.
+// RPE comes from the Planner entry for that day/sport; without one a typical RPE per sport is used
+// (tennis 7, golf 3, rehab 3, easy climbing 5, board/projects 8, fingerboard 8, gym from load/length).
+const EFFORT_RULES={easyMax:4,modMax:6,longMin:120,shortMin:30};
+const DEFAULT_RPE={tennis:7,golf:3,rehab:3,active:4,fb:8,climb:5,board:8};
+function _levelFromRpe(rpe,mins){
+  rpe=parseFloat(rpe)||0;mins=parseInt(mins)||0;
+  if(rpe<=0)return 'rest';
+  let lv=rpe<=EFFORT_RULES.easyMax?1:rpe<=EFFORT_RULES.modMax?2:3;
+  if(lv===3&&mins&&mins<EFFORT_RULES.shortMin)lv=2;
+  else if(mins>=EFFORT_RULES.longMin)lv=Math.min(3,lv+1);
+  return ['rest','easy','moderate','hard'][lv];
+}
+const _GYM_LV_RPE={hard:7,moderate:5,easy:4};
+// The Planner entry for that date + sport (first one with an RPE, else the first one)
+function _planSlot(date,types){
+  const days=DB.planData()[getMonday(date)]||[];
+  const d=days.find(x=>x&&x.date===date);
+  const ss=((d&&d.sessions)||[]).filter(x=>x&&types.includes(x.trainingType));
+  return ss.find(x=>parseFloat(x.rpe)>0)||ss[0]||null;
+}
+// Effort of one logged session: Planner RPE wins over the sport default; minutes from the log, else the Planner.
+function _effort(date,types,defRpe,mins){
+  const sl=_planSlot(date,types);
+  const rpe=(sl&&parseFloat(sl.rpe)>0)?parseFloat(sl.rpe):defRpe;
+  const m=mins||(sl?parseInt(sl.duration)||0:0);
+  return {level:_levelFromRpe(rpe,m),rpe,mins:m,rpeSrc:(sl&&parseFloat(sl.rpe)>0)?'yours':'default'};
+}
 function _weekActivity(from,to,todayStr){
   const inR=d=>d&&d>=from&&d<=to;
   const by={};
@@ -9686,18 +9716,20 @@ function _weekActivity(from,to,todayStr){
     const mins=parseInt(s.durationMins)||null;
     const long=mins?mins>=CYCLE_RULES.hardGymMin:ex.length>=6;
     const strength=ex.filter(e=>e&&e.cat!=='Warm-up'&&e.type!=='cardio');
-    add(s.date,{kind:'gym',level:_gymLevel(long,strength),long,mins,
+    const _e=_effort(s.date,['gym'],_GYM_LV_RPE[_gymLevel(long,strength)],mins);
+    add(s.date,{kind:'gym',level:_e.level,rpe:_e.rpe,long,mins,
       lower:ex.filter(e=>e&&LOWER.includes(e.cat)).length>=2,
       maxSets:strength.reduce((m,e)=>Math.max(m,setsPerSideForCheck(e)),0),label:'💪 Gym'});
   });
   DB.climbSessions().filter(s=>inR(s.date)).forEach(s=>{
     const board=(s.blocks||[]).some(b=>b.type==='board');
-    add(s.date,{kind:'climb',level:board?'hard':'moderate',fingers:board,label:board?'🟫 Board climbing':'🧗 Climbing'});
+    const _e=_effort(s.date,['climb'],board?DEFAULT_RPE.board:DEFAULT_RPE.climb,parseInt(s.duration)||0);
+    add(s.date,{kind:'climb',level:_e.level,rpe:_e.rpe,fingers:board,label:board?'🟫 Board climbing':'🧗 Climbing'});
   });
-  DB.fbSessions().filter(s=>inR(s.date)).forEach(s=>add(s.date,{kind:'fb',level:'hard',fingers:true,label:'🖐 Fingerboard'}));
+  DB.fbSessions().filter(s=>inR(s.date)).forEach(s=>add(s.date,{kind:'fb',level:_levelFromRpe(DEFAULT_RPE.fb,parseInt(s.durationMins)||0),fingers:true,label:'🖐 Fingerboard'}));
   const tennisDates=new Set();
-  try{_loggedTennisMatches().filter(m=>inR(m.date)).forEach(m=>{tennisDates.add(m.date);add(m.date,{kind:'tennis',level:'hard',label:'🎾 Tennis'});});}catch(e){}
-  try{_loggedRehabSessions().filter(r=>inR(r.date)).forEach(r=>add(r.date,{kind:'rehab',level:'easy',label:'🦵 Rehab'}));}catch(e){}
+  try{_loggedTennisMatches().filter(m=>inR(m.date)).forEach(m=>{tennisDates.add(m.date);const _e=_effort(m.date,['tennis'],DEFAULT_RPE.tennis,m.mins);add(m.date,{kind:'tennis',level:_e.level,rpe:_e.rpe,label:'🎾 Tennis'});});}catch(e){}
+  try{_loggedRehabSessions().filter(r=>inR(r.date)).forEach(r=>{const _e=_effort(r.date,['rehab'],parseFloat(r.rpe)||DEFAULT_RPE.rehab,0);add(r.date,{kind:'rehab',level:_e.level,label:'🦵 Rehab'});});}catch(e){}
   // Tennis practice / golf are often not logged anywhere: a planned one counts as done
   // once its day has passed (or the day is ticked ✓ in the Planner).
   const plan=DB.planData();
@@ -9705,8 +9737,10 @@ function _weekActivity(from,to,todayStr){
     if(!d||!inR(d.date)||!(d.done||(todayStr&&d.date<todayStr)))return;
     (d.sessions||[]).forEach(s=>{
       if(!s||!s.trainingType)return;
-      if(s.trainingType==='tennis'&&!tennisDates.has(d.date)){tennisDates.add(d.date);add(d.date,{kind:'tennis',level:'hard',label:'🎾 Tennis'});}
-      if(s.trainingType==='golf')add(d.date,{kind:'golf',level:'easy',label:'⛳ Golf'});
+      const _r=parseFloat(s.rpe)>0?parseFloat(s.rpe):null,_m=parseInt(s.duration)||0;
+      if(s.trainingType==='tennis'&&!tennisDates.has(d.date)){tennisDates.add(d.date);add(d.date,{kind:'tennis',level:_levelFromRpe(_r||DEFAULT_RPE.tennis,_m),label:'🎾 Tennis'});}
+      if(s.trainingType==='golf')add(d.date,{kind:'golf',level:_levelFromRpe(_r||DEFAULT_RPE.golf,_m),label:'⛳ Golf'});
+      if(s.trainingType==='active')add(d.date,{kind:'active',level:_levelFromRpe(_r||DEFAULT_RPE.active,_m),label:'🏃 Active'});
     });
   }));
   return by;
@@ -9736,7 +9770,7 @@ function _plannedFor(date){
   return (d.sessions||[]).filter(s=>s&&s.trainingType&&s.trainingType!=='rest').map(s=>{
     const t=s.trainingType,sub=s.trainingSubtype||'';
     const mins=parseInt(s.duration)||0;
-    const level=t==='tennis'?'hard'
+    const defLevel=t==='tennis'?'hard'
       :t==='gym'?(()=>{
         // Planned gym: effort = the saved plan's % or that week's season %
         const ps=s.psId&&typeof _psById==='function'?_psById(s.psId):null;
@@ -9747,7 +9781,13 @@ function _plannedFor(date){
       })()
       :t==='climb'?(/board|project/i.test(sub)?'hard':'moderate')
       :'easy';
-    return {type:t,sub,level,mins};
+    // RPE + time (2026-11-02): your Planner RPE, else a typical one for the sport
+    const defRpe=t==='tennis'?DEFAULT_RPE.tennis:t==='gym'?_GYM_LV_RPE[defLevel]
+      :t==='climb'?(/board|project/i.test(sub)?DEFAULT_RPE.board:DEFAULT_RPE.climb)
+      :(DEFAULT_RPE[t]||3);
+    const rpe=parseFloat(s.rpe)>0?parseFloat(s.rpe):defRpe;
+    const level=_levelFromRpe(rpe,t==='gym'&&!mins?60:mins);
+    return {type:t,sub,level,mins,rpe};
   });
 }
 const _DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
