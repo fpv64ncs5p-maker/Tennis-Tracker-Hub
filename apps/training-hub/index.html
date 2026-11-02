@@ -9671,7 +9671,18 @@ function renderPlannerCycle(weekKey){
   const days=(DB.planData()[weekKey])||[];
   const empty=days.filter(d=>d&&_planDayEmpty(d)).length;
   const fill=empty?`<button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%" onclick="fillWeekFromCycle('${weekKey}')">📋 Fill ${empty} empty day${empty>1?'s':''} from the plan</button>`:'';
-  el.innerHTML=seasonWeekCardHtml(cw,{compact:true,extra:fill});
+  // Hard-days budget for the week being viewed (3 or 4) — Jo, 2026-11-02
+  let hardLine='';
+  try{
+    const t=today(),sun=addDays(weekKey,6);
+    const ref=t<weekKey?weekKey:t>sun?sun:t;
+    const r=computeWeekCheck(ref,t);
+    if(r&&r.hard){const h=r.hard;
+      const lbl=r.cw.week.id==='deload'?`max ${r.cw.week.maxHard} (deload)`:h.cap===4?'max 4 if spaced out · then next week 3':'max 3 (last week had 4)';
+      const col=h.total>h.cap||h.ok===false?'#e11d48':'var(--muted)';
+      hardLine=`<div style="margin-top:8px;font-size:13px;font-weight:700">💥 Hard days: <span style="color:${col}">${h.total} planned</span> · <span style="font-weight:600;color:var(--muted)">${lbl}</span></div>`;}
+  }catch(e){}
+  el.innerHTML=seasonWeekCardHtml(cw,{compact:true,extra:hardLine+fill});
 }
 
 // ── Week Check: what was logged vs the cycle rules ────────────────────────────
@@ -9706,6 +9717,8 @@ function _effort(date,types,defRpe,mins){
   const m=mins||(sl?parseInt(sl.duration)||0:0);
   return {level:_levelFromRpe(rpe,m),rpe,mins:m,rpeSrc:(sl&&parseFloat(sl.rpe)>0)?'yours':'default'};
 }
+// A "legs day" for the 4-hard-days spacing rule: ≥2 lower-body exercises that aren't light
+function _legsHeavy(exs){return (exs||[]).filter(e=>e&&['Inferior Members','Rehab'].includes(e.cat)&&e.role!=='light').length>=2;}
 function _weekActivity(from,to,todayStr){
   const inR=d=>d&&d>=from&&d<=to;
   const by={};
@@ -9719,6 +9732,7 @@ function _weekActivity(from,to,todayStr){
     const _e=_effort(s.date,['gym'],_GYM_LV_RPE[_gymLevel(long,strength)],mins);
     add(s.date,{kind:'gym',level:_e.level,rpe:_e.rpe,long,mins,
       lower:ex.filter(e=>e&&LOWER.includes(e.cat)).length>=2,
+      legsHeavy:_legsHeavy(ex),
       maxSets:strength.reduce((m,e)=>Math.max(m,setsPerSideForCheck(e)),0),label:'💪 Gym'});
   });
   DB.climbSessions().filter(s=>inR(s.date)).forEach(s=>{
@@ -9803,14 +9817,18 @@ function _plannedFor(date){
       :(DEFAULT_RPE[t]||3);
     const rpe=parseFloat(s.rpe)>0?parseFloat(s.rpe):defRpe;
     const level=_levelFromRpe(rpe,t==='gym'&&!mins?60:mins);
-    return {type:t,sub,level,mins,rpe};
+    let legs=false;
+    if(t==='gym'){const ps=s.psId&&typeof _psById==='function'?_psById(s.psId):null;
+      legs=ps&&ps.gym&&ps.gym.plan?_legsHeavy(ps.gym.plan):/inferior|leg|lower/i.test(sub);}
+    return {type:t,sub,level,mins,rpe,legs};
   });
 }
 const _DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function _dow(d){return _DOW[new Date(d+'T12:00:00').getDay()];}
 
 // Returns {items:[{ok,text}], next:[...]} — pure, so it can be tested.
-function computeWeekCheck(todayStr){
+function computeWeekCheck(todayStr,nowStr){
+  nowStr=nowStr||todayStr; // real today — differs when the Planner looks at a future week
   const cw=cycleWeekFor(todayStr);
   if(!cw)return null;
   const w=cw.week;
@@ -9833,9 +9851,42 @@ function computeWeekCheck(todayStr){
   const hardPlanned=(todayHardDone?[]:[todayStr]).concat(future).filter(d=>d>=mon&&d<=sun&&dayLv(d)==='hard');
   const hardTotal=hardDone.length+hardPlanned.length;
   const hardTxt=`${hardDone.length} done${hardPlanned.length?` + ${hardPlanned.length} planned (${hardPlanned.map(_dow).join(', ')})`:''}`;
-  if(hardTotal>w.maxHard)warn(`Hard days: ${hardTxt} — max ${w.maxHard} in a ${w.label} week. `+
-    (hardDone.length>=w.maxHard?'Keep the rest of the week easy or rest.':`Make ${hardTotal-w.maxHard} of the planned ones lighter (e.g. a shorter or moderate gym).`));
-  else ok(`Hard days: ${hardTxt} · max ${w.maxHard}`);
+  // 4-hard weeks (Jo, 2026-11-02): allowed when spaced out (no two hard days in a row, except a
+  // gym day without legs before tennis), with ≥2 recovery days incl. 1 fully free — and only if
+  // last week had ≤3. Deload weeks keep their own max.
+  const recDays=days.filter(d=>_LV[dayLv(d)]<=_LV.easy);
+  const freeDays=days.filter(d=>dayLv(d)==='rest');
+  const hardDays=[...hardDone,...hardPlanned].sort();
+  const prevMon=addDays(mon,-7);
+  const actPrev=_weekActivity(prevMon,addDays(mon,-1),nowStr);
+  const prevHard=[...Array(7)].map((_,i)=>addDays(prevMon,i)).filter(d=>_dayLevel(_dayItems(actPrev,d,nowStr))==='hard').length;
+  const prevSunHard=_dayLevel(_dayItems(actPrev,addDays(mon,-1),nowStr))==='hard';
+  const _items=d=>d<mon?_dayItems(actPrev,d,nowStr):_dayItems(act,d,todayStr);
+  const _okPair=(a,b)=>{ // gym without legs, then tennis next day = fine (≈36 h, different load)
+    const A=_items(a),B=_items(b);
+    const aGymOnly=A.filter(x=>(x.level||'')==='hard').every(x=>(x.kind||x.type)==='gym'&&!(x.legsHeavy||x.legs));
+    return aGymOnly&&B.some(x=>(x.kind||x.type)==='tennis');
+  };
+  const hseq=[...(prevSunHard?[addDays(mon,-1)]:[]),...hardDays];
+  const pairs=[];hseq.forEach((d,i)=>{const n=hseq[i+1];if(n&&addDays(d,1)===n&&!_okPair(d,n))pairs.push([d,n]);});
+  let cap=w.maxHard,capWhy='';
+  if(w.id!=='deload'&&w.maxHard===3){
+    if(prevHard>=4){cap=3;capWhy='last week had 4';}
+    else{cap=4;capWhy='if spaced';}
+  }
+  const hard={total:hardTotal,cap,capWhy,prevHard};
+  if(hardTotal<=Math.min(w.maxHard,3)||(w.id==='deload'&&hardTotal<=w.maxHard))ok(`Hard days: ${hardTxt} · max ${w.maxHard}${cap===4?' (4 if spaced)':''}`);
+  else if(w.id==='deload'||hardTotal>cap){
+    const lim=w.id==='deload'?w.maxHard:cap;
+    warn(`Hard days: ${hardTxt} — max ${lim} ${w.id==='deload'?`in a ${w.label} week`:capWhy==='last week had 4'?'this week (last week had 4)':'even when spaced out'}. `+
+      (hardDone.length>=lim?'Keep the rest of the week easy or rest.':`Make ${hardTotal-lim} of the planned ones lighter (e.g. a shorter or moderate gym).`));
+  }else{ // exactly 4, allowed if spaced + recovery
+    const probs=[];
+    if(pairs.length)probs.push(`back-to-back on ${pairs.map(([a,b])=>_dow(a)+'+'+_dow(b)).join(', ')}`);
+    if(!freeDays.length||recDays.length<CYCLE_RULES.restDays)probs.push('needs 2 recovery days incl. 1 fully free');
+    if(probs.length){hard.ok=false;warn(`Hard days: ${hardTxt} — 4 only works when spaced out: ${probs.join(' · ')}. Make one lighter.`);}
+    else{hard.ok=true;hard.four=true;ok(`Hard days: ${hardTxt} · 4-hard week ✓ spaced out — next week max 3`);}
+  }
 
   // 2. Never 3 hard days in a row (incl. the last days of last week)
   const seq=[addDays(mon,-2),addDays(mon,-1),...past];
@@ -9852,8 +9903,6 @@ function computeWeekCheck(todayStr){
 
   // 3. Recovery days (Jo chose A, 2026-11-02): a day with only easy activity (golf, rehab,
   //    short core) counts as recovery. Aim: ≥2 recovery days, at least 1 of them fully free.
-  const recDays=days.filter(d=>_LV[dayLv(d)]<=_LV.easy);
-  const freeDays=days.filter(d=>dayLv(d)==='rest');
   const recTxt=recDays.length?`${recDays.length} (${recDays.map(d=>_dow(d)+(freeDays.includes(d)?' free':'')).join(', ')})`:'0';
   if(!freeDays.length)warn(`Recovery days: ${recTxt} — keep one day fully free (no training at all).`);
   else if(recDays.length<CYCLE_RULES.restDays)warn(`Recovery days: ${recTxt} — aim for ${CYCLE_RULES.restDays}: 1 fully free + 1 easy day (golf, rehab or nothing).`);
@@ -9907,7 +9956,7 @@ function computeWeekCheck(todayStr){
     if(d===todayStr&&(act[d]||[]).length)return; // today already logged
     ps.forEach(p=>next.push({date:d,...p}));
   });
-  return {cw,items,next};
+  return {cw,items,next,hard};
 }
 
 function renderHomeWeekCheck(){
