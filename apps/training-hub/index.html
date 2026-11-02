@@ -9724,11 +9724,11 @@ function _weekActivity(from,to,todayStr){
   DB.climbSessions().filter(s=>inR(s.date)).forEach(s=>{
     const board=(s.blocks||[]).some(b=>b.type==='board');
     const _e=_effort(s.date,['climb'],board?DEFAULT_RPE.board:DEFAULT_RPE.climb,parseInt(s.duration)||0);
-    add(s.date,{kind:'climb',level:_e.level,rpe:_e.rpe,fingers:board,label:board?'🟫 Board climbing':'🧗 Climbing'});
+    add(s.date,{kind:'climb',level:_e.level,rpe:_e.rpe,mins:_e.mins,fingers:board,label:board?'🟫 Board climbing':'🧗 Climbing'});
   });
-  DB.fbSessions().filter(s=>inR(s.date)).forEach(s=>add(s.date,{kind:'fb',level:_levelFromRpe(DEFAULT_RPE.fb,parseInt(s.durationMins)||0),fingers:true,label:'🖐 Fingerboard'}));
+  DB.fbSessions().filter(s=>inR(s.date)).forEach(s=>add(s.date,{kind:'fb',level:_levelFromRpe(DEFAULT_RPE.fb,parseInt(s.durationMins)||0),mins:parseInt(s.durationMins)||0,fingers:true,label:'🖐 Fingerboard'}));
   const tennisDates=new Set();
-  try{_loggedTennisMatches().filter(m=>inR(m.date)).forEach(m=>{tennisDates.add(m.date);const _e=_effort(m.date,['tennis'],DEFAULT_RPE.tennis,m.mins);add(m.date,{kind:'tennis',level:_e.level,rpe:_e.rpe,label:'🎾 Tennis'});});}catch(e){}
+  try{_loggedTennisMatches().filter(m=>inR(m.date)).forEach(m=>{tennisDates.add(m.date);const _e=_effort(m.date,['tennis'],DEFAULT_RPE.tennis,m.mins);add(m.date,{kind:'tennis',level:_e.level,rpe:_e.rpe,mins:_e.mins,label:'🎾 Tennis'});});}catch(e){}
   try{_loggedRehabSessions().filter(r=>inR(r.date)).forEach(r=>{const _e=_effort(r.date,['rehab'],parseFloat(r.rpe)||DEFAULT_RPE.rehab,0);add(r.date,{kind:'rehab',level:_e.level,label:'🦵 Rehab'});});}catch(e){}
   // Tennis practice / golf are often not logged anywhere: a planned one counts as done
   // once its day has passed (or the day is ticked ✓ in the Planner).
@@ -9738,9 +9738,9 @@ function _weekActivity(from,to,todayStr){
     (d.sessions||[]).forEach(s=>{
       if(!s||!s.trainingType)return;
       const _r=parseFloat(s.rpe)>0?parseFloat(s.rpe):null,_m=parseInt(s.duration)||0;
-      if(s.trainingType==='tennis'&&!tennisDates.has(d.date)){tennisDates.add(d.date);add(d.date,{kind:'tennis',level:_levelFromRpe(_r||DEFAULT_RPE.tennis,_m),label:'🎾 Tennis'});}
-      if(s.trainingType==='golf')add(d.date,{kind:'golf',level:_levelFromRpe(_r||DEFAULT_RPE.golf,_m),label:'⛳ Golf'});
-      if(s.trainingType==='active')add(d.date,{kind:'active',level:_levelFromRpe(_r||DEFAULT_RPE.active,_m),label:'🏃 Active'});
+      if(s.trainingType==='tennis'&&!tennisDates.has(d.date)){tennisDates.add(d.date);add(d.date,{kind:'tennis',level:_levelFromRpe(_r||DEFAULT_RPE.tennis,_m),mins:_m,label:'🎾 Tennis'});}
+      if(s.trainingType==='golf')add(d.date,{kind:'golf',level:_levelFromRpe(_r||DEFAULT_RPE.golf,_m),mins:_m,label:'⛳ Golf'});
+      if(s.trainingType==='active')add(d.date,{kind:'active',level:_levelFromRpe(_r||DEFAULT_RPE.active,_m),mins:_m,label:'🏃 Active'});
     });
   }));
   return by;
@@ -9756,11 +9756,27 @@ function _gymLevel(long,strength){
   if(long)return (avg===null||avg>=CYCLE_RULES.hardGymPct)?'hard':'moderate';
   return 'easy';
 }
+// Day level = hardest session, plus the double-day rule (Jo, 2026-11-02): two or more sessions
+// in a day add effort → HARD when at least one is medium and together they reach 2 h,
+// or when two of them are medium. Easy-only days (golf + rehab) stay easy.
 function _dayLevel(list){
   if(!list||!list.length)return 'rest';
   if(list.some(x=>x.level==='hard'))return 'hard';
-  if(list.some(x=>x.level==='moderate'))return 'moderate';
+  const mod=list.filter(x=>x.level==='moderate');
+  if(mod.length){
+    const total=list.reduce((a,x)=>a+(parseInt(x.mins)||0),0);
+    if(list.length>=2&&(mod.length>=2||total>=EFFORT_RULES.longMin))return 'hard';
+    return 'moderate';
+  }
   return 'easy';
+}
+// Logged + still-planned sessions of a day (planned ones skipped when that sport is already logged)
+const _KIND_OF={gym:['gym'],climb:['climb','fb'],tennis:['tennis'],golf:['golf'],rehab:['rehab'],active:['active']};
+function _dayItems(act,d,todayStr){
+  const logged=(act[d]||[]);
+  if(d<todayStr)return logged;
+  const planned=_plannedFor(d).filter(p=>!logged.some(x=>(_KIND_OF[p.type]||[p.type]).includes(x.kind)));
+  return logged.concat(planned);
 }
 // Planned (not yet done) sessions for a date → [{type,sub,level}]
 function _plannedFor(date){
@@ -9810,15 +9826,11 @@ function computeWeekCheck(todayStr){
   // Day level = logged (past/today) combined with what's still planned (today/future).
   // Fix 2026-11-02: today's planned sessions were ignored (today counted as "past").
   const _LV={rest:0,easy:1,moderate:2,hard:3};
-  const dayLv=d=>{
-    let lv=_dayLevel(act[d]);
-    if(d>=todayStr)_plannedFor(d).forEach(p=>{if(_LV[p.level]>_LV[lv])lv=p.level;});
-    return lv;
-  };
+  const dayLv=d=>_dayLevel(_dayItems(act,d,todayStr));
   // 1. Hard days (a double day counts once)
   const todayHardDone=_dayLevel(act[todayStr])==='hard';
   const hardDone=past.filter(d=>d<todayStr&&_dayLevel(act[d])==='hard').concat(todayHardDone?[todayStr]:[]);
-  const hardPlanned=(todayHardDone?[]:[todayStr]).concat(future).filter(d=>d>=mon&&d<=sun&&_plannedFor(d).some(p=>p.level==='hard'));
+  const hardPlanned=(todayHardDone?[]:[todayStr]).concat(future).filter(d=>d>=mon&&d<=sun&&dayLv(d)==='hard');
   const hardTotal=hardDone.length+hardPlanned.length;
   const hardTxt=`${hardDone.length} done${hardPlanned.length?` + ${hardPlanned.length} planned (${hardPlanned.map(_dow).join(', ')})`:''}`;
   if(hardTotal>w.maxHard)warn(`Hard days: ${hardTxt} — max ${w.maxHard} in a ${w.label} week. `+
