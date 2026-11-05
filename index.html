@@ -7661,6 +7661,10 @@ function _plannerTennisMins(date){
   return ((d&&d.sessions)||[]).filter(x=>x&&x.trainingType==='tennis').reduce((a,x)=>a+(parseInt(x.duration)||0),0);
 }
 function _loggedTennisForTotals(){
+  // Jo chose A (2026-11-05): she always logs tennis in the Planner, so logged matches are match
+  // STATS only and never count as training load (Week Check, Week Totals, Monthly Resume, Home
+  // calendar/heatmap, momentum sessions). The old "longer Planner wins" merge below is kept but unused.
+  return [];
   const all=_loggedTennisMatches();
   const sum={};all.forEach(m=>sum[m.date]=(sum[m.date]||0)+m.mins);
   return all.filter(m=>!(_plannerTennisMins(m.date)>sum[m.date]));
@@ -7902,7 +7906,7 @@ function renderMonthlyResume(){
   DB.gymSessions().forEach(s=>addAct(s.date,'gym'));
   DB.climbSessions().forEach(s=>addAct(s.date,'climb'));
   DB.fbSessions().forEach(s=>addAct(s.date,'fb'));
-  _loggedTennisMatches().forEach(m=>addAct(m.date,'tennis'));
+  _loggedTennisForTotals().forEach(m=>addAct(m.date,'tennis'));
   _loggedRehabSessions().forEach(r=>addAct(r.date,'rehab'));
   const planData=DB.planData();
   Object.keys(planData).forEach(weekKey=>{
@@ -11082,7 +11086,7 @@ function renderHomeWeekCalendar(){
   DB.gymSessions().forEach(s=>addLogged(s.date,_isRehabGym(s)?'rehab':'gym'));
   DB.climbSessions().forEach(s=>addLogged(s.date,'climb'));
   DB.fbSessions().forEach(s=>addLogged(s.date,'fb'));
-  _loggedTennisMatches().forEach(m=>addLogged(m.date,'tennis'));
+  _loggedTennisForTotals().forEach(m=>addLogged(m.date,'tennis'));
   _loggedRehabSessions().forEach(r=>addLogged(r.date,'rehab'));
 
   const trainingIcons={'gym':'💪','climb':'🧗','fb':'🖐️','tennis':'🎾','golf':'⛳','rehab':'🦵','active':'🏃','rest':'😴'};
@@ -11381,7 +11385,7 @@ function getTennisTrends(){
   // Fallback: a logged match on a day with NO planned tennis still counts as a
   // session (one per day), using the watch duration. Never double-counts a planned day.
   const fallbackDays={};
-  _loggedTennisMatches().forEach(m=>{
+  _loggedTennisForTotals().forEach(m=>{
     if(plannedTennisDays.has(m.date))return;
     fallbackDays[m.date]=(fallbackDays[m.date]||0)+m.mins;
   });
@@ -13801,7 +13805,7 @@ function monthReportStats(ym){
   DB.fbSessions().filter(s=>inMonth(s.date)).forEach(s=>addSess(s.date,'fb',s.durationMins||0));
 
   // Planner: tennis / golf / active / rehab fallback / work
-  const loggedMatches=_loggedTennisMatches().filter(x=>inMonth(x.date));
+  const loggedMatches=_loggedTennisForTotals().filter(x=>inMonth(x.date));
   const rehabLogged=(()=>{const d=DB.rehabData();return Array.isArray(d.sessions)?d.sessions.filter(x=>x&&inMonth(x.date)):[];})();
   const rehabDays=new Set(rehabLogged.map(r=>r.date));
   const plannedTennisDays=new Set();
