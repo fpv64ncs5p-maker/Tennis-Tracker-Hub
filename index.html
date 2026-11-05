@@ -7652,6 +7652,19 @@ function _loggedTennisMatches(){
   return _loggedTennisMatchesFull()
     .map(m=>({date:(m.match_date||'').slice(0,10),mins:parseInt(m.duration_min)||parseInt(m.duration)||0}));
 }
+// Matches logged during a longer Planner practice (Jo, 2026-11-05: "a tiebreak played at practice")
+// are part of that practice: on a day where the Planner's tennis minutes are longer than the logged
+// matches, the Planner session counts and the matches don't (no double count, no 10-min "session").
+function _plannerTennisMins(date){
+  const days=DB.planData()[getMonday(date)]||[];
+  const d=days.find(x=>x&&x.date===date);
+  return ((d&&d.sessions)||[]).filter(x=>x&&x.trainingType==='tennis').reduce((a,x)=>a+(parseInt(x.duration)||0),0);
+}
+function _loggedTennisForTotals(){
+  const all=_loggedTennisMatches();
+  const sum={};all.forEach(m=>sum[m.date]=(sum[m.date]||0)+m.mins);
+  return all.filter(m=>!(_plannerTennisMins(m.date)>sum[m.date]));
+}
 // Logged rehab sessions (rehab_data v2). Read directly — never force a migration.
 function _loggedRehabSessions(){
   const d=DB.rehabData();
@@ -7728,7 +7741,7 @@ function renderWeekTotals(weekStart){
   // ── Tennis + Rehab: logged data first, planner entries only for days with none
   // (de-dup, Jo's choice 2026-10-05 — a match typed into the planner AND logged
   //  on the watch is one session, not two).
-  const tMatches=_loggedTennisMatches().filter(m=>inWeek(m.date));
+  const tMatches=_loggedTennisForTotals().filter(m=>inWeek(m.date));
   const tDays=new Set(tMatches.map(m=>m.date));
   const tennisPlan=plannerSport('tennis',tDays);
   const tennis={
@@ -7948,7 +7961,7 @@ function renderMonthlyResume(){
 
     // Logged tennis matches + logged rehab sessions in this month; planner entries
     // on those same days are skipped so one session is never counted twice.
-    const mMatches=_loggedTennisMatches().filter(m=>inMonth(m.date));
+    const mMatches=_loggedTennisForTotals().filter(m=>inMonth(m.date));
     const mTennisDays=new Set(mMatches.map(m=>m.date));
     const mRehab=_loggedRehabSessions().filter(r=>inMonth(r.date));
     const mRehabDays=new Set(mRehab.map(r=>r.date));
@@ -9797,7 +9810,7 @@ function _weekActivity(from,to,todayStr){
   });
   DB.fbSessions().filter(s=>inR(s.date)).forEach(s=>add(s.date,{kind:'fb',level:_levelFromRpe(DEFAULT_RPE.fb,parseInt(s.durationMins)||0),mins:parseInt(s.durationMins)||0,fingers:true,label:'🖐 Fingerboard'}));
   const tennisDates=new Set();
-  try{_loggedTennisMatches().filter(m=>inR(m.date)).forEach(m=>{tennisDates.add(m.date);const _e=_effort(m.date,['tennis'],DEFAULT_RPE.tennis,m.mins);add(m.date,{kind:'tennis',level:_e.level,rpe:_e.rpe,mins:_e.mins,label:'🎾 Tennis'});});}catch(e){}
+  try{_loggedTennisForTotals().filter(m=>inR(m.date)).forEach(m=>{tennisDates.add(m.date);const _e=_effort(m.date,['tennis'],DEFAULT_RPE.tennis,m.mins);add(m.date,{kind:'tennis',level:_e.level,rpe:_e.rpe,mins:_e.mins,label:'🎾 Tennis'});});}catch(e){}
   try{_loggedRehabSessions().filter(r=>inR(r.date)).forEach(r=>{const _e=_effort(r.date,['rehab'],parseFloat(r.rpe)||DEFAULT_RPE.rehab,0);add(r.date,{kind:'rehab',level:_e.level,label:'🦵 Rehab'});});}catch(e){}
   // Tennis practice / golf are often not logged anywhere: a planned one counts as done
   // once its day has passed (or the day is ticked ✓ in the Planner).
@@ -12222,7 +12235,7 @@ function openTennisLogModal(editId){
   document.getElementById('tm-edit-id').value='';
   document.getElementById('tennis-modal-title').textContent='Log Match';
   // defaults
-  document.getElementById('tm-date').value=new Date().toISOString().slice(0,10);
+  document.getElementById('tm-date').value=today(); // local date (toISOString gave yesterday after midnight)
   document.getElementById('tm-score').value='';
   document.getElementById('tm-opponent').value='';
   document.getElementById('tm-location').value='';
