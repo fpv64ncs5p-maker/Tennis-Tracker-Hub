@@ -881,6 +881,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         </div>
 
         <div id="climb-planned-banner"></div>
+        <div id="climb-projects"></div>
         <div id="climb-templates-section"></div>
         <div id="climb-blocks-list"></div>
 
@@ -1426,7 +1427,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       </div>
       <div>
         <label>Result</label>
-        <select id="route-result">
+        <select id="route-result" onchange="toggleAttempts()">
           <option value="OS">🔵 OS</option>
           <option value="Flash">⚡ Flash</option>
           <option value="RP">🟢 Red Point</option>
@@ -1445,6 +1446,19 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <input type="number" inputmode="decimal" id="route-movements" placeholder="e.g. 15" min="0">
       </div>
     </div>
+    <div id="route-attempts-wrap" style="display:none">
+      <div class="form-row cols2">
+        <div>
+          <label>Tries</label>
+          <input type="number" inputmode="numeric" id="route-tries" placeholder="e.g. 3" min="1">
+        </div>
+        <div>
+          <label>Project</label>
+          <select id="route-project"></select>
+        </div>
+      </div>
+      <div id="route-tries-hint" style="font-size:11px;color:var(--muted);margin:-4px 0 10px">RP: count the send too (sent on the 4th go = 4). Project: every go that wasn't a send.</div>
+    </div>
     <div class="form-group">
       <label>Wall angle (optional)</label>
       <div id="route-angle-chips"></div>
@@ -1460,6 +1474,33 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div class="flex-gap8">
       <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-route')">Cancel</button>
       <button class="btn btn-climb" style="flex:2" onclick="saveRouteEntryEdit()">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- CLIMB PROJECT MODAL (2026-11-11) -->
+<div class="modal-overlay" role="dialog" aria-modal="true" id="modal-climb-project">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title" id="cproj-title">🎯 New project</div>
+      <button class="modal-close" aria-label="Close" onclick="cancelClimbProject()">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="cproj-name" placeholder="e.g. Roof 6c, Yellow overhang">
+    </div>
+    <div class="form-group">
+      <label>Grade</label>
+      <select id="cproj-grade"></select>
+    </div>
+    <div class="form-group">
+      <label>Wall angle (optional)</label>
+      <div id="cproj-angle"></div>
+    </div>
+    <div class="flex-gap8">
+      <button class="btn btn-ghost" style="flex:1" onclick="cancelClimbProject()">Cancel</button>
+      <button class="btn btn-climb" style="flex:2" onclick="saveClimbProject()">💾 Save project</button>
     </div>
   </div>
 </div>
@@ -1965,6 +2006,8 @@ const DB = {
   climbSessions(){return this.get('climb_sessions')||[]},
   saveClimb(s){const a=this.climbSessions();a.unshift(s);this.set('climb_sessions',a)},
   deleteClimb(id){const a=this.climbSessions().filter(s=>String(s.id)!==String(id));this.set('climb_sessions',a)},
+  climbProjects(){return this.get('climb_projects')||[]},
+  saveClimbProjects(a){this.set('climb_projects',a)},
   climbAssessments(){return this.get('climb_assessments')||[]},
   saveClimbAssessment(a){const arr=this.climbAssessments();arr.unshift(a);this.set('climb_assessments',arr)},
   deleteClimbAssessment(id){const arr=this.climbAssessments().filter(a=>String(a.id)!==String(id));this.set('climb_assessments',arr)},
@@ -2020,7 +2063,7 @@ const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'climb_sessions','climb_assessments','plan_data','rehab_data','macro_data',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
   'gym_height','tennis_matches','tennis_overlay','tennis_merges','custom_gyms','fb_custom_ex',
-  'custom_exercises','training_cycle','planned_sessions','exercise_overrides','tennis_serve_sessions'];
+  'custom_exercises','training_cycle','planned_sessions','exercise_overrides','tennis_serve_sessions','climb_projects'];
 
 function exportAllData(){
   const data={};
@@ -4683,7 +4726,7 @@ function showSessionDetail(type,id){
     const _detRow=e=>`<div class="route-item">
       <div class="route-grade">${e.grade}</div>
       <span class="route-result result-${(e.result||'').toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
-      <div class="route-info">×${e.count||1}${e.movements?` · ${e.movements}mv/rt`:''}${e.climbedDown?' · ↕':''}${e.notes?` · ${e.notes}`:''}</div>
+      <div class="route-info">×${e.count||1}${e.movements?` · ${e.movements}mv/rt`:''}${e.climbedDown?' · ↕':''}${_triesTxt(e)}${e.notes?` · ${e.notes}`:''}</div>
     </div>`;
     if((s.warmup||[]).length){
       const wuH=_resolveWallH(s.warmupWall,s.warmupWallCustom,wallH);
@@ -4706,7 +4749,7 @@ function showSessionDetail(type,id){
             html+=entries.map(e=>`<div class="route-item">
               <div class="route-grade">${e.grade}</div>
               <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
-              <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv/rt`:''}${e.climbedDown?' · ↕':''}</div>
+              <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv/rt`:''}${e.climbedDown?' · ↕':''}${_triesTxt(e)}</div>
             </div>`).join('');
           }
         }
@@ -4733,7 +4776,7 @@ function showSessionDetail(type,id){
       html+=s.routes.map(r=>`<div class="route-item">
         <div class="route-grade">${r.grade}</div>
         <span class="route-result result-${r.result.toLowerCase()}">${r.result}</span>
-        <div class="route-info">${r.movements?r.movements+' moves':''} ${r.attempts&&r.result==='Project'?'· '+r.attempts+' attempts':''} ${r.notes?'· '+r.notes:''}</div>
+        <div class="route-info">${r.movements?r.movements+' moves':''} ${r.attempts&&r.result==='Project'?'· '+r.attempts+' attempts':''}${_triesTxt(r)} ${r.notes?'· '+r.notes:''}</div>
       </div>`).join('');
     }
   }
@@ -5395,6 +5438,7 @@ function _planCardHtml(p){
 }
 
 function renderClimbTemplates(){
+  try{renderClimbProjects();}catch(e){console.error(e);}
   const el=document.getElementById('climb-templates-section');
   if(!el)return;
   try{renderPlannedBanner('climb');}catch(e){}
@@ -5558,9 +5602,241 @@ function saveNewGym(){
   toast('✅ Gym added!');
 }
 
+/* ── CLIMB PROJECTS + TRIES (2026-11-11) ──────────────────────────────────
+   Jo: "if I send it next try, it would be the 4th — nicer than 10 trials".
+   • Any RP or Project route can carry `tries` (a number). Counting rule (Jo):
+     every go that isn't a send is a try (rest on the rope included); on an RP
+     the send itself is the last try, so "sent on the 4th go" = tries 4.
+   • A route can be linked to a project (`projectId`) — projects live in the
+     synced key `climb_projects` = [{id,name,grade,angle,gym,createdAt}].
+     Everything else is DERIVED from the logged sessions (+ the open session):
+     total tries, sessions, sent or not, and the try number of the send. So
+     deleting / editing a route or a session never leaves a stale counter.
+   • Routes logged before this have no tries/projectId → nothing changes. */
+function _isTryResult(r){return r==='RP'||r==='Project';}
+function _ordinal(n){const v=n%100;return n+((v>=11&&v<=13)?'th':({1:'st',2:'nd',3:'rd'}[n%10]||'th'));}
+function _applyTries(entry,triesVal,projId){
+  const t=parseInt(triesVal);
+  if(t>0)entry.tries=t;else delete entry.tries;
+  if(projId&&projId!=='__new__'){entry.projectId=projId;if(!entry.rid)entry.rid='r'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+  else delete entry.projectId;
+}
+// Every route-like entry of a session, in logging order (all formats).
+function _sessionEntries(s){
+  const out=[];
+  (s.warmup||[]).forEach(e=>out.push(e));
+  (s.blocks||[]).forEach(b=>{
+    if(b.type&&b.type!=='routes')return;
+    if(b.phases)['warmup','main','cooldown'].forEach(ph=>(b.phases[ph]||[]).forEach(e=>out.push(e)));
+    else (b.routes||b.entries||[]).forEach(e=>out.push(e));
+  });
+  (s.cooldown||[]).forEach(e=>out.push(e));
+  (s.routes||[]).forEach(e=>out.push(e));
+  return out;
+}
+// Saved sessions (minus the one being edited — its copy is the open session)
+// plus the open session, oldest first. Same date: saved before open.
+function _projSessions(){
+  const list=DB.climbSessions().filter(s=>!(_editingClimbId&&String(s.id)===String(_editingClimbId)));
+  const arr=list.map(s=>({date:s.date||'',id:Number(s.id)||0,s}));
+  if(typeof climbSession!=='undefined'&&climbSession){
+    const d=document.getElementById('climb-date');
+    arr.push({date:(d&&d.value)||today(),id:Number.MAX_SAFE_INTEGER,s:climbSession,cur:true});
+  }
+  arr.sort((a,b)=>a.date!==b.date?a.date.localeCompare(b.date):a.id-b.id);
+  return arr;
+}
+// Per project: {tries, nSessions, last, sent:{tryNo,date,sessions}|null, open}
+// plus a Map rid→try number of each send (used by the route lines; rid, not
+// the object, because the history modal reads its own parsed copy).
+function _projStats(){
+  const stats={}, sendNo=new Map();
+  for(const x of _projSessions()){
+    for(const e of _sessionEntries(x.s)){
+      if(!e||!e.projectId||!_isTryResult(e.result))continue;
+      const st=stats[e.projectId]||(stats[e.projectId]={tries:0,sessions:new Set(),last:'',sent:null,open:0});
+      const t=e.tries>0?e.tries:1;
+      st.tries+=t; st.sessions.add(x.cur?'cur':x.id); st.last=x.date;
+      if(x.cur)st.open+=t;
+      if(e.result==='RP'){sendNo.set(e.rid||e,st.tries); if(!st.sent)st.sent={tryNo:st.tries,date:x.date,sessions:st.sessions.size};}
+    }
+  }
+  Object.values(stats).forEach(st=>st.nSessions=st.sessions.size);
+  return {stats,sendNo};
+}
+function _projById(id){return DB.climbProjects().find(p=>p.id===id)||null;}
+// Suffix for a route line: " · 3 tries · 🎯 Roof 6c" / " · ✅ 4th try · 🎯 Roof 6c" / " · 2nd try"
+function _triesTxt(e){
+  if(!e||!_isTryResult(e.result))return '';
+  let t='';
+  if(e.projectId){
+    const p=_projById(e.projectId);
+    if(e.result==='RP'){
+      const n=_projStats().sendNo.get(e.rid||e);
+      if(n)t+=` · ✅ ${_ordinal(n)} try`;
+    }else if(e.tries)t+=` · ${e.tries} ${e.tries===1?'try':'tries'}`;
+    if(p)t+=` · 🎯 ${esc(p.name)}`;
+  }else if(e.tries){
+    t+=e.result==='RP'?` · ${_ordinal(e.tries)} try`:` · ${e.tries} ${e.tries===1?'try':'tries'}`;
+  }
+  return t;
+}
+// <option>s for a project picker. Open projects; a sent one only when it is the current value.
+function _projOptionsHtml(sel,withNew=true){
+  const {stats}=_projStats();
+  const ps=DB.climbProjects().filter(p=>p.id===sel||!(stats[p.id]&&stats[p.id].sent));
+  return `<option value="">— not a project —</option>`+
+    ps.map(p=>`<option value="${esc(p.id)}"${p.id===sel?' selected':''}>🎯 ${esc(p.name)} · ${esc(p.grade||'')}</option>`).join('')+
+    (withNew?`<option value="__new__">＋ New project…</option>`:'');
+}
+// Extra row under a block's add-row, shown only for RP / Project.
+function _projAddRowHtml(bi){
+  return `<div id="block-${bi}-projrow" style="display:none;gap:4px;align-items:center;flex-wrap:wrap;margin:4px 0 6px;padding:6px 8px;background:var(--surface2);border-radius:var(--radius-sm)">
+    <span class="text-xxs-muted-nowrap">Tries:</span>
+    <input type="number" inputmode="numeric" id="block-${bi}-tries" placeholder="1" min="1" style="width:56px;font-size:13px" oninput="_projHint(${bi})">
+    <select id="block-${bi}-proj" style="flex:1;min-width:130px;font-size:13px" onchange="_projPick(${bi},this.value)">${_projOptionsHtml('')}</select>
+    <div id="block-${bi}-projhint" style="width:100%;font-size:11px;color:var(--muted)"></div>
+  </div>`;
+}
+function _projRowToggle(bi){
+  const r=document.getElementById(`block-${bi}-result`), row=document.getElementById(`block-${bi}-projrow`);
+  if(!r||!row)return;
+  row.style.display=_isTryResult(r.value)?'flex':'none';
+  _projHint(bi);
+}
+// Live hint: what this entry will make the project's total.
+function _projHint(bi){
+  const h=document.getElementById(`block-${bi}-projhint`);
+  if(!h)return;
+  const res=document.getElementById(`block-${bi}-result`).value;
+  const pid=document.getElementById(`block-${bi}-proj`).value;
+  const t=parseInt(document.getElementById(`block-${bi}-tries`).value)||0;
+  if(!pid||pid==='__new__'){
+    h.textContent=res==='RP'?'RP: count the send too — sent on the 2nd go = 2.':'Every go that wasn\'t a send counts as a try.';
+    return;
+  }
+  const st=_projStats().stats[pid]||{tries:0};
+  const add=t||1;
+  h.textContent=res==='RP'
+    ?`So far ${st.tries} ${st.tries===1?'try':'tries'} → this send = ${_ordinal(st.tries+add)} try`
+    :`So far ${st.tries} ${st.tries===1?'try':'tries'} → ${st.tries+add} after this`;
+}
+function _projPick(bi,val){
+  if(val==='__new__'){
+    const g=document.getElementById(`block-${bi}-grade`).value;
+    openClimbProject(null,{grade:g,angle:_pendingAngle['b'+bi]||'',bi});
+    return;
+  }
+  const p=_projById(val);
+  if(p&&p.grade){const g=document.getElementById(`block-${bi}-grade`);if(g)g.value=p.grade;}
+  _projHint(bi);
+}
+
+// ── Project create / edit modal ──
+let _cprojCtx=null; // {id|null, bi|null}
+let _cprojAngle='';
+function openClimbProject(id,pre={}){
+  const p=id?_projById(id):null;
+  _cprojCtx={id:p?p.id:null,bi:pre.bi!=null?pre.bi:null};
+  _cprojAngle=p?(p.angle||''):(pre.angle||'');
+  document.getElementById('cproj-title').textContent=p?'✏️ Edit project':'🎯 New project';
+  document.getElementById('cproj-name').value=p?p.name:'';
+  const g=document.getElementById('cproj-grade');
+  g.innerHTML=GRADE_OPTS; g.value=p?(p.grade||'6c'):(pre.grade||'6c');
+  _cprojRenderAngle();
+  openModal('modal-climb-project');
+  setTimeout(()=>{const n=document.getElementById('cproj-name');if(n)n.focus();},150);
+}
+function _cprojRenderAngle(){
+  document.getElementById('cproj-angle').innerHTML=`<div class="angle-chips">${WALL_ANGLES.map(a=>
+    `<div class="angle-chip ${ANGLE_CLS[a]}${_cprojAngle===a?' on':''}" data-angle="${a}" onclick="_cprojPickAngle('${a}',this)">${ANGLE_SHORT[a]}</div>`).join('')}</div>`;
+}
+function _cprojPickAngle(a,el){_cprojAngle=_cprojAngle===a?'':a;_toggleChipRow(el,_cprojAngle);}
+function cancelClimbProject(){
+  const c=_cprojCtx;
+  if(c&&c.bi!=null){const s=document.getElementById(`block-${c.bi}-proj`);if(s&&s.value==='__new__')s.value='';_projHint(c.bi);}
+  _cprojCtx=null;closeModal('modal-climb-project');
+}
+function saveClimbProject(){
+  const name=document.getElementById('cproj-name').value.trim();
+  if(!name){toast('Give the project a name');return;}
+  const grade=document.getElementById('cproj-grade').value;
+  const all=DB.climbProjects();
+  const c=_cprojCtx||{};
+  if(all.some(p=>p.id!==c.id&&p.name.toLowerCase()===name.toLowerCase())){toast('A project with that name already exists');return;}
+  let id=c.id;
+  if(id){
+    const p=all.find(x=>x.id===id); if(p){p.name=name;p.grade=grade;p.angle=_cprojAngle;}
+  }else{
+    const gymEl=document.getElementById('climb-gym');
+    id='p'+Date.now();
+    all.push({id,name,grade,angle:_cprojAngle,gym:gymEl?gymEl.value:'',createdAt:today()});
+  }
+  DB.saveClimbProjects(all);
+  closeModal('modal-climb-project');
+  // Every open picker gets the new/renamed option, keeping its own value.
+  // (A full renderClimbBlocks() would wipe the grade / result / tries already
+  // set in the add-row.) The add-row that asked for it selects it.
+  document.querySelectorAll('select[id^="block-"][id$="-proj"]').forEach(sel=>{
+    const v=(c.bi!=null&&sel.id===`block-${c.bi}-proj`)?id:(sel.value==='__new__'?'':sel.value);
+    sel.innerHTML=_projOptionsHtml(v); sel.value=v;
+  });
+  if(c.bi!=null){
+    const g=document.getElementById(`block-${c.bi}-grade`); if(g)g.value=grade;
+    _projHint(c.bi);
+  }
+  _cprojCtx=null;
+  renderClimbProjects();
+  toast(c.id?'✅ Project updated':'🎯 Project created');
+}
+function deleteClimbProject(id){
+  const all=DB.climbProjects(), idx=all.findIndex(p=>p.id===id);
+  if(idx<0)return;
+  const p=all[idx];
+  if(!confirm(`Delete project "${p.name}"? Logged routes stay — they just lose the project name.`))return;
+  all.splice(idx,1); DB.saveClimbProjects(all);
+  renderClimbProjects();
+  pushUndo('Project deleted',()=>{const a=DB.climbProjects();a.splice(Math.min(idx,a.length),0,p);DB.saveClimbProjects(a);renderClimbProjects();});
+}
+let _projShowSent=false;
+function toggleProjSent(){_projShowSent=!_projShowSent;renderClimbProjects();}
+function renderClimbProjects(){
+  const el=document.getElementById('climb-projects');
+  if(!el)return;
+  const ps=DB.climbProjects();
+  const {stats}=_projStats();
+  const open=[], sent=[];
+  ps.forEach(p=>{const st=stats[p.id]||{tries:0,nSessions:0,last:'',sent:null,open:0};(st.sent?sent:open).push({p,st});});
+  sent.sort((a,b)=>b.st.sent.date.localeCompare(a.st.sent.date));
+  open.sort((a,b)=>(b.st.last||b.p.createdAt||'').localeCompare(a.st.last||a.p.createdAt||''));
+  const fmt=d=>d?fmtDate(d).replace(/ \d{4}$/,''):'';
+  const row=({p,st})=>{
+    const meta=st.sent
+      ?`✅ Sent · ${_ordinal(st.sent.tryNo)} try · ${st.sent.sessions} session${st.sent.sessions===1?'':'s'} · ${fmt(st.sent.date)}`
+      :(st.tries?`${st.tries} ${st.tries===1?'try':'tries'} · ${st.nSessions} session${st.nSessions===1?'':'s'} · last ${fmt(st.last)} → next go = ${_ordinal(st.tries+1)}`:'No tries logged yet');
+    return `<div class="route-item">
+      <div class="route-grade">${esc(p.grade||'')}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700">🎯 ${esc(p.name)} ${angleBadge(p.angle)}</div>
+        <div class="route-info" style="margin:0">${meta}</div>
+      </div>
+      <button class="btn-icon" style="font-size:13px" onclick="openClimbProject('${esc(p.id)}')">✏️</button>
+      <button class="btn-icon" onclick="deleteClimbProject('${esc(p.id)}')">🗑</button>
+    </div>`;
+  };
+  el.innerHTML=`<div class="card" style="margin-bottom:10px;border-top:3px solid #dc2626">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="font-size:12px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:.05em">🎯 Projects</div>
+      <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="openClimbProject(null)">＋ New</button>
+    </div>
+    ${open.length?open.map(row).join(''):`<div style="color:var(--muted2);font-size:12px;font-style:italic;padding:2px 0">${ps.length?'No open projects.':'No projects yet. Log a route as Project or RP and pick “＋ New project…”, or tap ＋ New.'}</div>`}
+    ${sent.length?`<div style="margin-top:6px"><button class="btn btn-ghost" style="padding:3px 8px;font-size:11px" onclick="toggleProjSent()">${_projShowSent?'▾':'▸'} ✅ Sent (${sent.length})</button></div>${_projShowSent?sent.map(row).join(''):''}`:''}
+  </div>`;
+}
+
 function toggleAttempts(){
   const r=document.getElementById('route-result').value;
-  document.getElementById('route-attempts-wrap').style.display=r==='Project'?'block':'none';
+  document.getElementById('route-attempts-wrap').style.display=_isTryResult(r)?'block':'none';
 }
 
 
@@ -5633,6 +5909,9 @@ function _openRouteEditModal(e){
   document.getElementById('route-notes').value=e.notes||'';
   _modalAngle=e.angle||'';
   document.getElementById('route-angle-chips').innerHTML=angleChipsHtml(_modalAngle,'modal');
+  document.getElementById('route-tries').value=e.tries||'';
+  document.getElementById('route-project').innerHTML=_projOptionsHtml(e.projectId||'',false);
+  toggleAttempts();
   document.getElementById('route-modal-title').textContent='✏️ Edit Route';
   openModal('modal-route');
 }
@@ -5663,6 +5942,9 @@ function saveRouteEntryEdit(){
   e.climbedDown=document.getElementById('route-climbed-down').checked;
   e.notes=document.getElementById('route-notes').value;
   e.angle=_modalAngle;
+  if(_isTryResult(e.result)){
+    _applyTries(e,document.getElementById('route-tries').value,document.getElementById('route-project').value);
+  }else{delete e.tries;delete e.projectId;}
   _editRouteCtx={kind:null,bi:null,phase:null,section:null,ei:null};
   if(typeof markDirty==='function')markDirty('climb');
   closeModal('modal-route');
@@ -5768,7 +6050,7 @@ function renderClimbBlocks(){
       <div class="route-item">
         <div class="route-grade">${e.grade}</div>
         <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
-        <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}</div>
+        <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}${_triesTxt(e)}</div>
         <button class="btn-icon" style="font-size:13px" onclick="editRouteInSection('warmup',${ei})">✏️</button>
         <button class="btn-icon" onclick="removeRouteFromSection('warmup',${ei})">✕</button>
       </div>`).join(''):'<div style="color:var(--muted2);font-size:12px;font-style:italic;padding:2px 0">Empty</div>'}
@@ -5807,9 +6089,10 @@ function renderClimbBlocks(){
         ${b.wallHeight==='custom'?`<div style="margin-bottom:12px"><input type="number" inputmode="decimal" placeholder="Height in meters" value="${b.customWallHeight||''}" style="font-size:13px;width:100%" onchange="updateClimbBlockField(${bi},'customWallHeight',this.value)"></div>`:''}
         <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
           <select id="block-${bi}-grade" style="flex:2;min-width:60px;font-size:13px">${GRADE_OPTS}</select>
-          <select id="block-${bi}-result" style="flex:2;min-width:80px;font-size:13px">${RESULT_OPTS}</select>
+          <select id="block-${bi}-result" style="flex:2;min-width:80px;font-size:13px" onchange="_projRowToggle(${bi})">${RESULT_OPTS}</select>
           <select id="block-${bi}-count" style="width:52px;font-size:13px">${COUNT_OPTS}</select>
         </div>
+        ${_projAddRowHtml(bi)}
         ${angleChipsHtml(_pendingAngle['b'+bi]||'','b'+bi)}
         <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
           <div style="flex:1;display:flex;align-items:center;gap:4px">
@@ -5825,7 +6108,7 @@ function renderClimbBlocks(){
           <div class="route-item">
             <div class="route-grade">${e.grade}</div>
             <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
-            <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}</div>
+            <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}${_triesTxt(e)}</div>
             <button class="btn-icon" style="font-size:13px" onclick="editRouteInBlock(${bi},${ei})">✏️</button>
             <button class="btn-icon" onclick="removeRouteFromBlock(${bi},${ei})">✕</button>
           </div>`).join(''):'<div style="color:var(--muted2);font-size:12px;font-style:italic;padding:2px 0">No routes yet</div>'}
@@ -5933,7 +6216,7 @@ function renderClimbBlocks(){
       <div class="route-item">
         <div class="route-grade">${e.grade}</div>
         <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
-        <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}</div>
+        <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}${_triesTxt(e)}</div>
         <button class="btn-icon" style="font-size:13px" onclick="editRouteInSection('cooldown',${ei})">✏️</button>
         <button class="btn-icon" onclick="removeRouteFromSection('cooldown',${ei})">✕</button>
       </div>`).join(''):'<div style="color:var(--muted2);font-size:12px;font-style:italic;padding:2px 0">Empty</div>'}
@@ -5967,7 +6250,12 @@ function addRouteToBlock(bi){
   const movements=parseInt(document.getElementById(`block-${bi}-mvs`).value)||0;
   const climbedDown=document.getElementById(`block-${bi}-down`).checked;
   const angle=_pendingAngle['b'+bi]||'';
-  climbSession.blocks[bi].routes.push({grade,result,count,movements,climbedDown,angle});
+  const entry={grade,result,count,movements,climbedDown,angle};
+  if(_isTryResult(result)){
+    const tEl=document.getElementById(`block-${bi}-tries`), pEl=document.getElementById(`block-${bi}-proj`);
+    _applyTries(entry,tEl?tEl.value:'',pEl?pEl.value:'');
+  }
+  climbSession.blocks[bi].routes.push(entry);
   markDirty('climb');
   document.getElementById(`block-${bi}-mvs`).value='';
   document.getElementById(`block-${bi}-down`).checked=false;
@@ -6050,7 +6338,7 @@ function renderClimbBlocksLegacy(){
             <div class="route-item">
               <div class="route-grade">${e.grade}</div>
               <span class="route-result result-${e.result.toLowerCase().replace(/\s+/g,'-')}">${e.result}</span>${angleBadge(e.angle)}
-              <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}</div>
+              <div class="route-info">×${e.count}${e.movements?` · ${e.movements}mv`:''}${e.climbedDown?' · ↕':''}${_triesTxt(e)}</div>
               <button class="btn-icon" style="font-size:13px" onclick="editRouteEntry(${bi},'${phase}',${ei})">✏️</button>
               <button class="btn-icon" onclick="removeRouteEntry(${bi},'${phase}',${ei})">✕</button>
             </div>`).join(''):'<div style="color:var(--muted2);font-size:12px;font-style:italic;padding:2px 0">Empty</div>'}
