@@ -910,7 +910,12 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <!-- ── PYRAMID SECTION ── -->
         <div class="card" style="margin-bottom:8px">
           <div class="card-title">2026 Grade Pyramid</div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:12px">RP Target: <strong style="color:var(--text)">7a</strong> · OS Target: <strong style="color:var(--text)">6c+</strong></div>
+          <div class="segment" id="pyramid-disc-filter" style="margin-bottom:8px;display:flex;background:var(--surface2);border-radius:var(--radius-sm);padding:3px;gap:2px">
+            <button class="seg-btn active" onclick="pyramidDiscFilter('sport')">🧗 Sport</button>
+            <button class="seg-btn" onclick="pyramidDiscFilter('boulder')">🪨 Boulder</button>
+            <button class="seg-btn" onclick="pyramidDiscFilter('all')">All</button>
+          </div>
+          <div id="pyramid-target-line" style="font-size:12px;color:var(--muted);margin-bottom:12px">RP Target: <strong style="color:var(--text)">7a</strong> · OS Target: <strong style="color:var(--text)">6c+</strong></div>
           <div style="display:flex;gap:16px;font-size:11px;color:var(--muted);margin-bottom:4px">
             <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--climb);display:inline-block"></span>OS / Flash</span>
             <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--green);display:inline-block"></span>Red Point</span>
@@ -1912,6 +1917,16 @@ const PYRAMID = [
   {grade:"6b–6b+",bands:["6b","6b+"],os:4,rp:8,status:"Solid base"},
   {grade:"6a–6a+",bands:["6a","6a+"],os:8,rp:16,status:"Warm-up"},
   {grade:"5c–5c+",bands:["5c","5c+"],os:16,rp:20,status:"Volume"},
+  {grade:"3–5b+",bands:["3","4a","4b","4c","5a","5a+","5b","5b+"],os:null,rp:null,status:"Warm-up"},
+];
+// Boulder pyramid (2026-11-12, Jo confirmed): goal V5 RP ≈ 6c/6c+ Font, V4 OS ≈ 6b/6b+.
+// Same band labels as PYRAMID, so gradeToBand() serves both.
+const BOULDER_PYRAMID = [
+  {grade:"7a–7a+",bands:["7a","7a+"],os:0,rp:1,status:"Project"},
+  {grade:"6c–6c+",bands:["6c","6c+"],os:1,rp:3,status:"RP Target (V5)"},
+  {grade:"6b–6b+",bands:["6b","6b+"],os:3,rp:6,status:"Build (V4)"},
+  {grade:"6a–6a+",bands:["6a","6a+"],os:6,rp:10,status:"Solid base"},
+  {grade:"5c–5c+",bands:["5c","5c+"],os:10,rp:15,status:"Volume"},
   {grade:"3–5b+",bands:["3","4a","4b","4c","5a","5a+","5b","5b+"],os:null,rp:null,status:"Warm-up"},
 ];
 
@@ -6504,14 +6519,14 @@ function getSessionRoutes(s){
   // New format: warmup/blocks/cooldown
   if(s.warmup||s.cooldown){
     const groups=[
-      {entries:s.warmup||[],wallH:_resolveWallH(s.warmupWall,s.warmupWallCustom,fallbackH)},
-      ...(s.blocks||[]).filter(b=>b.type==='routes'&&b.routes).map(b=>({entries:b.routes,wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH)})),
-      {entries:s.cooldown||[],wallH:_resolveWallH(s.cooldownWall,s.cooldownWallCustom,fallbackH)}
+      {entries:s.warmup||[],wallH:_resolveWallH(s.warmupWall,s.warmupWallCustom,fallbackH),ctype:''},
+      ...(s.blocks||[]).filter(b=>b.type==='routes'&&b.routes).map(b=>({entries:b.routes,wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH),ctype:b.climbingType||''})),
+      {entries:s.cooldown||[],wallH:_resolveWallH(s.cooldownWall,s.cooldownWallCustom,fallbackH),ctype:''}
     ];
     for(const g of groups){
       for(const e of g.entries){
         for(let i=0;i<(e.count||1);i++){
-          routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:g.wallH});
+          routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:g.wallH,ctype:g.ctype});
         }
       }
     }
@@ -6524,16 +6539,16 @@ function getSessionRoutes(s){
     if(b.phases){
       for(const phase of ['warmup','main','cooldown']){
         for(const e of (b.phases[phase]||[])){
-          for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH)});
+          for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH),ctype:b.climbingType||''});
         }
       }
     } else if(b.routes){
       for(const e of b.routes){
-        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH)});
+        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH),ctype:b.climbingType||''});
       }
     } else {
       for(const e of (b.entries||[])){
-        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH)});
+        for(let i=0;i<(e.count||1);i++) routes.push({grade:e.grade,result:normResult(e.result),movements:e.movements||0,climbedDown:e.climbedDown||false,angle:e.angle||'',wallH:_resolveWallH(b.wallHeight,b.customWallHeight,fallbackH),ctype:b.climbingType||''});
       }
     }
   }
@@ -7000,6 +7015,24 @@ function renderBoardProgress(){
 // Pyramid wall-angle filter ('' = all). Routes logged without an angle only
 // appear under "All" — same convention as uncategorised tennis matches.
 let _pyramidAngle='';
+/* Sport / Boulder pyramids (2026-11-12, Jo chose B + B): one switch, separate
+   targets. Sport = Lead + Top Rope (Lead is the focus, but Jo depends on a
+   lead belayer). Routes with no type (warm-up / cool-down, old sessions)
+   only count under "All". "All" uses the sport targets. */
+let _pyramidDisc='sport';
+function _discOf(r){
+  if(r.ctype==='Boulder')return 'boulder';
+  if(r.ctype==='Lead'||r.ctype==='Top Rope')return 'sport';
+  return '';
+}
+function _pyrTargets(){return _pyramidDisc==='boulder'?BOULDER_PYRAMID:PYRAMID;}
+function pyramidDiscFilter(d){
+  _pyramidDisc=d;
+  document.querySelectorAll('#pyramid-disc-filter .seg-btn').forEach(b=>{
+    b.classList.toggle('active',(b.getAttribute('onclick')||'').includes(`('${d}')`));
+  });
+  renderPyramid();
+}
 function pyramidAngleFilter(a){
   _pyramidAngle=a;
   document.querySelectorAll('#pyramid-angle-filter .seg-btn').forEach(b=>{
@@ -7012,10 +7045,16 @@ function renderPyramid(){
   renderBoardProgress(); // 🟫 Board Training card at the bottom of this tab
   // Count OS/Flash/RP/Project per grade band from all climb sessions
   const counts={};
-  let skippedNoAngle=0;
-  PYRAMID.forEach(p=>{counts[p.grade]={os:0,rp:0,project:0,meters:0,moves:0,movesCount:0}});
+  let skippedNoAngle=0, skippedNoType=0;
+  const PYR=_pyrTargets();
+  PYR.forEach(p=>{counts[p.grade]={os:0,rp:0,project:0,meters:0,moves:0,movesCount:0}});
   for(const s of DB.climbSessions()){
     for(const r of getSessionRoutes(s)){
+      if(_pyramidDisc!=='all'){
+        const d=_discOf(r);
+        if(!d){skippedNoType++;continue;}
+        if(d!==_pyramidDisc)continue;
+      }
       if(_pyramidAngle){
         if(!r.angle){skippedNoAngle++;continue;}
         if(r.angle!==_pyramidAngle)continue;
@@ -7037,15 +7076,22 @@ function renderPyramid(){
   const statsEl=document.getElementById('pyramid-stats');
   tierEl.innerHTML='';statsEl.innerHTML='';
 
+  const tl=document.getElementById('pyramid-target-line');
+  if(tl)tl.innerHTML=_pyramidDisc==='boulder'
+    ?'RP Target: <strong style="color:var(--text)">6c–6c+ (V5)</strong> · OS Target: <strong style="color:var(--text)">6b–6b+ (V4)</strong>'
+    :_pyramidDisc==='all'
+      ?'Sport + boulder + untyped routes together · sport targets'
+      :'RP Target: <strong style="color:var(--text)">7a</strong> · OS Target: <strong style="color:var(--text)">6c+</strong> · Lead + Top Rope';
   const noteEl=document.getElementById('pyramid-angle-note');
   if(noteEl){
-    if(_pyramidAngle){
-      noteEl.style.display='';
-      noteEl.innerHTML=`Showing <strong>${_pyramidAngle}</strong> only${skippedNoAngle?` · ${skippedNoAngle} route${skippedNoAngle===1?'':'s'} with no angle logged excluded`:''}`;
-    } else noteEl.style.display='none';
+    const parts=[];
+    if(_pyramidAngle)parts.push(`Showing <strong>${_pyramidAngle}</strong> only${skippedNoAngle?` · ${skippedNoAngle} route${skippedNoAngle===1?'':'s'} with no angle logged excluded`:''}`);
+    if(skippedNoType)parts.push(`${skippedNoType} route${skippedNoType===1?'':'s'} with no type (warm-ups, cool-downs, old sessions) only in All`);
+    noteEl.style.display=parts.length?'':'none';
+    noteEl.innerHTML=parts.join(' · ');
   }
 
-  PYRAMID.filter(p=>p.os!==null||p.rp!==null).forEach(p=>{
+  PYR.filter(p=>p.os!==null||p.rp!==null).forEach(p=>{
     const c=counts[p.grade]||{os:0,rp:0,meters:0,moves:0};
     const osPct=p.os>0?Math.min(100,Math.round(c.os/p.os*100)):0;
     const rpPct=p.rp>0?Math.min(100,Math.round(c.rp/p.rp*100)):0;
@@ -7085,7 +7131,7 @@ function renderPyramid(){
 
   // Stats table
   let totOS=0,totRP=0,totProj=0,totMeters=0,totMoves=0,totMovesCount=0;
-  const rows=PYRAMID.filter(p=>p.os!==null).map(p=>{
+  const rows=PYR.filter(p=>p.os!==null).map(p=>{
     const c=counts[p.grade]||{os:0,rp:0,project:0,meters:0,moves:0,movesCount:0};
     totOS+=c.os;totRP+=c.rp;totProj+=c.project;totMeters+=c.meters;totMoves+=c.moves;totMovesCount+=c.movesCount;
     const mStr=c.meters>=1000?(c.meters/1000).toFixed(1)+'km':(c.meters?c.meters+'m':'—');
