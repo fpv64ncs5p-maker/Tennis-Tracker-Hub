@@ -5146,12 +5146,48 @@ function deriveTemplate(srcId,grade,steps){
     warmup:sh(s.warmup),sets:s.sets.map(sh),cooldown:sh(s.cooldown)};
 }
 
-const CLIMB_TEMPLATES=[...CLIMB_DOC_TEMPLATES,
+/* ── Extra sessions NOT in the coach's doc (2026-11-12, Jo chose C) ─────────
+   Built per grade G for Jo's 7a-redpoint block (onsight climber, limiter =
+   pump at the top of the route). Marked `custom` → "not in doc" chip.
+   `fixed`: the size picker only changes warm-up / cool-down, never the sets
+   (a 4×4 or a project burn must keep its shape). `rest` = suggested rest
+   AFTER each set. `proj` sets: routes tick as Project, linked to a project.
+   • 🎯 Project day: warm-up, one set just below the project (G-2, G-1),
+     then 4 project burns of 1 route each (one burn = one set = one block),
+     20–30′ rest between burns, easy cool-down.
+   • 🔥 Power endurance: 4 sets × 4 routes at G-4/G-3 back to back, 4′ rest
+     (4×4). On ropes: laps or 2 linked routes — ✕ what you skip. */
+function _shiftG(g,n){return shiftGrade(g,n);}
+function projectDayTemplate(G){
+  return {id:`${G}-project`,grade:G,type:'Project day',label:'not in doc',custom:true,fixed:true,
+    warmup:[_shiftG(G,-6),_shiftG(G,-5),_shiftG(G,-4),_shiftG(G,-3)],
+    sets:[[_shiftG(G,-2),_shiftG(G,-1)],[G],[G],[G],[G]],
+    projSets:[2,3,4,5],
+    rest:["5–10′","20–30′","20–30′","20–30′",""],
+    cooldown:[_shiftG(G,-4),_shiftG(G,-5)]};
+}
+function powerEnduranceTemplate(G){
+  const a=_shiftG(G,-4),b=_shiftG(G,-3);
+  return {id:`${G}-pe`,grade:G,type:'Power endurance',label:'4×4 · not in doc',custom:true,fixed:true,
+    warmup:[_shiftG(G,-7),_shiftG(G,-6),_shiftG(G,-5),a],
+    sets:[[a,a,b,b],[a,a,b,b],[a,a,b,b],[a,a,b,b]],
+    rest:["4′","4′","4′",""],
+    note:'Climb the 4 back to back, no rest. On ropes: laps or 2 linked routes — ✕ what you skip.',
+    cooldown:[_shiftG(G,-5),_shiftG(G,-6)]};
+}
+// Suggested rest after each set for the doc's sessions (the doc gives none).
+const TMPL_REST={Base:'3–5′',Power:'8–10′'};
+const _TMPL_ORDER={'Base':0,'Power':1,'Project day':2,'Power endurance':3};
+
+const _DOC_PLUS_DERIVED=[...CLIMB_DOC_TEMPLATES,
   // 6b+ sits one above the real 6b table; 6c one below the real 6c+ table.
   deriveTemplate('6b-base', '6b+',+1), deriveTemplate('6b-power', '6b+',+1),
   deriveTemplate('6c+-base','6c', -1), deriveTemplate('6c+-power','6c', -1),
+];
+const CLIMB_TEMPLATES=[..._DOC_PLUS_DERIVED,
+  ...[...new Set(_DOC_PLUS_DERIVED.map(t=>t.grade))].flatMap(G=>[projectDayTemplate(G),powerEnduranceTemplate(G)]),
 ].sort((a,b)=>CLIMB_GRADES.indexOf(a.grade)-CLIMB_GRADES.indexOf(b.grade)
-             ||(a.type==='Base'?-1:1));
+             ||(_TMPL_ORDER[a.type]??9)-(_TMPL_ORDER[b.type]??9));
 
 // Real route count (the doc's "15x"/"10x" label is not always accurate).
 function tmplRouteCount(t){return t.warmup.length+t.sets.reduce((n,s)=>n+s.length,0)+t.cooldown.length;}
@@ -5163,13 +5199,24 @@ function tmplRouteCount(t){return t.warmup.length+t.sets.reduce((n,s)=>n+s.lengt
    ~3 (as even as possible); the doc's set pattern is repeated if more sets are needed
    and the last sets are dropped if fewer. Settings are a per-device convenience. */
 const TMPL_TOTALS=[null,10,15,20], TMPL_WARMS=[4,5,6,7,8];
+// Default 15 routes + 6 warm-up (2026-11-12, Jo: she warms up on 6–8 routes;
+// the doc's own warm-up is 2). A device that still has the old "As doc" default
+// is moved to 15 once (flag _climb_tmpl_size_v2); choosing "As doc" after that sticks.
 function _tmplSize(){
-  try{const v=JSON.parse(localStorage.getItem('_climb_tmpl_size')||'null');if(v)return {total:v.total??null,warm:v.warm||6,cool:v.cool!==false};}catch(e){}
-  return {total:null,warm:6,cool:true};
+  try{
+    let v=JSON.parse(localStorage.getItem('_climb_tmpl_size')||'null');
+    if(v&&v.total==null&&!localStorage.getItem('_climb_tmpl_size_v2')){
+      v={...v,total:15,warm:v.warm||6};
+      localStorage.setItem('_climb_tmpl_size',JSON.stringify(v));
+      localStorage.setItem('_climb_tmpl_size_v2','1');
+    }
+    if(v)return {total:v.total??null,warm:v.warm||6,cool:v.cool!==false};
+  }catch(e){}
+  return {total:15,warm:6,cool:true};
 }
 function setTmplSize(k,v){
   const z=_tmplSize();z[k]=v;
-  try{localStorage.setItem('_climb_tmpl_size',JSON.stringify(z));}catch(e){}
+  try{localStorage.setItem('_climb_tmpl_size',JSON.stringify(z));localStorage.setItem('_climb_tmpl_size_v2','1');}catch(e){}
   renderClimbTemplates();
 }
 function sizeTemplate(t,z){
@@ -5180,6 +5227,8 @@ function sizeTemplate(t,z){
   const span=Math.min(z.warm-1,4,Math.max(0,idx(top)-idx('4a')));
   const warmup=[...Array(z.warm)].map((_,k)=>shiftGrade(top,-Math.round(span*(z.warm-1-k)/Math.max(1,z.warm-1))));
   const cooldown=z.cool?(t.cooldown.length?t.cooldown.slice(0,2):[shiftGrade(top,-1),shiftGrade(top,-2)]):[];
+  // Fixed sessions (project day, 4×4): only warm-up / cool-down follow the picker.
+  if(t.fixed){const main=t.sets.reduce((n,x)=>n+x.length,0);return {...t,warmup,cooldown,sized:warmup.length+main+cooldown.length};}
   const main=Math.max(3,z.total-warmup.length-cooldown.length);
   const nSets=Math.ceil(main/3);
   const base=Math.floor(main/nSets),extra=main%nSets;
@@ -5213,36 +5262,47 @@ function applyClimbTemplate(id){
   const t=sizeTemplate(t0,_tmplSize());
   if(_isPlanningClimb()){
     // Plan ahead: build the plan aside — today's session is not touched
-    _planningClimbPlan={templateId:t.id,label:`${t.grade} · ${t.type}${t.sized?` · ${t.sized} routes`:''}`,
-      mode:(_planningClimbPlan&&_planningClimbPlan.mode)||'Lead',
-      items:[...t.warmup.map(g=>({grade:g,section:'warmup',set:0,done:false,pid:''})),
-        ...t.sets.flatMap((s,si)=>s.map(g=>({grade:g,section:'main',set:si+1,done:false,pid:''}))),
-        ...t.cooldown.map(g=>({grade:g,section:'cooldown',set:0,done:false,pid:''}))]};
+    _planningClimbPlan=_planFromTemplate(t,_planningClimbPlan&&_planningClimbPlan.mode);
     _planPickerOpen=false;
     renderClimbTemplates();
     return;
   }
   if(climbSession.plan&&climbSession.plan.items.some(i=>i.done)
      &&!confirm('Load a different plan? Routes you already ticked stay logged in the session.'))return;
-  climbSession.plan={
-    templateId:t.id,
-    // `set` is the doc's Set 1–4 = one burn. 0 on warm-up/cool-down.
-    label:`${t.grade} · ${t.type}${t.sized?` · ${t.sized} routes`:''}`,
-    // The sessions are discipline-neutral, so the plan carries the choice and
-    // every burn it opens inherits it. Keep whatever was already picked.
-    mode:(climbSession.plan&&climbSession.plan.mode)||'Lead',
-    items:[
-      ...t.warmup.map(g=>({grade:g,section:'warmup',set:0,done:false,pid:''})),
-      ...t.sets.flatMap((s,si)=>s.map(g=>({grade:g,section:'main',set:si+1,done:false,pid:''}))),
-      ...t.cooldown.map(g=>({grade:g,section:'cooldown',set:0,done:false,pid:''}))
-    ]
-  };
+  // The sessions are discipline-neutral, so the plan carries the choice and
+  // every burn it opens inherits it. Keep whatever was already picked.
+  climbSession.plan=_planFromTemplate(t,climbSession.plan&&climbSession.plan.mode);
+  _lastTick=null;
   _planPickerOpen=false;
   _planEditMode=false;
   markDirty('climb');
   renderClimbTemplates();
   renderClimbBlocks();
   toast('📋 Plan loaded — tick routes as you climb');
+}
+
+// Plan object from a (sized) template. `set` = the doc's Set n = one burn
+// (0 on warm-up / cool-down). `proj` items tick as Project; `rest` = suggested
+// rest after each set (2026-11-12). A project day links to the open project
+// of that grade when there is exactly one.
+function _planFromTemplate(t,mode){
+  const proj=new Set(t.projSets||[]);
+  const rest={};
+  t.sets.forEach((_,si)=>{const r=t.rest?t.rest[si]:(TMPL_REST[t.type]||'');if(r&&si<t.sets.length-1)rest[si+1]=r;});
+  let projectId='';
+  if(proj.size){
+    const {stats}=_projStats();
+    const open=DB.climbProjects().filter(p=>p.grade===t.grade&&!(stats[p.id]&&stats[p.id].sent));
+    if(open.length===1)projectId=open[0].id;
+  }
+  return {templateId:t.id,
+    label:`${t.grade} · ${t.type}${t.sized?` · ${t.sized} routes`:''}`,
+    mode:mode||'Lead',rest,projectId,note:t.note||'',
+    items:[
+      ...t.warmup.map(g=>({grade:g,section:'warmup',set:0,done:false,pid:''})),
+      ...t.sets.flatMap((s,si)=>s.map(g=>({grade:g,section:'main',set:si+1,done:false,pid:'',...(proj.has(si+1)?{proj:true}:{})}))),
+      ...t.cooldown.map(g=>({grade:g,section:'cooldown',set:0,done:false,pid:''}))
+    ]};
 }
 
 /* One SET = one BURN = one block (Jo, 2026-08-06). Ticking a Set 2 route opens
@@ -5310,11 +5370,16 @@ function togglePlanItem(idx){
   const it=p.items[idx];
   if(it.done){
     _removePlanEntry(it.pid);
+    if(_lastTick===it.pid)_lastTick=null;
     it.done=false;it.pid='';
   } else {
     const pid='p'+(++_planSeq)+'_'+Date.now().toString(36);
-    // Default OS — one tap for the common case; change it with the ✏️ if you fell.
-    const entry={grade:it.grade,result:'OS',count:1,movements:0,climbedDown:false,angle:'',pid};
+    // Default OS — one tap for the common case. Project-burn items default to
+    // Project (linked to the plan's project). The result bar on the plan card
+    // changes the last ticked route in one more tap (2026-11-12).
+    const entry={grade:it.grade,result:it.proj?'Project':'OS',count:1,movements:0,climbedDown:false,angle:'',pid};
+    if(it.proj){entry.tries=1;_applyTries(entry,1,p.projectId||'');}
+    _lastTick=pid;
     if(it.section==='warmup')climbSession.warmup.push(entry);
     else if(it.section==='cooldown')climbSession.cooldown.push(entry);
     // Legacy plans have no `set` — they keep the old single-burn behaviour.
@@ -5325,8 +5390,45 @@ function togglePlanItem(idx){
   renderClimbTemplates();
   renderClimbBlocks();
 }
+/* ── Result bar for the last ticked route (2026-11-12, Jo chose C) ───────── */
+let _lastTick=null;
+function _entryByPid(pid){
+  if(!pid)return null;
+  const all=[...climbSession.warmup,...climbSession.cooldown,...climbSession.blocks.flatMap(b=>b.type==='routes'?b.routes:[])];
+  return all.find(e=>e.pid===pid)||null;
+}
+const TICK_RESULTS=['OS','Flash','Repeat','RP','Project'];
+function setLastTickResult(r){
+  const e=_entryByPid(_lastTick);if(!e)return;
+  e.result=r;
+  if(_isTryResult(r)){
+    // A project burn (🎯 item) keeps / gets the plan's project; other routes
+    // stay unlinked until a project is picked in the bar.
+    const it=climbSession.plan&&climbSession.plan.items.find(i=>i.pid===_lastTick);
+    if(!e.projectId&&it&&it.proj&&climbSession.plan.projectId)_applyTries(e,e.tries||1,climbSession.plan.projectId);
+  }else{delete e.tries;delete e.projectId;}
+  markDirty('climb');renderClimbTemplates();renderClimbBlocks();
+}
+function setLastTickProject(pid){
+  const e=_entryByPid(_lastTick);if(!e)return;
+  if(pid==='__new__'){openClimbProject(null,{grade:e.grade,angle:e.angle||'',tick:true});return;}
+  _applyTries(e,e.tries||1,pid);
+  markDirty('climb');renderClimbTemplates();renderClimbBlocks();
+}
+function _lastTickBarHtml(){
+  const e=_entryByPid(_lastTick);
+  if(!e)return '';
+  const chips=TICK_RESULTS.map(r=>{const on=e.result===r;return `<button onclick="setLastTickResult('${r}')" style="padding:4px 9px;border-radius:14px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid ${on?'var(--climb)':'var(--border)'};background:${on?'var(--climb)':'none'};color:${on?'#fff':'var(--text)'}">${r}</button>`;}).join('');
+  const projSel=_isTryResult(e.result)?`<select onchange="setLastTickProject(this.value)" style="width:100%;margin-top:6px;font-size:13px">${_projOptionsHtml(e.projectId||'')}</select>`:'';
+  return `<div id="last-tick-bar" style="margin-top:10px;padding:8px 10px;background:var(--surface2);border-radius:var(--radius-sm)">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Last ticked <strong style="color:var(--text)">${esc(e.grade)}</strong>${_triesTxt(e)} — how did it go?</div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap">${chips}</div>${projSel}
+  </div>`;
+}
+
 function clearClimbPlan(){
   if(!confirm('Remove the plan? Routes you already ticked stay logged.'))return;
+  _lastTick=null;
   climbSession.plan=null;
   markDirty('climb');
   renderClimbTemplates();
@@ -5402,6 +5504,22 @@ function _planRows(p){
   rows.push({key:'cooldown',label:'❄️ Cool-down',color:'#06b6d4',match:it=>it.section==='cooldown'});
   return rows;
 }
+// Project day: which project the 🎯 burns count for.
+function _planProjLineHtml(p){
+  const st=p.projectId?_projStats().stats[p.projectId]:null;
+  return `<div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px">
+    <span style="white-space:nowrap;font-weight:700">🎯 Burns count for</span>
+    <select onchange="setPlanProject(this.value)" style="flex:1;font-size:13px;margin:0">${_projOptionsHtml(p.projectId||'',false)}</select>
+  </div>${st?`<div style="font-size:11px;color:var(--muted);margin-top:3px">${st.tries} ${st.tries===1?'try':'tries'} so far → next go = ${_ordinal(st.tries+1)}</div>`:''}`;
+}
+function setPlanProject(id){
+  const p=_curPlan();if(!p)return;
+  p.projectId=id||'';
+  // already-ticked project burns follow the choice
+  if(!_isPlanningClimb())p.items.filter(it=>it.proj&&it.done).forEach(it=>{const e=_entryByPid(it.pid);if(e&&_isTryResult(e.result))_applyTries(e,e.tries||1,p.projectId);});
+  if(!_isPlanningClimb())markDirty('climb');
+  renderClimbTemplates();if(!_isPlanningClimb())renderClimbBlocks();
+}
 function _planCardHtml(p){
   const done=p.items.filter(i=>i.done).length;
   const burns=_isPlanningClimb()?0:climbSession.blocks.filter(b=>b.type==='routes').length;
@@ -5412,7 +5530,10 @@ function _planCardHtml(p){
     if(!idxs.length&&!(ed&&sec.key==='cooldown'))return '';
     const secDone=idxs.filter(x=>x.it.done).length;
     const tick=idxs.length&&secDone===idxs.length?' <span style="color:var(--green)">✓</span>':'';
-    return `<div style="font-size:10px;font-weight:700;color:${sec.color};text-transform:uppercase;letter-spacing:.05em;margin:8px 0 5px">${sec.label}${sec.key.startsWith('set')?` <span style="color:var(--muted);font-weight:600">· 1 burn · ${secDone}/${idxs.length}</span>`:''}${tick}</div>
+    const setN=sec.key.startsWith('set')?parseInt(sec.key.slice(3)):0;
+    const isProj=setN&&idxs.some(x=>x.it.proj);
+    const rest=setN&&p.rest&&p.rest[setN]?` · then rest ${p.rest[setN]}`:'';
+    return `<div style="font-size:10px;font-weight:700;color:${sec.color};text-transform:uppercase;letter-spacing:.05em;margin:8px 0 5px">${sec.label}${isProj?' 🎯':''}${setN?` <span style="color:var(--muted);font-weight:600">· 1 burn · ${secDone}/${idxs.length}${rest}</span>`:''}${tick}</div>
       <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">${idxs.map(({it,i})=>(ed&&!it.done)?`
         <span style="display:inline-flex;align-items:center;gap:2px;border:1.5px dashed var(--climb);border-radius:var(--radius-sm);padding:2px 3px">
           <select onchange="planSetGrade(${i},this.value)" aria-label="Grade" style="width:auto;margin:0;padding:4px 2px;font-size:13px;font-weight:800;border:none;background:none">${CLIMB_GRADES.map(g=>`<option${g===it.grade?' selected':''}>${g}</option>`).join('')}</select>
@@ -5439,7 +5560,10 @@ function _planCardHtml(p){
           style="flex:1;padding:6px 10px;border-radius:var(--radius-sm);font-size:12px;font-weight:700;cursor:pointer;
           border:1.5px solid ${on?'var(--climb)':'var(--border)'};background:${on?'var(--climb)':'none'};color:${on?'#fff':'var(--text)'}">${lbl}</button>`;
       }).join('')}</div>
+    ${p.note?`<div style="font-size:11px;color:var(--muted);margin-top:8px">💡 ${esc(p.note)}</div>`:''}
+    ${p.items.some(it=>it.proj)?_planProjLineHtml(p):''}
     ${rows}
+    ${planning?'':_lastTickBarHtml()}
     ${ed?`<button class="btn btn-ghost" style="width:100%;font-size:12px;margin-top:10px" onclick="planAddSet()">＋ Add a set</button>`:''}
     ${planning?`<div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn btn-ghost" style="flex:1;font-size:12px" onclick="togglePlanPicker()">Change template</button>
@@ -5482,10 +5606,10 @@ function renderClimbTemplates(){
     const setLine=t.sets.map((s,i)=>`<span style="white-space:nowrap"><span style="color:var(--climb);font-weight:700">${i+1}</span> ${s.join(' ')}</span>`).join(' &nbsp;·&nbsp; ');
     return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px">
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700;color:var(--climb);margin-bottom:4px">${t.grade} · ${t.type} <span style="font-size:11px;color:var(--muted);font-weight:400">${n} routes · ${t.sets.length} burns${t.label.includes('L1')?' · L1':''}</span>${t.derivedFrom?` <span title="Not in the doc — built from the ${t.derivedFrom} session, shifted" style="font-size:10px;font-weight:700;color:var(--muted);background:var(--surface2);border-radius:10px;padding:2px 7px;margin-left:2px">from ${t.derivedFrom}</span>`:''}</div>
+        <div style="font-size:13px;font-weight:700;color:var(--climb);margin-bottom:4px">${t.grade} · ${t.type} <span style="font-size:11px;color:var(--muted);font-weight:400">${n} routes · ${t.sets.length} burns${t.label.includes('L1')?' · L1':''}${t.label.startsWith('4×4')?' · 4×4':''}</span>${t.derivedFrom?` <span title="Not in the doc — built from the ${t.derivedFrom} session, shifted" style="font-size:10px;font-weight:700;color:var(--muted);background:var(--surface2);border-radius:10px;padding:2px 7px;margin-left:2px">from ${t.derivedFrom}</span>`:''}${t.custom?` <span title="Not in the coach's doc — added for the 7a redpoint block" style="font-size:10px;font-weight:700;color:#dc2626;background:rgba(220,38,38,.08);border-radius:10px;padding:2px 7px;margin-left:2px;white-space:nowrap">not in doc</span>`:''}</div>
         <div style="font-size:11px;color:var(--muted);line-height:1.7">
           <span style="color:#ea7c3a">▲</span> ${t.warmup.join(' ')} &nbsp;
-          <span style="color:#16a34a">▼</span> ${t.cooldown.length?t.cooldown.join(' '):'—'}<br>${setLine}
+          <span style="color:#16a34a">▼</span> ${t.cooldown.length?t.cooldown.join(' '):'—'}<br>${setLine}<br><span>⏱ rest ${t.rest?[...new Set(t.rest.filter(Boolean))].join(' / '):(TMPL_REST[t.type]||'—')} between sets</span>
         </div>
       </div>
       <button class="btn btn-climb" style="padding:6px 14px;font-size:12px;white-space:nowrap" onclick="applyClimbTemplate('${t.id}')">Apply</button>
@@ -5752,7 +5876,7 @@ let _cprojCtx=null; // {id|null, bi|null}
 let _cprojAngle='';
 function openClimbProject(id,pre={}){
   const p=id?_projById(id):null;
-  _cprojCtx={id:p?p.id:null,bi:pre.bi!=null?pre.bi:null};
+  _cprojCtx={id:p?p.id:null,bi:pre.bi!=null?pre.bi:null,tick:!!pre.tick};
   _cprojAngle=p?(p.angle||''):(pre.angle||'');
   document.getElementById('cproj-title').textContent=p?'✏️ Edit project':'🎯 New project';
   document.getElementById('cproj-name').value=p?p.name:'';
@@ -5769,6 +5893,7 @@ function _cprojRenderAngle(){
 function _cprojPickAngle(a,el){_cprojAngle=_cprojAngle===a?'':a;_toggleChipRow(el,_cprojAngle);}
 function cancelClimbProject(){
   const c=_cprojCtx;
+  if(c&&c.tick)setTimeout(renderClimbTemplates,0);
   if(c&&c.bi!=null){const s=document.getElementById(`block-${c.bi}-proj`);if(s&&s.value==='__new__')s.value='';_projHint(c.bi);}
   _cprojCtx=null;closeModal('modal-climb-project');
 }
@@ -5800,6 +5925,7 @@ function saveClimbProject(){
     const g=document.getElementById(`block-${c.bi}-grade`); if(g)g.value=grade;
     _projHint(c.bi);
   }
+  if(c.tick&&!c.id){const e=_entryByPid(_lastTick);if(e){_applyTries(e,e.tries||1,id);if(climbSession.plan&&!climbSession.plan.projectId)climbSession.plan.projectId=id;markDirty('climb');renderClimbBlocks();}}
   _cprojCtx=null;
   renderClimbProjects();
   toast(c.id?'✅ Project updated':'🎯 Project created');
