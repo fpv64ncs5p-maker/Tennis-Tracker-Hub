@@ -14905,5 +14905,7 @@ function exportMonthReport(){
 
 <div id="print-root"></div>
 
+<script>/* Offline: service worker keeps a copy of the app (2026-11-14, sw.js in repo root) */
+if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js').catch(()=>{});});}</script>
 </body>
 </html>
