@@ -229,7 +229,7 @@ select option{background:var(--surface2)}
 .rehab-sess-row{display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
 .rehab-sess-row:last-child{border-bottom:none}
 .rehab-week-dot{width:14px;height:14px;border-radius:50%;background:var(--rehab);display:inline-block}
-.rehab-week-dot.empty{background:none;border:2px dashed var(--border)}
+.rehab-week-dot.empty{background:none;border:2px dashed var(--border);padding:0}
 
 /* ── Weekly planner ── */
 .week-day{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.05)}
@@ -1035,7 +1035,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div id="tab-rehab" class="tab-panel">
       <div class="page-header">
         <h1>🦵 Rehab</h1>
-        <p>Calf programme · FisioHolland · Surgery: 29 Aug 2025</p>
+        <p>Rehab programme</p>
       </div>
       <div id="rehab-start-card"></div>
       <div id="rehab-phases"></div>
@@ -2080,12 +2080,12 @@ const REHAB_PHASES = [
     {name:"Calfs Raise (w/ weight)",sets:4,reps:10,tempo:"8''–10''",restSet:"1'–2'",restEx:"3'–5'",weight:"bw",intensity:"70%"},
     {name:"Leg Curl (Machine)",sets:4,reps:10,tempo:"8''–10''",restSet:"1'–2'",restEx:"3'–5'",weight:25,intensity:"70%"},
   ]},
-  {phase:"Weeks 6–8",dates:"12–30 Sep 2025",freq:"2–3×/week",note:"⚠️ Surgery 29 Aug — Restarted",exercises:[
+  {phase:"Weeks 6–8",dates:"12–30 Sep 2025",freq:"2–3×/week",note:"",exercises:[
     {name:"Leg Press (Calfs)",sets:4,reps:8,tempo:"8''–10''",restSet:"1'–2'",restEx:"3'–5'",weight:45,intensity:"75%"},
     {name:"Calfs Raise (w/ weight)",sets:4,reps:8,tempo:"8''–10''",restSet:"1'–2'",restEx:"3'–5'",weight:6,intensity:"75%"},
     {name:"Leg Curl (Machine)",sets:4,reps:8,tempo:"8''–10''",restSet:"1'–2'",restEx:"3'–5'",weight:39,intensity:"75%"},
   ]},
-  {phase:"Weeks 9–12",dates:"TBD",freq:"2–3×/week",note:"Fill in dates below",exercises:[
+  {phase:"Weeks 9–12",dates:"TBD",freq:"2–3×/week",note:"",exercises:[
     {name:"Leg Press (Calfs)",sets:4,reps:6,tempo:"8''–10''",restSet:"1'–2'",restEx:"3'–5'",weight:45,intensity:"85%"},
     {name:"Calfs Raise (w/ weight)",sets:4,reps:6,tempo:"8''–10''",restSet:"1'–2'",restEx:"3'–5'",weight:6,intensity:"85%"},
     {name:"Leg Curl (Machine)",sets:4,reps:6,tempo:"8''–10''",restSet:"1'–2'",restEx:"3'–5'",weight:39,intensity:"85%"},
@@ -7970,7 +7970,7 @@ function resetMacroWeeks(pi){
 // ══════════════════════════════════════════════════
 //  REHAB TAB
 // ══════════════════════════════════════════════════
-// Phase week offsets [startDay, endDay] from program start
+// Phase week offsets [startDay, endDay] from program start — the ORIGINAL protocol (default programme)
 const PHASE_OFFSETS=[
   [0,6],    // Week 1
   [7,20],   // Weeks 2-3
@@ -7979,19 +7979,53 @@ const PHASE_OFFSETS=[
   [56,83],  // Weeks 9-12
 ];
 
-function rehabDateRange(pi,programStart,phaseOverride){
-  const start=phaseOverride||programStart;
-  if(!start)return null;
-  const dt=new Date(start+'T12:00:00');
-  if(phaseOverride){
-    // override: just show start date, no auto end
-    const end=new Date(dt);
-    const dur=PHASE_OFFSETS[pi][1]-PHASE_OFFSETS[pi][0];
-    end.setDate(end.getDate()+dur);
-    return {start:dt,end};
-  }
-  const s=new Date(dt);s.setDate(s.getDate()+PHASE_OFFSETS[pi][0]);
-  const e=new Date(dt);e.setDate(e.getDate()+PHASE_OFFSETS[pi][1]);
+// ── Treatment plans (2026-11-14, Jo chose A: one plan at a time, several can be active) ──
+// The original programme lives on rehab_data itself = plan 'main' (default name "Achilles"; planName / planStatus).
+// Extra plans: rehab_data.plans = [{id,name,status:'active'|'done',startDate,phaseStarts,program,createdAt}].
+// Every plan "container" C has the same fields: startDate, phaseStarts, program (+ weights/archive on main).
+// Sessions stay in rehab_data.sessions; planId missing = 'main'.
+// ── Editable programme (2026-11-14, Jo chose B: exercises + phases, own notes) ──
+// C.program = {note, phases:[{id,name,weeks,freq,note,exercises:[{id,name,sets,reps,tempo,restSet,restEx,weight,bw,intensity}]}]}
+// Until Jo edits something, main's programme is derived from REHAB_PHASES — nothing is written on load.
+function _rid(){return 'x'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function _rehabDefaultProgram(data){
+  const W=(data&&data.weights)||{};
+  return {note:'',phases:REHAB_PHASES.map((p,pi)=>({id:'p'+pi,name:p.phase,
+    weeks:Math.round((PHASE_OFFSETS[pi][1]-PHASE_OFFSETS[pi][0]+1)/7),freq:p.freq,note:'',
+    exercises:p.exercises.map((e,ei)=>{const w=(W[pi]||{})[ei];
+      return {id:'e'+ei,name:e.name,sets:e.sets,reps:e.reps,tempo:e.tempo,restSet:e.restSet,restEx:e.restEx,
+        bw:e.weight==='bw',weight:w!==undefined?w:(e.weight==='bw'?0:e.weight),intensity:e.intensity};})}))};
+}
+function _rehabProgram(C){return (C&&C.program&&Array.isArray(C.program.phases))?C.program:_rehabDefaultProgram(C);}
+// Makes the programme real (first edit) and returns it
+function _rehabEnsureProgram(C){if(!C.program||!Array.isArray(C.program.phases))C.program=_rehabDefaultProgram(C);return C.program;}
+function _rehabPlans(data){
+  return [{id:'main',name:data.planName||'Achilles',status:data.planStatus||'active',c:data}]
+    .concat((data.plans||[]).map(p=>({id:p.id,name:p.name,status:p.status||'active',c:p})));
+}
+function _rehabPlanC(data,id){if(!id||id==='main')return data;return (data.plans||[]).find(p=>p.id===id)||null;}
+function _rehabPlanName(data,id){const p=_rehabPlans(data).find(x=>x.id===(id||'main'));return p?p.name:'Removed plan';}
+let _rehabSel=null,_rehabNewPlan=null,_rehabPlanCfg=false,_rehabShowDone=false;
+function _rehabCurPlanId(data){
+  let id=_rehabSel||localStorage.getItem('_rehab_plan')||'main'; // per device, not synced
+  return _rehabPlanC(data,id)?id:'main';
+}
+function _rsPlanId(s){return s.planId||'main';}
+function _rehabDays(ph){return Math.max(1,Math.round((parseFloat(ph&&ph.weeks)||1)*7));}
+// Phase start-date override: key = phase id (old data on main: index)
+function _rehabPhaseOverride(C,ph){
+  const ps=(C&&C.phaseStarts)||{};
+  if(ps[ph.id]!==undefined)return ps[ph.id]||'';
+  const m=/^p(\d+)$/.exec(ph.id);return m&&ps[m[1]]?ps[m[1]]:'';
+}
+function rehabDateRange(prog,pi,programStart,override){
+  let s;
+  if(override)s=new Date(override+'T12:00:00');
+  else if(programStart){
+    const off=prog.phases.slice(0,pi).reduce((a,p)=>a+_rehabDays(p),0);
+    s=new Date(programStart+'T12:00:00');s.setDate(s.getDate()+off);
+  } else return null;
+  const e=new Date(s);e.setDate(e.getDate()+_rehabDays(prog.phases[pi])-1);
   return {start:s,end:e};
 }
 
@@ -8000,8 +8034,10 @@ function fmtRehabDate(dt){
 }
 
 // ── Rehab v2: dated session log ─────────────────
-// rehab_data = {_v:2, archive:<old round or null>, startDate, phaseStarts:{}, weights:{}, sessions:[{id,date,phase,done:{ei:bool},weights:{ei:kg},rpe}]}
-let _rehabLog=null; // open log form: {pi, editId, done:{}, date}
+// sessions: new = {id,date,planId,phaseId,phaseName,items:[{id,name,bw,done,weight}],rpe}
+//           old = {id,date,phase:<index>,done:{ei:bool},weights:{ei:kg},rpe} (read via _rsItems, by position in REHAB_PHASES)
+let _rehabLog=null;  // open log form: {planId, phaseId, editId, done:{exId}, weights:{exId}, date, rpe}
+let _rehabEdit=null; // open phase editor: {planId, pi, buf, isNew}
 
 function _rehabMigrate(){
   const data=DB.rehabData();
@@ -8012,6 +8048,29 @@ function _rehabMigrate(){
   DB.saveRehab(nd);
   return nd;
 }
+function _rsPhaseId(s){return s.phaseId||(s.phase!=null?'p'+s.phase:'');}
+function _rsItems(s){
+  if(Array.isArray(s.items))return s.items;
+  const P=REHAB_PHASES[s.phase];if(!P)return [];
+  return P.exercises.map((e,ei)=>({id:'e'+ei,name:e.name,bw:e.weight==='bw',done:!!(s.done||{})[ei],weight:(s.weights||{})[ei]}));
+}
+// "Lower back · Phase 1" (plan shown only when there is more than one plan)
+function _rehabSessLabel(data,s){
+  const plans=_rehabPlans(data);
+  const P=plans.find(p=>p.id===_rsPlanId(s));
+  let ph=null;if(P){ph=_rehabProgram(P.c).phases.find(x=>x.id===_rsPhaseId(s));}
+  const m=/^p(\d+)$/.exec(_rsPhaseId(s));
+  const phName=ph?ph.name:(s.phaseName||(m&&REHAB_PHASES[+m[1]]&&REHAB_PHASES[+m[1]].phase)||'Removed phase');
+  return plans.length>1?(P?P.name:'Removed plan')+' · '+phName:phName;
+}
+// Exercises shown in the log form: the session's own (when editing) + the phase's current ones
+function _rehabFormList(ph,editSess){
+  const cur=ph.exercises.map(e=>({id:e.id,name:e.name,bw:!!e.bw,sets:e.sets,reps:e.reps,intensity:e.intensity}));
+  if(!editSess)return cur;
+  const its=_rsItems(editSess).map(it=>{const c=cur.find(x=>x.id===it.id);return c?{...c}:{id:it.id,name:it.name,bw:!!it.bw};});
+  return its.concat(cur.filter(c=>!its.some(i=>i.id===c.id)));
+}
+function _rehabPhaseIndex(prog,id){return prog.phases.findIndex(p=>p.id===id);}
 
 function _rehabKeepOpen(pi){
   requestAnimationFrame(()=>{
@@ -8025,29 +8084,100 @@ function _rehabSaveDraft(){
   else localStorage.removeItem('_rehab_log_draft');
 }
 function _rehabLogField(k,v){if(!_rehabLog)return;_rehabLog[k]=v;_rehabSaveDraft();}
-function _rehabLogW(ei,v){if(!_rehabLog)return;if(!_rehabLog.weights)_rehabLog.weights={};_rehabLog.weights[ei]=v;_rehabSaveDraft();}
+function _rehabLogW(id,v){if(!_rehabLog)return;if(!_rehabLog.weights)_rehabLog.weights={};_rehabLog.weights[id]=v;_rehabSaveDraft();}
+
+// Gym sessions to copy a new plan's exercises from: mostly-Rehab sessions first, then any with a Rehab exercise
+function _rehabGymSources(){
+  const st=e=>e&&e.type!=='cardio'&&e.cat!=='Warm-up';
+  return DB.gymSessions().filter(s=>(s.exercises||[]).some(e=>st(e)&&e.cat==='Rehab'))
+    .map(s=>({s,mostly:_isRehabGym(s)}))
+    .sort((a,b)=>(b.mostly-a.mostly)||String(b.s.date||'').localeCompare(String(a.s.date||'')))
+    .map(x=>x.s);
+}
+function _rehabGymExercises(s){return ((s&&s.exercises)||[]).filter(e=>e&&e.type!=='cardio'&&e.cat!=='Warm-up');}
 
 function renderRehab(){
   const el=document.getElementById('rehab-phases');
   const sc=document.getElementById('rehab-start-card');
   const data=_rehabMigrate();
-  // Restore in-progress log form (survives tab switches + page reloads)
+  const plans=_rehabPlans(data);
+  const planId=_rehabCurPlanId(data);
+  const C=_rehabPlanC(data,planId);
+  const plan=plans.find(p=>p.id===planId);
+  const prog=_rehabProgram(C);
+  // Restore in-progress log form (survives tab switches + reloads); old drafts used positions + no plan
   if(!_rehabLog){
-    try{const d=JSON.parse(localStorage.getItem('_rehab_log_draft'));if(d&&typeof d.pi==='number')_rehabLog=d;}catch(e){}
+    try{const d=JSON.parse(localStorage.getItem('_rehab_log_draft'));
+      if(d&&!d.phaseId&&typeof d.pi==='number'){
+        const m=o=>{const r={};Object.keys(o||{}).forEach(k=>r[/^\d+$/.test(k)?'e'+k:k]=o[k]);return r;};
+        d.phaseId='p'+d.pi;d.done=m(d.done);d.weights=m(d.weights);
+      }
+      if(d&&!d.planId)d.planId='main';
+      const dc=d&&_rehabPlanC(data,d.planId);
+      if(d&&d.phaseId&&dc&&_rehabPhaseIndex(_rehabProgram(dc),d.phaseId)>=0)_rehabLog=d;}catch(e){}
   }
-  const programStart=data.startDate||'';
-  const sessions=data.sessions||[];
+  const programStart=C.startDate||'';
+  const allSessions=data.sessions||[];
+  const sessions=allSessions.filter(s=>_rsPlanId(s)===planId);
 
-  // Weekly tracker (Monday-based weeks)
+  // Weekly tracker (Monday-based weeks) — all plans together
   const wkNow=getMonday(today());
-  const thisWeek=sessions.filter(s=>s.date&&getMonday(s.date)===wkNow);
+  const thisWeek=allSessions.filter(s=>s.date&&getMonday(s.date)===wkNow);
   const lastMon=new Date(wkNow+'T12:00:00');lastMon.setDate(lastMon.getDate()-7);
   const wkLast=lastMon.toISOString().split('T')[0];
-  const lastWeek=sessions.filter(s=>s.date&&getMonday(s.date)===wkLast);
+  const lastWeek=allSessions.filter(s=>s.date&&getMonday(s.date)===wkLast);
   const goalDots=Math.max(3,thisWeek.length);
+  const byPlan=plans.map(p=>[p.name,thisWeek.filter(s=>_rsPlanId(s)===p.id).length]).filter(x=>x[1]);
+  const split=byPlan.length>1?' · '+byPlan.map(([n,c])=>`${esc(n)} ${c}`).join(' · '):'';
 
-  sc.innerHTML=`<div class="card" style="margin-bottom:12px">
-    <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Program Start Date</div>
+  // Plan chips
+  const chip=(p)=>{const on=p.id===planId;
+    return `<button onclick="rehabSelectPlan('${p.id}')" style="padding:6px 12px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer;border:1.5px solid ${on?'var(--rehab)':'var(--border)'};background:${on?'var(--rehab)':'var(--surface2)'};color:${on?'#fff':'var(--text)'}">${p.status==='done'?'✓ ':''}${esc(p.name)}</button>`;};
+  const act=plans.filter(p=>p.status!=='done'),fin=plans.filter(p=>p.status==='done');
+  const finShown=fin.filter(p=>_rehabShowDone||p.id===planId);
+  const planBar=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+    ${act.map(chip).join('')}${finShown.map(chip).join('')}
+    <button onclick="openRehabNewPlan()" style="padding:6px 12px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer;border:1.5px dashed var(--border);background:none;color:var(--muted)">＋ New plan</button>
+    ${fin.length?`<button onclick="_rehabShowDone=!_rehabShowDone;renderRehab()" style="padding:6px 10px;border:none;background:none;font-size:12px;color:var(--muted);cursor:pointer">${_rehabShowDone?'Hide finished':'Finished ('+fin.length+')'}</button>`:''}
+  </div>`;
+
+  const weekCard=`<div class="card" style="margin-bottom:12px">
+    <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">This Week${plans.length>1?' · all plans':''}</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      ${Array.from({length:goalDots},(_,i)=>`<span class="rehab-week-dot ${i<thisWeek.length?'':'empty'}"></span>`).join('')}
+      <span style="font-size:15px;font-weight:800;margin-left:2px">${thisWeek.length} session${thisWeek.length===1?'':'s'}</span>
+      <span class="text-xs-muted">${split} · goal 2–3×/week · last week: ${lastWeek.length}</span>
+    </div>
+  </div>`;
+
+  if(_rehabNewPlan){
+    sc.innerHTML=planBar+rehabNewPlanHTML();
+    el.innerHTML='';
+    return;
+  }
+
+  const cfg=_rehabPlanCfg?`<div class="rehab-log-form" style="margin-top:10px">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Plan name</div>
+      <input type="text" id="rehab-plan-name" value="${esc(plan.name)}" style="font-size:14px;padding:6px;width:100%;margin-bottom:8px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button onclick="rehabTogglePlanStatus()" style="font-size:13px;padding:6px 10px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer">${plan.status==='done'?'↺ Make active again':'✓ Mark finished'}</button>
+        ${planId!=='main'?`<button onclick="deleteRehabPlan()" style="font-size:13px;padding:6px 10px;background:none;border:1px solid #fecaca;color:#dc2626;border-radius:var(--radius-sm);cursor:pointer">🗑 Delete plan</button>`:''}
+        <div style="flex:1"></div>
+        <button onclick="_rehabPlanCfg=false;renderRehab()" style="font-size:13px;padding:6px 10px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);cursor:pointer">Close</button>
+        <button class="btn-rehab" onclick="saveRehabPlanName()" style="font-size:13px;padding:6px 12px;border:none;border-radius:var(--radius-sm);font-weight:700;cursor:pointer">Save name</button>
+      </div>
+    </div>`:'';
+
+  sc.innerHTML=planBar+`<div class="card" style="margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:18px;font-weight:800">${esc(plan.name)}${plan.status==='done'?' <span style="font-size:11px;font-weight:700;color:var(--muted);background:var(--surface2);border-radius:10px;padding:2px 8px;vertical-align:middle">FINISHED</span>':''}</div>
+        <div class="text-xs-muted">${sessions.length} session${sessions.length===1?'':'s'} logged · ${prog.phases.length} phase${prog.phases.length===1?'':'s'}</div>
+      </div>
+      <button onclick="_rehabPlanCfg=!_rehabPlanCfg;renderRehab()" aria-label="Plan settings" style="font-size:16px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 9px;cursor:pointer">⚙️</button>
+    </div>
+    ${cfg}
+    <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">Start date</div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <input type="date" id="rehab-start-input" value="${programStart}"
         style="font-size:14px;flex:1;min-width:140px"
@@ -8055,105 +8185,110 @@ function renderRehab(){
       ${programStart?`<span class="text-xs-muted">Phase dates auto-calculated from this date</span>`
         :`<span style="font-size:12px;color:var(--muted2);font-style:italic">Set to auto-calculate all phase dates</span>`}
     </div>
+    <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">📝 Notes</div>
+    <textarea id="rehab-note" rows="2" placeholder="Your notes for this plan — e.g. what the physio said" style="width:100%;font-size:14px" onchange="saveRehabNote(this.value)">${esc(prog.note||'')}</textarea>
   </div>
-  <div class="card" style="margin-bottom:12px">
-    <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">This Week</div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      ${Array.from({length:goalDots},(_,i)=>`<span class="rehab-week-dot ${i<thisWeek.length?'':'empty'}"></span>`).join('')}
-      <span style="font-size:15px;font-weight:800;margin-left:2px">${thisWeek.length} session${thisWeek.length===1?'':'s'}</span>
-      <span class="text-xs-muted">· goal 2–3×/week · last week: ${lastWeek.length}</span>
-    </div>
-  </div>`;
+  ${weekCard}`;
 
-  el.innerHTML=REHAB_PHASES.map((p,pi)=>{
-    const phaseOverride=(data.phaseStarts||{})[pi]||'';
-    const weights=(data.weights||{})[pi]||{};
-    const phSessions=sessions.filter(s=>s.phase===pi).slice().sort((a,b)=>((b.date||'').localeCompare(a.date||''))||(b.id-a.id));
+  const ids=prog.phases.map(p=>p.id);
+  const orphans=sessions.filter(s=>!ids.includes(_rsPhaseId(s))).sort((a,b)=>((b.date||'').localeCompare(a.date||''))||(b.id-a.id));
+  const myEdit=_rehabEdit&&_rehabEdit.planId===planId?_rehabEdit:null;
+  const newEd=myEdit&&myEdit.isNew?`<div class="card">${rehabPhaseEditorHTML()}</div>`:'';
+  const myLog=_rehabLog&&_rehabLog.planId===planId?_rehabLog:null;
 
-    // Date display
-    let dateStr=p.dates;
-    const range=rehabDateRange(pi,programStart,phaseOverride||null);
-    if(range){
-      dateStr=fmtRehabDate(range.start)+' – '+fmtRehabDate(range.end);
-    }
-
-    const formOpen=_rehabLog&&_rehabLog.pi===pi;
-    const editSess=formOpen&&_rehabLog.editId?phSessions.find(s=>String(s.id)===String(_rehabLog.editId)):null;
-    // Weight prefill: editing session → last logged session → phase default → protocol default
-    const prefW=ei=>{
-      if(editSess&&editSess.weights&&editSess.weights[ei]!==undefined)return editSess.weights[ei];
-      if(!editSess&&phSessions.length&&phSessions[0].weights&&phSessions[0].weights[ei]!==undefined)return phSessions[0].weights[ei];
-      if(weights[ei]!==undefined)return weights[ei];
-      const e=p.exercises[ei];return e.weight==='bw'?0:e.weight;
+  el.innerHTML=prog.phases.map((p,pi)=>{
+    const phaseOverride=_rehabPhaseOverride(C,p);
+    const phSessions=sessions.filter(s=>_rsPhaseId(s)===p.id).slice().sort((a,b)=>((b.date||'').localeCompare(a.date||''))||(b.id-a.id));
+    const range=rehabDateRange(prog,pi,programStart,phaseOverride||null);
+    const dateStr=range?fmtRehabDate(range.start)+' – '+fmtRehabDate(range.end):'Set a start date above';
+    const formOpen=myLog&&myLog.phaseId===p.id;
+    const editing=myEdit&&!myEdit.isNew&&myEdit.pi===pi;
+    const editSess=formOpen&&myLog.editId?phSessions.find(s=>String(s.id)===String(myLog.editId)):null;
+    // Weight prefill: editing session → last logged session (same exercise) → the exercise's default
+    const prefW=x=>{
+      if(editSess){const it=_rsItems(editSess).find(i=>i.id===x.id);if(it&&it.weight!==undefined)return it.weight;}
+      if(!editSess)for(const s of phSessions){const it=_rsItems(s).find(i=>i.id===x.id||i.name===x.name);if(it&&it.weight!==undefined)return it.weight;}
+      const e=p.exercises.find(e=>e.id===x.id);return e?(e.weight||0):0;
     };
-
-    return `<div class="card">
-      <div class="phase-header" onclick="togglePhase(${pi})">
-        <div>
-          <div class="phase-title">${p.phase}${phSessions.length?` <span style="font-size:12px;font-weight:700;color:var(--rehab);background:var(--rehab-dim);border-radius:10px;padding:1px 8px;vertical-align:middle">${phSessions.length} ✓</span>`:''}</div>
-          <div class="phase-dates">${dateStr} · ${p.freq}${p.note?' · '+p.note:''}</div>
-        </div>
-        <span class="phase-chevron" id="chev-${pi}">▾</span>
-      </div>
-      <div class="phase-body" id="phase-body-${pi}">
-        <div class="divider" style="margin:10px 0 10px"></div>
+    const wks=parseFloat(p.weeks)||1;
+    const body=editing?rehabPhaseEditorHTML():`
+        ${p.note?`<div style="font-size:13px;margin-bottom:10px;white-space:pre-wrap">${esc(p.note)}</div>`:''}
         <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Phase start date</div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <input type="date" value="${phaseOverride}" placeholder="Override…"
             style="font-size:13px;flex:1;min-width:130px"
             onchange="saveRehabPhaseStart(${pi},this.value)">
           ${phaseOverride?`<button onclick="saveRehabPhaseStart(${pi},'')" style="font-size:12px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);cursor:pointer">Reset</button>`:''}
-          <span style="font-size:11px;color:var(--muted2);font-style:italic">${phaseOverride?'Custom date':'Uses program start'}${!programStart&&!phaseOverride?' · set above':''}</span>
+          <span style="font-size:11px;color:var(--muted2);font-style:italic">${phaseOverride?'Custom date':'Uses plan start'}${!programStart&&!phaseOverride?' · set above':''}</span>
         </div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:8px;display:grid;grid-template-columns:1fr 30px 30px 96px 44px;gap:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">
           <span>Exercise</span><span>Sets</span><span>Reps</span><span>Weight</span><span>Int</span>
         </div>
-        ${p.exercises.map((e,ei)=>{
-          const isBodyweight=e.weight==='bw';
-          const defaultW=isBodyweight?0:e.weight;
-          const savedW=weights[ei]!==undefined?weights[ei]:defaultW;
-          return `<div class="rehab-ex-row">
-            <span class="rehab-ex-name">${e.name}</span>
-            <span>${e.sets}</span><span>${e.reps}</span>
+        ${p.exercises.map((e,ei)=>`<div class="rehab-ex-row">
+            <span class="rehab-ex-name">${esc(e.name)}${e.tempo||e.restSet?`<div class="text-xxs-muted" style="font-weight:500">${[e.tempo?'tempo '+esc(String(e.tempo)):'',e.restSet?'rest '+esc(String(e.restSet)):''].filter(Boolean).join(' · ')}</div>`:''}</span>
+            <span>${esc(String(e.sets??''))}</span><span>${esc(String(e.reps??''))}</span>
             <span style="display:flex;align-items:center;gap:3px;min-width:0">
-              ${isBodyweight?`<span class="text-xxs-muted">bw+</span>`:''}
-              <input type="text" inputmode="decimal" value="${savedW}"
+              ${e.bw?`<span class="text-xxs-muted">bw+</span>`:''}
+              <input type="text" inputmode="decimal" value="${esc(String(e.weight??0))}"
                 style="flex:1;width:100%;min-width:0;font-size:15px;font-weight:700;padding:6px 6px;text-align:right"
                 onfocus="this.select()"
                 onchange="saveRehabWeight(${pi},${ei},this.value)">
             </span>
-            <span style="color:var(--yellow)">${e.intensity}</span>
-          </div>`;
-        }).join('')}
+            <span style="color:var(--yellow)">${esc(String(e.intensity??''))}</span>
+          </div>`).join('')||'<div class="text-xs-muted" style="padding:4px 0">No exercises yet — tap ✏️ Edit phase.</div>'}
+        ${formOpen?'':`<button onclick="openRehabPhaseEditor(${pi})" style="margin-top:8px;font-size:12px;padding:5px 10px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);cursor:pointer">✏️ Edit phase</button>`}
         <div class="divider" style="margin:12px 0 10px"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px">
           <div style="font-size:12px;font-weight:600;color:var(--muted)">SESSIONS${phSessions.length?' · '+phSessions.length:''}</div>
-          ${formOpen?'':`<button class="btn-rehab" style="font-size:13px;padding:6px 12px;border:none;border-radius:var(--radius-sm);font-weight:700;cursor:pointer" onclick="openRehabLog(${pi})">➕ Log session</button>`}
+          ${formOpen||!p.exercises.length?'':`<button class="btn-rehab" style="font-size:13px;padding:6px 12px;border:none;border-radius:var(--radius-sm);font-weight:700;cursor:pointer" onclick="openRehabLog(${pi})">➕ Log session</button>`}
         </div>
         ${formOpen?rehabLogFormHTML(p,pi,editSess,prefW):''}
-        ${phSessions.map(s=>rehabSessRowHTML(p,pi,s)).join('')||(formOpen?'':`<div class="text-xs-muted" style="padding:4px 0">No sessions logged yet</div>`)}
+        ${phSessions.map(s=>rehabSessRowHTML(pi,s,true)).join('')||(formOpen?'':`<div class="text-xs-muted" style="padding:4px 0">No sessions logged yet</div>`)}`;
+
+    return `<div class="card">
+      <div class="phase-header" onclick="togglePhase(${pi})">
+        <div>
+          <div class="phase-title">${esc(p.name)}${phSessions.length?` <span style="font-size:12px;font-weight:700;color:var(--rehab);background:var(--rehab-dim);border-radius:10px;padding:1px 8px;vertical-align:middle">${phSessions.length} ✓</span>`:''}</div>
+          <div class="phase-dates">${dateStr} · ${wks} week${wks===1?'':'s'}${p.freq?' · '+esc(p.freq):''}</div>
+        </div>
+        <span class="phase-chevron" id="chev-${pi}">▾</span>
+      </div>
+      <div class="phase-body" id="phase-body-${pi}">
+        <div class="divider" style="margin:10px 0 10px"></div>
+        ${body}
       </div>
     </div>`;
-  }).join('')+renderRehabArchive(data.archive);
-  if(_rehabLog)_rehabKeepOpen(_rehabLog.pi);
+  }).join('')+newEd
+  +(myEdit?'':`<button class="btn btn-ghost btn-block" style="margin-bottom:12px" onclick="addRehabPhase()">＋ Add phase</button>`)
+  +(orphans.length?`<div class="card">
+      <div class="phase-header" onclick="togglePhase('orph')">
+        <div><div class="phase-title">📁 Sessions from removed phases</div><div class="phase-dates">${orphans.length} session${orphans.length>1?'s':''} · kept for your history</div></div>
+        <span class="phase-chevron" id="chev-orph">▾</span>
+      </div>
+      <div class="phase-body" id="phase-body-orph"><div class="divider" style="margin:10px 0 6px"></div>${orphans.map(s=>rehabSessRowHTML('orph',s,false)).join('')}</div>
+    </div>`:'')
+  +(planId==='main'?renderRehabArchive(data.archive):'');
+  if(myLog){const i=_rehabPhaseIndex(prog,myLog.phaseId);if(i>=0)_rehabKeepOpen(i);}
+  if(myEdit&&!myEdit.isNew)_rehabKeepOpen(myEdit.pi);
 }
 
 function rehabLogFormHTML(p,pi,editSess,prefW){
   const st=_rehabLog;
+  const list=_rehabFormList(p,editSess);
   return `<div class="rehab-log-form">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
       <label style="font-size:12px;font-weight:700">Date</label>
       <input type="date" id="rl-date" value="${st.date}" style="font-size:13px;flex:1;min-width:130px" onchange="_rehabLogField('date',this.value)">
     </div>
-    ${p.exercises.map((e,ei)=>`<div class="rehab-log-row">
-      <div class="rehab-ex-done ${st.done[ei]?'done':''}" onclick="toggleRehabExDone(${ei},this)">✓</div>
+    ${list.map((x,i)=>`<div class="rehab-log-row">
+      <div class="rehab-ex-done ${st.done[x.id]?'done':''}" onclick="toggleRehabExDone('${x.id}',this)">✓</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700">${e.name}</div>
-        <div class="text-xxs-muted">${e.sets}×${e.reps} · ${e.intensity}</div>
+        <div style="font-weight:700">${esc(x.name)}</div>
+        <div class="text-xxs-muted">${x.sets!=null?`${esc(String(x.sets))}×${esc(String(x.reps??''))}${x.intensity?' · '+esc(String(x.intensity)):''}`:'no longer in this phase'}</div>
       </div>
-      ${e.weight==='bw'?'<span class="text-xxs-muted">bw+</span>':''}
-      <input type="text" inputmode="decimal" id="rlw-${ei}" value="${esc(String(st.weights&&st.weights[ei]!==undefined?st.weights[ei]:prefW(ei)))}"
-        style="width:64px;font-size:15px;font-weight:700;padding:6px;text-align:right" onfocus="this.select()" oninput="_rehabLogW(${ei},this.value)"><span class="text-xxs-muted">kg</span>
+      ${x.bw?'<span class="text-xxs-muted">bw+</span>':''}
+      <input type="text" inputmode="decimal" id="rlw-${i}" value="${esc(String(st.weights&&st.weights[x.id]!==undefined?st.weights[x.id]:prefW(x)))}"
+        style="width:64px;font-size:15px;font-weight:700;padding:6px;text-align:right" onfocus="this.select()" oninput="_rehabLogW('${x.id}',this.value)"><span class="text-xxs-muted">kg</span>
     </div>`).join('')}
     <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
       <label style="font-size:12px;font-weight:700">RPE</label>
@@ -8165,22 +8300,53 @@ function rehabLogFormHTML(p,pi,editSess,prefW){
   </div>`;
 }
 
-function rehabSessRowHTML(p,pi,s){
-  const doneCnt=p.exercises.filter((e,ei)=>s.done&&s.done[ei]).length;
+function rehabSessRowHTML(pi,s,canEdit){
+  const items=_rsItems(s);
+  const doneCnt=items.filter(i=>i.done).length;
   const dt=s.date?fmtRehabDate(new Date(s.date+'T12:00:00')):'—';
-  const chips=p.exercises.map((e,ei)=>{
-    const w=s.weights&&s.weights[ei]!==undefined?s.weights[ei]:'–';
-    const short=esc(e.name.split('(')[0].trim());
-    return `<span style="white-space:nowrap">${s.done&&s.done[ei]?'✅':'⬜'} ${short} ${e.weight==='bw'?'bw+':''}${w}kg</span>`;
+  const chips=items.map(it=>{
+    const w=it.weight!==undefined&&it.weight!==''?it.weight:'–';
+    const short=esc(String(it.name||'').split('(')[0].trim());
+    return `<span style="white-space:nowrap">${it.done?'✅':'⬜'} ${short} ${it.bw?'bw+':''}${esc(String(w))}kg</span>`;
   }).join(' · ');
   return `<div class="rehab-sess-row">
     <div style="flex:1;min-width:0">
-      <div style="font-weight:800">${dt} <span style="font-weight:600;color:var(--muted)">· ${doneCnt}/${p.exercises.length} done${s.rpe?' · RPE '+esc(String(s.rpe)):''}</span></div>
+      <div style="font-weight:800">${dt} <span style="font-weight:600;color:var(--muted)">· ${doneCnt}/${items.length} done${s.rpe?' · RPE '+esc(String(s.rpe)):''}${!canEdit&&s.phaseName?' · '+esc(s.phaseName):''}</span></div>
       <div class="text-xxs-muted" style="margin-top:2px">${chips}</div>
     </div>
-    <button onclick="openRehabLog(${pi},'${s.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px" aria-label="Edit session">✏️</button>
-    <button onclick="deleteRehabSession(${pi},'${s.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px" aria-label="Delete session">🗑</button>
+    ${canEdit?`<button onclick="openRehabLog(${pi},'${s.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px" aria-label="Edit session">✏️</button>`:''}
+    <button onclick="deleteRehabSession('${pi}','${s.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:2px" aria-label="Delete session">🗑</button>
   </div>`;
+}
+
+// ── New plan form ──
+function rehabNewPlanHTML(){
+  const N=_rehabNewPlan;
+  const src=_rehabGymSources();
+  const sel=src.find(s=>String(s.id)===String(N.gymId))||null;
+  const exs=_rehabGymExercises(sel);
+  const fd=d=>d?fmtRehabDate(new Date(d+'T12:00:00')):'';
+  const inp='font-size:14px;padding:6px;width:100%;min-width:0';
+  const lbl='font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase';
+  return `<div class="card"><div class="rehab-log-form" style="margin-top:0">
+    <div style="font-weight:800;margin-bottom:8px">＋ New treatment plan</div>
+    <div style="${lbl}">Name</div>
+    <input id="rnp-name" type="text" value="${esc(N.name)}" placeholder="e.g. Lower back" style="${inp};margin-bottom:8px" oninput="_rehabNewPlan.name=this.value">
+    <div style="${lbl}">Start date</div>
+    <input id="rnp-start" type="date" value="${esc(N.start)}" style="${inp};margin-bottom:10px" onchange="_rehabNewPlan.start=this.value">
+    <div style="${lbl};margin-bottom:4px">Start with</div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:6px;cursor:pointer;text-transform:none;letter-spacing:normal;font-weight:500;color:var(--text)"><input type="radio" name="rnp-src" style="width:auto;margin:0" ${N.src==='empty'?'checked':''} onchange="_rehabNewPlan.src='empty';renderRehab()"> An empty phase — I'll add the exercises</label>
+    <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:6px;cursor:pointer;text-transform:none;letter-spacing:normal;font-weight:500;color:var(--text);${src.length?'':'opacity:.5'}"><input type="radio" name="rnp-src" style="width:auto;margin:0" ${N.src==='gym'?'checked':''} ${src.length?'':'disabled'} onchange="_rehabNewPlan.src='gym';renderRehab()"> Exercises from a Gym session</label>
+    ${N.src==='gym'&&src.length?`<select id="rnp-gym" style="${inp};margin:2px 0 6px" onchange="_rehabNewPlan.gymId=this.value;renderRehab()">
+        ${src.map(s=>`<option value="${esc(String(s.id))}" ${String(s.id)===String(N.gymId)?'selected':''}>${fd(s.date)} · ${_rehabGymExercises(s).length} exercises${_isRehabGym(s)?' · rehab':''}</option>`).join('')}
+      </select>
+      <div class="text-xs-muted" style="margin-bottom:8px">Copies: ${exs.map(e=>esc(e.name)).join(', ')||'—'}<br>The Gym session itself stays in Gym.</div>`
+      :(!src.length?'<div class="text-xs-muted" style="margin-bottom:8px">No Gym sessions with Rehab exercises found.</div>':'')}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+      <button onclick="_rehabNewPlan=null;renderRehab()" style="font-size:13px;padding:7px 12px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);cursor:pointer">Cancel</button>
+      <button class="btn-rehab" onclick="createRehabPlan()" style="font-size:13px;padding:7px 14px;border:none;border-radius:var(--radius-sm);font-weight:700;cursor:pointer">Create plan</button>
+    </div>
+  </div></div>`;
 }
 
 function renderRehabArchive(a){
@@ -8213,23 +8379,85 @@ function renderRehabArchive(a){
   </div>`;
 }
 
-function openRehabLog(pi,editId){
+// ── Plan actions ──
+function rehabSelectPlan(id){_rehabSel=id;try{localStorage.setItem('_rehab_plan',id);}catch(e){}_rehabEdit=null;_rehabNewPlan=null;_rehabPlanCfg=false;renderRehab();}
+function openRehabNewPlan(){
+  const src=_rehabGymSources();
+  _rehabNewPlan={name:'',start:today(),src:src.length?'gym':'empty',gymId:src.length?String(src[0].id):''};
+  if(src.length&&src[0].date)_rehabNewPlan.start=src[0].date;
+  _rehabPlanCfg=false;renderRehab();
+  requestAnimationFrame(()=>{const n=document.getElementById('rnp-name');if(n)n.focus();});
+}
+function createRehabPlan(){
+  const N=_rehabNewPlan;if(!N)return;
+  const name=String(N.name||'').trim();
+  if(!name){toast('Give the plan a name');return;}
   const data=_rehabMigrate();
+  if(_rehabPlans(data).some(p=>p.name.toLowerCase()===name.toLowerCase())){toast('You already have a plan with that name');return;}
+  let exercises=[];
+  if(N.src==='gym'){
+    const s=_rehabGymSources().find(x=>String(x.id)===String(N.gymId));
+    exercises=_rehabGymExercises(s).map(e=>{const sets=String(e.sets??'').trim(),reps=String(e.reps??'').trim();
+      return {id:_rid(),name:e.name,sets:/^\d+$/.test(sets)?parseInt(sets):sets,reps:/^\d+$/.test(reps)?parseInt(reps):reps,
+        tempo:'',restSet:e.rest||'',restEx:'',bw:false,weight:parseFloat(_normalizeKgInput(String(e.weight??'')))||0,
+        intensity:e.intensity?String(e.intensity).replace(/%?$/,'%'):''};});
+  }
+  const plan={id:_rid(),name,status:'active',startDate:N.start||today(),phaseStarts:{},createdAt:today(),
+    program:{note:'',phases:[{id:_rid(),name:'Phase 1',weeks:4,freq:'2–3×/week',note:'',exercises}]}};
+  if(!data.plans)data.plans=[];
+  data.plans.push(plan);
+  DB.saveRehab(data);
+  _rehabNewPlan=null;
+  rehabSelectPlan(plan.id);
+  _rehabKeepOpen(0);
+  toast(`Plan "${name}" created`+(exercises.length?` · ${exercises.length} exercises`:''));
+}
+function saveRehabPlanName(){
+  const v=String((document.getElementById('rehab-plan-name')||{}).value||'').trim();
+  if(!v){toast('Give the plan a name');return;}
+  const data=_rehabMigrate();const id=_rehabCurPlanId(data);
+  if(_rehabPlans(data).some(p=>p.id!==id&&p.name.toLowerCase()===v.toLowerCase())){toast('You already have a plan with that name');return;}
+  if(id==='main')data.planName=v;else _rehabPlanC(data,id).name=v;
+  DB.saveRehab(data);_rehabPlanCfg=false;renderRehab();toast('Plan renamed');
+}
+function rehabTogglePlanStatus(){
+  const data=_rehabMigrate();const id=_rehabCurPlanId(data);
+  const P=_rehabPlans(data).find(p=>p.id===id);const ns=P.status==='done'?'active':'done';
+  if(id==='main')data.planStatus=ns;else _rehabPlanC(data,id).status=ns;
+  DB.saveRehab(data);_rehabPlanCfg=false;renderRehab();toast(ns==='done'?'Plan marked finished':'Plan active again');
+}
+function deleteRehabPlan(){
+  const data=_rehabMigrate();const id=_rehabCurPlanId(data);if(id==='main')return;
+  const n=(data.sessions||[]).filter(s=>_rsPlanId(s)===id).length;
+  if(n){alert(`This plan has ${n} logged session${n>1?'s':''}.\n\nDelete those first, or mark the plan finished to keep them.`);return;}
+  const P=_rehabPlanC(data,id);
+  if(!confirm(`Delete the plan "${P.name}"?`))return;
+  const snapshot=JSON.parse(JSON.stringify(data));
+  data.plans=data.plans.filter(p=>p.id!==id);
+  DB.saveRehab(data);rehabSelectPlan('main');
+  pushUndo('Plan deleted',()=>{DB.saveRehab(snapshot);rehabSelectPlan(id);});
+}
+function _rehabCur(){const data=_rehabMigrate();const id=_rehabCurPlanId(data);return {data,id,C:_rehabPlanC(data,id)};}
+
+function openRehabLog(pi,editId){
+  const {data,id,C}=_rehabCur();
+  const ph=_rehabProgram(C).phases[pi];if(!ph)return;
   let done={},date=today();
   if(editId){
     const s=(data.sessions||[]).find(x=>String(x.id)===String(editId));
-    if(s){done={...(s.done||{})};date=s.date||today();}
+    if(s){_rsItems(s).forEach(it=>{if(it.done)done[it.id]=true;});date=s.date||today();}
   }
-  _rehabLog={pi,editId:editId||null,done,date,weights:{}};
+  if(_rehabEdit&&!_rehabEdit.isNew&&_rehabEdit.planId===id&&_rehabEdit.pi===pi)_rehabEdit=null;
+  _rehabLog={planId:id,phaseId:ph.id,editId:editId||null,done,date,weights:{}};
   _rehabSaveDraft();
   renderRehab();
   _rehabKeepOpen(pi);
 }
 
-function toggleRehabExDone(ei,el){
+function toggleRehabExDone(id,el){
   if(!_rehabLog)return;
-  _rehabLog.done[ei]=!_rehabLog.done[ei];
-  el.classList.toggle('done',!!_rehabLog.done[ei]);
+  _rehabLog.done[id]=!_rehabLog.done[id];
+  el.classList.toggle('done',!!_rehabLog.done[id]);
   _rehabSaveDraft();
 }
 
@@ -8241,22 +8469,26 @@ function cancelRehabLog(pi){
 }
 
 function saveRehabLogSession(pi){
-  const st=_rehabLog;if(!st||st.pi!==pi)return;
+  const st=_rehabLog;if(!st)return;
   const data=_rehabMigrate();
-  const p=REHAB_PHASES[pi];
+  const C=_rehabPlanC(data,st.planId);if(!C)return;
+  const ph=_rehabProgram(C).phases[pi];if(!ph||ph.id!==st.phaseId)return;
+  const editSess=st.editId?(data.sessions||[]).find(x=>String(x.id)===String(st.editId)):null;
+  const list=_rehabFormList(ph,editSess);
   const date=(document.getElementById('rl-date')||{}).value||today();
-  const weights={};
-  p.exercises.forEach((e,ei)=>{
-    const inp=document.getElementById('rlw-'+ei);
-    weights[ei]=parseFloat(_normalizeKgInput(inp?inp.value:''))||0;
+  const items=list.map((x,i)=>{
+    const inp=document.getElementById('rlw-'+i);
+    return {id:x.id,name:x.name,bw:!!x.bw,done:!!st.done[x.id],weight:parseFloat(_normalizeKgInput(inp?inp.value:''))||0};
   });
   const rpe=_normalizeKgInput((document.getElementById('rl-rpe')||{}).value||'');
   if(!data.sessions)data.sessions=[];
-  if(st.editId){
-    const s=data.sessions.find(x=>String(x.id)===String(st.editId));
-    if(s){s.date=date;s.done={...st.done};s.weights=weights;s.rpe=rpe;}
+  if(editSess){
+    editSess.date=date;editSess.items=items;editSess.rpe=rpe;
+    if(!editSess.phaseId)editSess.phaseId=ph.id;
+    if(!editSess.planId)editSess.planId=st.planId;
+    editSess.phaseName=ph.name;delete editSess.done;delete editSess.weights;
   }else{
-    data.sessions.unshift({id:Date.now(),date,phase:pi,done:{...st.done},weights,rpe});
+    data.sessions.unshift({id:Date.now(),date,planId:st.planId,phaseId:ph.id,phaseName:ph.name,items,rpe});
   }
   _rehabLog=null;
   _rehabSaveDraft();
@@ -8280,32 +8512,140 @@ function deleteRehabSession(pi,id){
 }
 
 function saveRehabStartDate(val){
-  const data=DB.rehabData();
-  data.startDate=val;
+  const {data,C}=_rehabCur();
+  C.startDate=val;
   DB.saveRehab(data);
   renderRehab();
 }
 
 function saveRehabPhaseStart(pi,val){
-  const data=DB.rehabData();
-  if(!data.phaseStarts)data.phaseStarts={};
-  data.phaseStarts[pi]=val;
+  const {data,C}=_rehabCur();
+  const ph=_rehabProgram(C).phases[pi];if(!ph)return;
+  if(!C.phaseStarts)C.phaseStarts={};
+  const m=/^p(\d+)$/.exec(ph.id);if(m)delete C.phaseStarts[m[1]]; // old index key
+  C.phaseStarts[ph.id]=val;
   DB.saveRehab(data);
   renderRehab();
-  requestAnimationFrame(()=>{
-    const b=document.getElementById('phase-body-'+pi);
-    if(b)b.classList.add('open');
-    const c=document.getElementById('chev-'+pi);
-    if(c)c.classList.add('open');
-  });
+  _rehabKeepOpen(pi);
 }
 
+// Default weight on the phase card → the programme's exercise weight
 function saveRehabWeight(pi,ei,val){
-  const data=DB.rehabData();
-  if(!data.weights)data.weights={};
-  if(!data.weights[pi])data.weights[pi]={};
-  data.weights[pi][ei]=parseFloat(_normalizeKgInput(val))||0;
+  const {data,C}=_rehabCur();
+  const prog=_rehabEnsureProgram(C);
+  const e=prog.phases[pi]&&prog.phases[pi].exercises[ei];if(!e)return;
+  e.weight=parseFloat(_normalizeKgInput(val))||0;
   DB.saveRehab(data);
+}
+
+function saveRehabNote(val){
+  const {data,C}=_rehabCur();
+  const prog=_rehabEnsureProgram(C);
+  prog.note=String(val||'').trim();
+  DB.saveRehab(data);
+}
+
+// ── Phase editor ──
+function openRehabPhaseEditor(pi){
+  const {id,C}=_rehabCur();const ph=_rehabProgram(C).phases[pi];if(!ph)return;
+  _rehabEdit={planId:id,pi,buf:JSON.parse(JSON.stringify(ph)),isNew:false};
+  renderRehab();
+}
+function addRehabPhase(){
+  const {id,C}=_rehabCur();const prog=_rehabProgram(C);
+  const last=prog.phases[prog.phases.length-1];
+  _rehabEdit={planId:id,pi:prog.phases.length,isNew:true,buf:{id:_rid(),name:'Phase '+(prog.phases.length+1),weeks:2,freq:last?last.freq:'2–3×/week',note:'',
+    exercises:last?last.exercises.map(e=>({...e,id:_rid()})):[]}};
+  renderRehab();
+  requestAnimationFrame(()=>{const n=document.getElementById('rpe-name');if(n){n.scrollIntoView({behavior:'smooth',block:'center'});}});
+}
+function _rehabEF(k,v){if(_rehabEdit)_rehabEdit.buf[k]=v;}
+function _rehabEEx(i,k,v){if(_rehabEdit&&_rehabEdit.buf.exercises[i])_rehabEdit.buf.exercises[i][k]=v;}
+function rehabEdAddEx(){if(!_rehabEdit)return;_rehabEdit.buf.exercises.push({id:_rid(),name:'',sets:3,reps:10,tempo:'',restSet:'',restEx:'',bw:false,weight:0,intensity:''});renderRehab();
+  requestAnimationFrame(()=>{const a=document.querySelectorAll('.rpe-exname');const l=a[a.length-1];if(l)l.focus();});}
+function rehabEdMoveEx(i,d){if(!_rehabEdit)return;const a=_rehabEdit.buf.exercises;const j=i+d;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];renderRehab();}
+function rehabEdRemoveEx(i){if(!_rehabEdit)return;_rehabEdit.buf.exercises.splice(i,1);renderRehab();}
+function cancelRehabPhaseEdit(){const pi=_rehabEdit&&!_rehabEdit.isNew?_rehabEdit.pi:null;_rehabEdit=null;renderRehab();if(pi!=null)_rehabKeepOpen(pi);}
+function saveRehabPhaseEdit(){
+  const E=_rehabEdit;if(!E)return;
+  const b=E.buf;
+  b.name=String(b.name||'').trim();
+  if(!b.name){toast('Give the phase a name');return;}
+  const wk=parseFloat(_normalizeKgInput(String(b.weeks)));
+  if(!(wk>0)){toast('Weeks must be 1 or more');return;}
+  b.weeks=wk;b.freq=String(b.freq||'').trim();b.note=String(b.note||'').trim();
+  if(b.exercises.some(e=>!String(e.name||'').trim())){toast('Give every exercise a name (or ✕ remove it)');return;}
+  b.exercises.forEach(e=>{e.name=String(e.name).trim();e.weight=parseFloat(_normalizeKgInput(String(e.weight??'')))||0;e.bw=!!e.bw;
+    ['sets','reps'].forEach(k=>{const v=String(e[k]??'').trim();e[k]=/^\d+$/.test(v)?parseInt(v):v;});});
+  const data=_rehabMigrate();
+  const C=_rehabPlanC(data,E.planId);if(!C)return;
+  const prog=_rehabEnsureProgram(C);
+  if(E.isNew)prog.phases.push(b);else prog.phases[E.pi]=b;
+  DB.saveRehab(data);
+  const pi=E.isNew?prog.phases.length-1:E.pi;
+  _rehabEdit=null;renderRehab();_rehabKeepOpen(pi);
+  toast(E.isNew?'Phase added':'Phase saved');
+}
+function deleteRehabPhase(){
+  const E=_rehabEdit;if(!E||E.isNew)return;
+  const data=_rehabMigrate();
+  const C=_rehabPlanC(data,E.planId);if(!C)return;
+  const ph=_rehabProgram(C).phases[E.pi];if(!ph)return;
+  const mine=s=>_rsPlanId(s)===E.planId&&_rsPhaseId(s)===ph.id;
+  const n=(data.sessions||[]).filter(mine).length;
+  if(!confirm(`Delete the phase "${ph.name}"?`+(n?`\n\nIts ${n} logged session${n>1?'s are':' is'} kept under "Sessions from removed phases".`:'')))return;
+  const snapshot=JSON.parse(JSON.stringify(data));
+  const p2=_rehabEnsureProgram(C);
+  (data.sessions||[]).forEach(s=>{if(mine(s)&&!s.phaseName)s.phaseName=ph.name;});
+  p2.phases.splice(E.pi,1);
+  _rehabEdit=null;DB.saveRehab(data);renderRehab();
+  pushUndo('Phase deleted',()=>{DB.saveRehab(snapshot);renderRehab();});
+}
+function rehabPhaseEditorHTML(){
+  const E=_rehabEdit;const b=E.buf;
+  const inp='font-size:14px;padding:6px;width:100%;min-width:0';
+  const lbl='font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase';
+  const btn='background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);cursor:pointer;font-size:13px;padding:4px 8px';
+  return `<div class="rehab-log-form" style="margin-top:0">
+    <div style="font-weight:800;margin-bottom:8px">${E.isNew?'＋ New phase':'✏️ Edit phase'}</div>
+    <div style="${lbl}">Name</div>
+    <input id="rpe-name" type="text" value="${esc(b.name)}" style="${inp};margin-bottom:8px" oninput="_rehabEF('name',this.value)">
+    <div style="display:grid;grid-template-columns:80px 1fr;gap:8px;margin-bottom:8px">
+      <div><div style="${lbl}">Weeks</div><input type="text" inputmode="decimal" value="${esc(String(b.weeks))}" style="${inp}" oninput="_rehabEF('weeks',this.value)"></div>
+      <div><div style="${lbl}">How often</div><input type="text" value="${esc(b.freq||'')}" placeholder="e.g. 2–3×/week" style="${inp}" oninput="_rehabEF('freq',this.value)"></div>
+    </div>
+    <div style="${lbl}">Note</div>
+    <textarea rows="2" placeholder="Your note for this phase" style="${inp};margin-bottom:10px" oninput="_rehabEF('note',this.value)">${esc(b.note||'')}</textarea>
+    <div style="${lbl};margin-bottom:4px">Exercises · ${b.exercises.length}</div>
+    ${b.exercises.map((e,i)=>`<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;margin-bottom:8px;background:var(--surface)">
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
+        <input class="rpe-exname" type="text" value="${esc(e.name)}" placeholder="Exercise name" style="${inp};flex:1;font-weight:700" oninput="_rehabEEx(${i},'name',this.value)">
+        <button style="${btn}" aria-label="Move up" onclick="rehabEdMoveEx(${i},-1)" ${i===0?'disabled':''}>↑</button>
+        <button style="${btn}" aria-label="Move down" onclick="rehabEdMoveEx(${i},1)" ${i===b.exercises.length-1?'disabled':''}>↓</button>
+        <button style="${btn}" aria-label="Remove exercise" onclick="rehabEdRemoveEx(${i})">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+        <div><div style="${lbl}">Sets</div><input type="text" inputmode="numeric" value="${esc(String(e.sets??''))}" style="${inp}" oninput="_rehabEEx(${i},'sets',this.value)"></div>
+        <div><div style="${lbl}">Reps</div><input type="text" value="${esc(String(e.reps??''))}" style="${inp}" oninput="_rehabEEx(${i},'reps',this.value)"></div>
+        <div><div style="${lbl}">Int</div><input type="text" value="${esc(String(e.intensity??''))}" placeholder="70%" style="${inp}" oninput="_rehabEEx(${i},'intensity',this.value)"></div>
+        <div><div style="${lbl}">kg</div><input type="text" inputmode="decimal" value="${esc(String(e.weight??''))}" style="${inp}" oninput="_rehabEEx(${i},'weight',this.value)"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px">
+        <div><div style="${lbl}">Tempo</div><input type="text" value="${esc(String(e.tempo??''))}" style="${inp}" oninput="_rehabEEx(${i},'tempo',this.value)"></div>
+        <div><div style="${lbl}">Rest/set</div><input type="text" value="${esc(String(e.restSet??''))}" style="${inp}" oninput="_rehabEEx(${i},'restSet',this.value)"></div>
+        <div><div style="${lbl}">Rest/ex</div><input type="text" value="${esc(String(e.restEx??''))}" style="${inp}" oninput="_rehabEEx(${i},'restEx',this.value)"></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:6px;cursor:pointer;text-transform:none;letter-spacing:normal;font-weight:500;color:var(--text)"><input type="checkbox" style="width:auto;margin:0" ${e.bw?'checked':''} onchange="_rehabEEx(${i},'bw',this.checked)"> Bodyweight + extra kg</label>
+    </div>`).join('')}
+    <button style="${btn};width:100%;padding:8px;margin-bottom:10px" onclick="rehabEdAddEx()">＋ Add exercise</button>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      ${E.isNew?'':`<button style="${btn};color:#dc2626;border-color:#fecaca" onclick="deleteRehabPhase()">🗑 Delete phase</button>`}
+      <div style="flex:1"></div>
+      <button style="${btn};padding:7px 12px" onclick="cancelRehabPhaseEdit()">Cancel</button>
+      <button class="btn-rehab" style="font-size:13px;padding:7px 14px;border:none;border-radius:var(--radius-sm);font-weight:700;cursor:pointer" onclick="saveRehabPhaseEdit()">Save</button>
+    </div>
+    <div class="text-xxs-muted" style="margin-top:6px">Sessions you already logged keep the exercises they were logged with.</div>
+  </div>`;
 }
 
 function togglePhase(pi){
@@ -14628,8 +14968,8 @@ function monthReportStats(ym){
 
   // Rehab detail
   const rRpes=rehabLogged.map(r=>parseFloat(r.rpe)).filter(v=>v>0);
-  const phases=[...new Set(rehabLogged.filter(r=>r.phase!=null).map(r=>r.phase))].sort((a,b)=>a-b)
-    .map(pi=>(REHAB_PHASES[pi]&&REHAB_PHASES[pi].phase)||('Phase '+(pi+1)));
+  const _rd=DB.rehabData();
+  const phases=[...new Set(rehabLogged.map(r=>_rehabSessLabel(_rd,r)))];
 
   // Totals
   const dayList=Object.values(days);
