@@ -584,6 +584,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <button class="seg-btn" style="flex-shrink:0" data-mode="macro" onclick="gymMode('macro')">📅 Macro</button>
         <button class="seg-btn active" style="flex-shrink:0" data-mode="log" onclick="gymMode('log')">Log</button>
         <button class="seg-btn" style="flex-shrink:0" data-mode="build" onclick="gymMode('build')">Build</button>
+        <button class="seg-btn" style="flex-shrink:0" data-mode="sling" onclick="gymMode('sling')">🪢 Sling</button>
         <button class="seg-btn" style="flex-shrink:0" data-mode="history" onclick="gymMode('history')">History</button>
         <button class="seg-btn" style="flex-shrink:0" data-mode="progress" onclick="gymMode('progress')">📈</button>
         <button class="seg-btn" style="flex-shrink:0" data-mode="assess" onclick="gymMode('assess')">📋 Assess</button>
@@ -591,6 +592,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <button class="seg-btn" style="flex-shrink:0" data-mode="library" onclick="gymMode('library')">📚 Library</button>
       </div>
       <div id="gym-library" style="display:none"></div>
+      <div id="gym-sling" style="display:none"></div>
 
       <!-- LOG MODE -->
       <div id="gym-log">
@@ -1283,6 +1285,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
             <input id="ex-rest" style="color:var(--yellow)">
           </div>
         </div>
+        <div id="ex-sling-fields" style="display:none"></div>
+        <div id="ex-load-fields">
         <div class="form-row cols3">
           <div>
             <label>Intensity %</label>
@@ -1299,6 +1303,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         </div>
         <div id="ex-rir-preview" class="text-xs-muted" style="margin:-6px 0 8px">RIR = reps left in the tank (0 = failure). Fill it in to update your 1RM.</div>
         <div id="ex-suggest" class="suggest-box" style="display:none"></div>
+        </div>
       </div>
       <!-- CARDIO fields -->
       <div id="ex-cardio-fields" style="display:none">
@@ -1532,6 +1537,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <div class="form-group"><label>Sets</label><input type="number" inputmode="decimal" id="edit-hist-sets" min="1"></div>
         <div class="form-group"><label>Reps</label><input type="text" inputmode="numeric" pattern="[0-9'”\\s×x]*" id="edit-hist-reps" placeholder="e.g. 12" oninput="renderRirPreview('edit-hist')"></div>
       </div>
+      <div id="edit-hist-sling" style="display:none"></div>
+      <div id="edit-hist-load">
       <div class="form-row cols2">
         <div class="form-group"><label>Weight (kg)</label><input type="text" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*" id="edit-hist-weight" oninput="_normalizeKgInput(this.value)&&(this.value=_normalizeKgInput(this.value));renderRirPreview('edit-hist')"></div>
         <div class="form-group"><label>Intensity %</label><input type="number" inputmode="decimal" id="edit-hist-intensity" min="50" max="100" step="5" oninput="recalcEditWeight()"></div>
@@ -1539,6 +1546,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       <div class="form-group"><label>RIR <span class="text-xs-muted">— reps left in the tank (0 = failure)</span></label><input type="text" inputmode="decimal" id="edit-hist-rir" placeholder="0–5 · fill in to update your 1RM" oninput="renderRirPreview('edit-hist')"></div>
       <div id="edit-hist-rir-preview" class="text-xs-muted" style="margin:-6px 0 10px"></div>
       <div id="edit-hist-suggest" class="suggest-box" style="display:none;font-size:11px;padding:8px;background:rgba(21,128,61,.06);border-radius:6px;margin:-6px 0 10px;color:var(--muted)"></div>
+      </div>
       <div class="form-group"><label>Rest</label><input type="text" id="edit-hist-rest" placeholder="e.g. 2'"></div>
     </div>
     <div id="edit-hist-cardio">
@@ -1778,7 +1786,7 @@ const EXERCISES = [
   {name:"Feet-up Crunches",cat:"Core",equip:"bw",sets:3,reps:"15",rest:"1'"},
   {name:"Mountain Climber Plank",cat:"Core",equip:"bw",sets:3,reps:"20",rest:"1'"},
   {name:"One-Arm Elbow & Side Plank",cat:"Core",equip:"bw",sets:3,reps:"1×30''",rest:"1'"},
-  {name:"Sling Trainer \"Marine Core\"",cat:"Core",equip:"bw",sets:3,reps:"10",rest:"1'"},
+  {name:"Sling Trainer \"Marine Core\"",cat:"Sling",equip:"bw",sets:3,reps:"10",rest:"1'"}, // moved to Sling 2026-11-14
   {name:"Windshield Wipers",cat:"Core",equip:"bw",sets:3,reps:"12",rest:"1'"},
   {name:"Superman",cat:"Core",equip:"bw",sets:3,reps:"12",rest:"1'"},
   {name:"Reverse Plank",cat:"Core",equip:"bw",sets:3,reps:"1×30''",rest:"1'"},
@@ -1842,14 +1850,14 @@ const EXERCISES = [
   // ── Climbing Gym: Rotator Cuff & Scapular ──────────
   {name:"Dumbbell Internal Rotation",cat:"CG-Rotator",equip:"bw",sets:3,reps:"12",rest:"1'",level:"both"},
   {name:"Dumbbell External Rotation",cat:"CG-Rotator",equip:"bw",sets:3,reps:"12",rest:"1'",level:"both"},
-  {name:"Sling Trainer Ts",cat:"CG-Rotator",equip:"bw",sets:3,reps:"10",rest:"1'",level:"both"},
-  {name:"Sling Trainer Ys",cat:"CG-Rotator",equip:"bw",sets:3,reps:"10",rest:"1'",level:"both"},
+  {name:"Sling Trainer Ts",cat:"Sling",equip:"bw",sets:3,reps:"10",rest:"1'",level:"both"},
+  {name:"Sling Trainer Ys",cat:"Sling",equip:"bw",sets:3,reps:"10",rest:"1'",level:"both"},
   {name:"Scapular Push-ups",cat:"CG-Rotator",equip:"bw",sets:3,reps:"10",rest:"1'",level:"intermediate"},
   {name:"Scapular Pull-ups (Rotator)",cat:"CG-Rotator",equip:"bw",sets:3,reps:"10",rest:"1'",level:"intermediate"},
   {name:"Shrugs",cat:"CG-Rotator",equip:"bw",sets:3,reps:"12",rest:"1'",level:"both"},
   // ── Climbing Gym: Antagonist Push Muscles ──────────
   {name:"Tricep Pushdown",cat:"CG-Push",equip:"m",sets:3,reps:"12",rest:"1'",level:"intermediate"},
-  {name:"Sling Trainer Pec Flys",cat:"CG-Push",equip:"bw",sets:3,reps:"10",rest:"1'",level:"intermediate"},
+  {name:"Sling Trainer Pec Flys",cat:"Sling",equip:"bw",sets:3,reps:"10",rest:"1'",level:"intermediate"},
   {name:"Shoulder Press",cat:"CG-Push",equip:"bw",sets:3,reps:"10",rest:"1'30''",level:"both"},
   {name:"Bench Press",cat:"CG-Push",equip:"m",sets:3,reps:"8",rest:"2'",level:"both"},
   {name:"Dips",cat:"CG-Push",equip:"bw",sets:3,reps:"8",rest:"2'",level:"intermediate"},
@@ -1875,8 +1883,124 @@ const EXERCISES = [
   {name:"Bulgarian Split Squat (step)",cat:"Inferior Members",equip:"bw",sets:3,reps:"8",rest:"2'"},
   {name:"Copenhagen Plank (step)",cat:"Inferior Members",equip:"bw",sets:2,reps:"20''",rest:"1'"},
   {name:"Single-leg Calf Raise (step)",cat:"Inferior Members",equip:"bw",sets:3,reps:"12",rest:"1'"},
+  // ── Sling / TRX training (Jungle Sports workbook, 2026-11-14) — progress = Sling level 1–5, not kg ──
+  {name:"Sling Forward Plunge",cat:"Sling",equip:"bw",sets:2,reps:"15",rest:"30''"},
+  {name:"Sling Knee-press",cat:"Sling",equip:"bw",sets:2,reps:"15",rest:"30''"},
+  {name:"Sling Side Stretch",cat:"Sling",equip:"bw",sets:2,reps:"10",rest:"30''"},
+  {name:"Sling Inclined Push-up",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'30''"},
+  {name:"Sling Triceps Press",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'30''"},
+  {name:"Sling Superman",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'30''"},
+  {name:"Sling External Rotation",cat:"Sling",equip:"bw",sets:3,reps:"10",rest:"1'"},
+  {name:"Sling Reversed Pull-up",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'30''"},
+  {name:"Sling One-arm Lat Pull",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'"},
+  {name:"Sling Hammer Curl",cat:"Sling",equip:"bw",sets:3,reps:"8",rest:"1'"},
+  {name:"Sling Plank (feet in slings)",cat:"Sling",equip:"bw",sets:3,reps:"30''",rest:"1'"},
+  {name:"Sling Omega (pike)",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'30''"},
+  {name:"Sling Omega Side (knee tuck)",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'30''"},
+  {name:"Sling Bodysaw",cat:"Sling",equip:"bw",sets:3,reps:"8",rest:"1'30''"},
+  {name:"Sling Plank with a Twist",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'"},
+  {name:"Sling Supine Bridge",cat:"Sling",equip:"bw",sets:3,reps:"8",rest:"1'30''"},
+  {name:"Sling One-foot Back Stabilization",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'"},
+  {name:"Sling Hamstring Curl",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'30''"},
+  {name:"Sling Supine Hip Abduction",cat:"Sling",equip:"bw",sets:3,reps:"8",rest:"1'"},
+  {name:"Sling Side Plank Hip Abduction",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'"},
+  {name:"Sling Side Plank Hip Adduction",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'"},
+  {name:"Sling Squat",cat:"Sling",equip:"bw",sets:3,reps:"8",rest:"1'30''"},
+  {name:"Sling Backward Lunge",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'30''"},
+  {name:"Sling Bulgarian Split Squat",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'30''"},
+  {name:"Sling Push-up (feet on ball)",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"2'"},
+  {name:"Sling Inclined Press (pike push-up)",cat:"Sling",equip:"bw",sets:3,reps:"5",rest:"2'"},
+  {name:"Sling Dips",cat:"Sling",equip:"bw",sets:3,reps:"5",rest:"2'"},
+  {name:"Sling Side Plank with Rotation",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"1'30''"},
+  {name:"Sling Hanging Leg Raise",cat:"Sling",equip:"bw",sets:3,reps:"6",rest:"2'"},
+  {name:"Sling Quad Stretch",cat:"Sling",equip:"bw",sets:2,reps:"30''",rest:"-"},
+  {name:"Sling Hip Flexor Stretch",cat:"Sling",equip:"bw",sets:2,reps:"30''",rest:"-"},
+  {name:"Sling Piriformis Stretch",cat:"Sling",equip:"bw",sets:2,reps:"30''",rest:"-"},
+  {name:"Sling Hamstring Stretch",cat:"Sling",equip:"bw",sets:2,reps:"30''",rest:"-"},
+  {name:"Sling Lat Stretch",cat:"Sling",equip:"bw",sets:2,reps:"30''",rest:"-"},
+  {name:"Sling Chest Stretch",cat:"Sling",equip:"bw",sets:2,reps:"30''",rest:"-"},
+  {name:"Sling Upper Back Stretch",cat:"Sling",equip:"bw",sets:2,reps:"30''",rest:"-"},
   {name:"Stretching",cat:"Stretching",equip:"bw",sets:6,reps:"1×1'",rest:"30''"},
 ];
+
+// ══ SLING / TRX (2026-11-14, Jo chose C) ═══════════════════════════════════
+// Source: Jungle Sports sling workbook (Sling Training docs/). Sling work has no kg —
+// progress is a Sling level 1–5 (body angle + stability), stored as entry.slingLvl.
+const SLING_LEVELS=[
+  [1,'Easy','upright, feet planted, stable'],
+  [2,'Light','leaning a bit more'],
+  [3,'Medium','about 45° body angle'],
+  [4,'Hard','low angle / long lever'],
+  [5,'Max','lowest angle or unstable (1 leg, ball)'],
+];
+const SLING_POS=[
+  ['warmup','🔥 Warm-up','Easy moves to start the session'],
+  ['forward','➡️ Forward','Facing away from the anchor — push: chest, shoulders, triceps'],
+  ['backward','⬅️ Backward','Facing the anchor — pull: back, rear shoulders, biceps'],
+  ['plank','➖ Plank','Face down, feet in the slings — core'],
+  ['supine','🔼 Supine','On your back, feet in the slings — glutes, hamstrings, lower back'],
+  ['side','◢ Side plank','On your side, top leg in the sling — hips and obliques'],
+  ['legs','🦵 Legs','Standing — squat and lunges'],
+  ['heavy','💥 Heavy','Harder variations'],
+  ['stretch','🧘 Stretch','Stretches using the sling'],
+];
+const SLING_MODES={
+  warmup:{label:'Warm-up',sets:2,reps:'15',rest:"30''",hint:'2×15 · easy · level −1'},
+  strength:{label:'Strength',sets:3,reps:'6',rest:"1'30''",hint:'3×6 (4–6 reps) · heavy'},
+};
+// pos · how (workbook cue) · ms (main muscles) · side (per side) · hold (time-based, keeps its own reps)
+const SLING_INFO={
+  'Sling Forward Plunge':{pos:'warmup',how:'Hold the handles, step forward into a lunge — try the variations',ms:['quads','glutes'],side:true},
+  'Sling Knee-press':{pos:'warmup',how:'Hold the handles in front, sit back into a squat and press up',ms:['quads','glutes','lats']},
+  'Sling Side Stretch':{pos:'warmup',how:'Hold overhead, lean the hips out to the side',ms:['obliques','lats'],side:true},
+  'Sling Inclined Push-up':{pos:'forward',how:'Facing away, hands in the handles — push-up on a slope',ms:['pecs','triceps','delts']},
+  'Sling Trainer Pec Flys':{pos:'forward',how:'Workbook "Fly": arms open wide and back together',ms:['pecs','delts']},
+  'Sling Triceps Press':{pos:'forward',how:'Workbook "Triceps press / French curls": bend only at the elbows',ms:['triceps']},
+  'Sling Superman':{pos:'forward',how:'Arms straight, let them go overhead as the body leans forward',ms:['abs','lats','delts']},
+  'Sling Trainer Ts':{pos:'backward',how:'Workbook "Upper back": pull the arms out to a T',ms:['delts','traps']},
+  'Sling Trainer Ys':{pos:'backward',how:'Workbook "Y Flyes": pull the arms up into a Y',ms:['delts','traps']},
+  'Sling External Rotation':{pos:'backward',how:'Elbows at shoulder height, rotate the forearms up',ms:['delts','traps']},
+  'Sling Reversed Pull-up':{pos:'backward',how:'Lie under the slings, body straight, pull the chest up',ms:['lats','traps','biceps'],alias:['reverse pull up','reversed pull up','reverse pull-up','reverse pull ups','reversed pull ups']},
+  'Sling One-arm Lat Pull':{pos:'backward',how:'One hand, lean back and pull — keep the hips square',ms:['lats','obliques'],side:true},
+  'Sling Hammer Curl':{pos:'backward',how:'Thumbs up, curl the body towards the hands',ms:['biceps','forearms']},
+  'Sling Plank (feet in slings)':{pos:'plank',how:'Forearms on the mat, feet in the slings, body straight',ms:['abs'],hold:true},
+  'Sling Omega (pike)':{pos:'plank',how:'From plank, lift the hips up into a pike',ms:['abs','delts']},
+  'Sling Omega Side (knee tuck)':{pos:'plank',how:'From a push-up plank, pull the knees to the side',ms:['obliques','abs']},
+  'Sling Bodysaw':{pos:'plank',how:'Forearm plank, slide the body back and forward',ms:['abs','delts']},
+  'Sling Plank with a Twist':{pos:'plank',how:'Forearm plank, rotate open to one side',ms:['obliques','abs'],side:true},
+  'Sling Trainer "Marine Core"':{pos:'plank',how:'Feet in the slings — core move',ms:['abs','obliques']},
+  'Sling Supine Bridge':{pos:'supine',how:'On your back, heels in the slings, lift the hips',ms:['glutes','hamstrings','lowerback']},
+  'Sling One-foot Back Stabilization':{pos:'supine',how:'One foot in the sling, lift and hold the hips level',ms:['lowerback','glutes','hamstrings'],side:true},
+  'Sling Hamstring Curl':{pos:'supine',how:'Hips up, pull the heels towards you',ms:['hamstrings','glutes']},
+  'Sling Supine Hip Abduction':{pos:'supine',how:'On your back, legs in the slings, open them wide',ms:['glutes']},
+  'Sling Side Plank Hip Abduction':{pos:'side',how:'Side plank, top leg in the sling — lift the hip (can be done on the knee)',ms:['glutes','obliques'],side:true},
+  'Sling Side Plank Hip Adduction':{pos:'side',how:'Side plank, top leg in the sling — pull up with the inner thigh',ms:['quads','obliques'],side:true},
+  'Sling Squat':{pos:'legs',how:'Hold the handles — keep the hip, knee and toe in one line',ms:['quads','glutes']},
+  'Sling Backward Lunge':{pos:'legs',how:'Hold the handles, step back into a lunge',ms:['quads','glutes','hamstrings'],side:true},
+  'Sling Bulgarian Split Squat':{pos:'legs',how:'Workbook "Backward plunge with sling": back foot in the sling',ms:['quads','glutes'],side:true},
+  'Sling Push-up (feet on ball)':{pos:'heavy',how:'Hands in the slings, feet on a ball',ms:['pecs','triceps','abs']},
+  'Sling Inclined Press (pike push-up)':{pos:'heavy',how:'Feet in the slings, hips high, push-up head-down',ms:['delts','triceps']},
+  'Sling Dips':{pos:'heavy',how:'Hands in the handles at your sides, dip down',ms:['triceps','pecs']},
+  'Sling Side Plank with Rotation':{pos:'heavy',how:'Side plank, feet in the sling, rotate under and back',ms:['obliques','abs'],side:true},
+  'Sling Hanging Leg Raise':{pos:'heavy',how:'Hang from the slings, lift the legs',ms:['abs']},
+  'Sling Quad Stretch':{pos:'stretch',how:'Foot in the sling behind you, stand tall',ms:['quads'],side:true},
+  'Sling Hip Flexor Stretch':{pos:'stretch',how:'Back foot in the sling, sink into a lunge',ms:['quads'],side:true},
+  'Sling Piriformis Stretch':{pos:'stretch',how:'Ankle over the knee — standing or lying with the sling',ms:['glutes'],side:true},
+  'Sling Hamstring Stretch':{pos:'stretch',how:'Lying down, sling under the foot, pull the straight leg up',ms:['hamstrings'],side:true},
+  'Sling Lat Stretch':{pos:'stretch',how:'Hold the handles overhead, sink the hips back',ms:['lats'],side:true},
+  'Sling Chest Stretch':{pos:'stretch',how:'One arm out in the sling, turn the body away',ms:['pecs'],side:true},
+  'Sling Upper Back Stretch':{pos:'stretch',how:'Hold the handles, round the upper back (on a ball or standing)',ms:['traps']},
+};
+const _slingNorm=n=>String(n||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const _SLING_LC={};
+Object.entries(SLING_INFO).forEach(([n,i])=>{_SLING_LC[_slingNorm(n)]=n;(i.alias||[]).forEach(a=>_SLING_LC[_slingNorm(a)]=n);});
+// Info for a name, incl. Jo's own "Reverse pull up" (alias of Sling Reversed Pull-up)
+function _slingInfo(name){const k=_SLING_LC[_slingNorm(name)];return k?SLING_INFO[k]:null;}
+function _isSlingName(name){const lib=EXERCISES.find(x=>x.name===name);return (lib&&lib.cat==='Sling')||!!_slingInfo(name);}
+function _slingIsStretch(name){return (_slingInfo(name)||{}).pos==='stretch';}
+// Entries that carry a Sling level (sling + not a stretch)
+function _slingHasLvl(e){return !!e&&e.type!=='cardio'&&(e.cat==='Sling'||_isSlingName(e.name))&&!_slingIsStretch(e.name);}
+function _slingPill(e){return e&&e.slingLvl?`<span class="meta-pill weight">🪢 Lvl ${esc(String(e.slingLvl))}</span>`:'';}
 
 // Last known weights (from Jan 2026 session)
 const WEIGHT_REF = {
@@ -2276,7 +2400,7 @@ function restToSec(r){
 // e.perSide===true → sets are per side. Entries logged before this have no flag and
 // hold the TOTAL (e.g. Cable Anti-rotation 4×10 = 2 per side); they keep that meaning.
 const UNILATERAL_RE=/anti-?rotation|pallof|single[- ]?leg|bulgarian|split squat|copenhagen|one[- ]arm|1-arm|unilateral|clam|side plank|calf raise\)/i;
-function exDefaultPerSide(name){return !!name&&!/both/i.test(name)&&UNILATERAL_RE.test(name);}
+function exDefaultPerSide(name){if(name&&typeof _slingInfo==='function'&&_slingInfo(name))return !!_slingInfo(name).side;return !!name&&!/both/i.test(name)&&UNILATERAL_RE.test(name);}
 function isPerSide(e){return !!e&&e.perSide===true;}
 function _sideMult(e){return isPerSide(e)?2:1;}
 function _sideTag(e){return isPerSide(e)?' /side':'';}
@@ -2535,6 +2659,7 @@ const CUSTOM_EX_CATS=[
   {value:'Core',label:'Core'},
   {value:'Wrist',label:'Wrist'},
   {value:'Rehab',label:'Rehab'},
+  {value:'Sling',label:'Sling (TRX)'},
 ];
 
 // Rebuild the custom slice of EXERCISES from storage (mutates in place).
@@ -2549,6 +2674,10 @@ function syncCustomExercises(){
     if(o){['cat','equip','sets','reps','rest'].forEach(k=>{if(o[k]!==undefined&&o[k]!=='')e[k]=o[k]});if(Array.isArray(o.muscles))e.muscles=o.muscles;if(Array.isArray(o.muscles2))e.muscles2=o.muscles2;if(o.hidden)e.hidden=true;if(o.deleted){e.deleted=true;e.hidden=true;}e.edited=Object.keys(o).some(k=>k!=='hidden'&&k!=='deleted');}
   });
   DB.customExercises().forEach(e=>EXERCISES.push({...e,custom:true,...(e.deleted?{hidden:true}:{})}));
+  // Sling (2026-11-14): Jo's own "Reverse pull up" = the workbook's Reversed Pull-up → shown under Sling
+  // (in memory only; a cat she picks later herself is kept), and the built-in copy is hidden so it isn't listed twice.
+  EXERCISES.forEach(e=>{if(e.custom&&!e.deleted&&e.cat==='Superior – No Machine'&&_slingInfo(e.name))e.cat='Sling';});
+  EXERCISES.forEach(b=>{if(!b.custom&&SLING_INFO[b.name]&&EXERCISES.some(c=>c.custom&&!c.deleted&&c.name!==b.name&&_slingNorm(c.name)!==_slingNorm(b.name)&&_SLING_LC[_slingNorm(c.name)]===b.name))b.hidden=true;});
 }
 
 // ── Current gym macro phase helpers ──────────────────────────────────────────
@@ -2667,7 +2796,7 @@ let buildCats=[];
 let buildEquip='';
 
 function gymMode(mode){
-  ['log','build','history','progress','macro','assess','stretch','library'].forEach(m=>{
+  ['log','build','history','progress','macro','assess','stretch','library','sling'].forEach(m=>{
     const el=document.getElementById('gym-'+m);
     if(el)el.style.display=m===mode?'':'none';
   });
@@ -2700,6 +2829,7 @@ function gymMode(mode){
   if(mode==='assess')renderGymAssessments();
   if(mode==='stretch')renderStretchHistory();
   if(mode==='library')renderExLibrary();
+  if(mode==='sling')renderSlingMode();
 }
 
 function toggleBuildArea(el){
@@ -3007,7 +3137,7 @@ function loadPlanIntoLog(plan,intensity,phaseId){
     const _pct=ex.pct||intensity;
     const suggested=suggestWeightFull(ex.name,_pct);
     const suggestedWeight=(suggested&&suggested.weight!=null)?String(suggested.weight):(ex.weight||'');
-    return {
+    const _o={
       name:ex.name,cat:ex.cat,type:'strength',
       sets:phDef?phDef.sets:ex.sets,
       reps:phDef?phDef.reps:ex.reps,
@@ -3015,6 +3145,10 @@ function loadPlanIntoLog(plan,intensity,phaseId){
       perSide:ex.perSide!==undefined?!!ex.perSide:exDefaultPerSide(ex.name),
       intensity:_pct,weight:suggestedWeight,notes:ex.notes||'',...(ex.role?{role:ex.role}:{}),...(ex.ss?{ss:true}:{})
     };
+    // Sling work: no kg — carry the Sling level (template's, else last time's)
+    if(_isSlingName(ex.name)){_o.weight='';_o.intensity='';
+      if(!_slingIsStretch(ex.name)){const _l=ex.slingLvl||(_slingLast(ex.name)||{}).lvl;if(_l)_o.slingLvl=String(_l);}}
+    return _o;
   });
   gymMode('log');
   renderSessionExercises();
@@ -3246,7 +3380,7 @@ let exFilterArea='', exFilterEquip='';
 // Climbing Gym (CG) categories for the Climbing Gym tab.
 function _renderExAreaChips(context){
   const sets={
-    gym:[['','All'],['Warm-up','Warm-up'],['Inferior','Inferior'],['Superior','Superior'],['Core','Core'],['Wrist','Wrist'],['Rehab','Rehab']],
+    gym:[['','All'],['Warm-up','Warm-up'],['Inferior','Inferior'],['Superior','Superior'],['Core','Core'],['Wrist','Wrist'],['Rehab','Rehab'],['Sling','🪢 Sling']],
     fb:[['','All'],['CG-Fingers','🤌 Fingers'],['CG-Arms','💪 Arms'],['CG-Antagonist','🛡️ Antag.'],['CG-Rotator','🔄 Rotator'],['CG-Push','🏋️ Push'],['CG-Core','🧱 Core']]
   };
   const chips=sets[context]||sets.gym;
@@ -3271,7 +3405,7 @@ function setExChip(type, val, el){
 
 function filterExercises(){
   const sel=document.getElementById('ex-name');
-  const AREA_MAP={'Inferior':'Inferior Members','Superior':'Superior','Core':'Core','Wrist':'Wrist','Fingers':'Fingers','Warm-up':'Warm-up','Rehab':'Rehab','Fingerboard':'Fingerboard'};
+  const AREA_MAP={'Inferior':'Inferior Members','Superior':'Superior','Core':'Core','Wrist':'Wrist','Fingers':'Fingers','Warm-up':'Warm-up','Rehab':'Rehab','Fingerboard':'Fingerboard','Sling':'Sling'};
   const isFB=addExContext==='fb';
   const filtered=EXERCISES.filter(e=>{
     if(e.hidden)return false;
@@ -3303,6 +3437,7 @@ function onExerciseSelect(){
   document.getElementById('ex-autofill').style.display='block';
   _renderCustomExBadge(ex);
   const isCardio=!!ex.cardio;
+  _slingShowFields('ex','load');
   document.getElementById('ex-strength-fields').style.display=isCardio?'none':'block';
   document.getElementById('ex-cardio-fields').style.display=isCardio?'block':'none';
   if(isCardio){
@@ -3314,6 +3449,16 @@ function onExerciseSelect(){
     document.getElementById('ex-cardio-rpm').value='';
     document.getElementById('ex-dist-label').textContent=ex.distLabel||'Distance';
     document.getElementById('ex-rpm-label').textContent=ex.rpmLabel||'Avg RPM';
+  } else if(_isSlingName(name)){
+    // Sling (2026-11-14): Sling level instead of kg; sets/reps/rest from the library (Gym → Sling sets them per mode)
+    const _psEl=document.getElementById('ex-perside');if(_psEl)_psEl.checked=exDefaultPerSide(name);
+    document.getElementById('ex-sets').value=ex.sets;
+    document.getElementById('ex-reps').value=ex.reps;
+    document.getElementById('ex-rest').value=ex.rest;
+    document.getElementById('ex-suggest').style.display='none';
+    if(_slingIsStretch(name))_slingShowFields('ex','none');
+    else{const last=_slingLast(name);
+      _slingShowFields('ex','lvl',last?last.lvl:'',last?`Last time: Lvl ${last.lvl} · ${esc(String(last.sets))}×${esc(String(last.reps))} · ${fmtDate(last.date)}`:'First time — pick the level you used.');}
   } else {
     // Phase-aware sets / reps / rest — macro phase overrides the library default
     const phDef=currentPhaseExDefaults();
@@ -3821,6 +3966,177 @@ function calcSuggestedWeight(){
   box.innerHTML=`💡 <strong>${wStr}</strong> at ${intensityPct}%${ormStr}<br><span style="color:var(--muted);font-size:11px">${srcLabel}</span>`;
 }
 
+// ── Sling level: picker in Add Exercise + edit dialogs, history (2026-11-14) ──
+function _slingKey(name){return _SLING_LC[_slingNorm(name)]||name;}
+// {canonical name: [{date,lvl,sets,reps}]} oldest → newest, from saved gym sessions
+function _slingHistMap(){
+  const m={};
+  DB.gymSessions().slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||(Number(a.id)||0)-(Number(b.id)||0)).forEach(s=>{
+    (s.exercises||[]).forEach(e=>{
+      const l=parseInt(e&&e.slingLvl);if(!l)return;
+      const k=_slingKey(e.name);(m[k]=m[k]||[]).push({date:s.date,lvl:l,sets:e.sets,reps:e.reps,side:isPerSide(e)});
+    });
+  });
+  return m;
+}
+function _slingLast(name,map){const h=(map||_slingHistMap())[_slingKey(name)];return h&&h.length?h[h.length-1]:null;}
+function _slingLvlHint(v){
+  const L=SLING_LEVELS.find(x=>String(x[0])===String(v));
+  return L?`Level ${L[0]} · <b>${L[1]}</b> — ${L[2]}`:'1 = upright &amp; stable → 5 = low angle or unstable. Move up only when every rep is perfect.';
+}
+function slingLvlPickerHtml(prefix,cur,note){
+  cur=String(cur||'');
+  return `<div class="form-group" style="margin-bottom:8px">
+    <label>🪢 Sling level <span class="text-xs-muted">— instead of kg</span></label>
+    <input type="hidden" id="${prefix}-sling-lvl" value="${esc(cur)}">
+    <div style="display:flex;gap:6px">${SLING_LEVELS.map(([n])=>`<button type="button" class="ex-chip${String(n)===cur?' active':''}" style="flex:1;font-size:16px;padding:8px 0" data-lvl="${n}" aria-label="Level ${n}" onclick="pickSlingLvl('${prefix}',${n},this)">${n}</button>`).join('')}</div>
+    <div id="${prefix}-sling-hint" class="text-xs-muted" style="margin-top:5px">${_slingLvlHint(cur)}</div>
+    ${note?`<div class="text-xs-muted" style="margin-top:3px">${note}</div>`:''}
+  </div>`;
+}
+function pickSlingLvl(prefix,n,el){
+  const inp=document.getElementById(prefix+'-sling-lvl');if(!inp)return;
+  const v=inp.value===String(n)?'':String(n);inp.value=v;
+  el.parentNode.querySelectorAll('.ex-chip').forEach(b=>b.classList.toggle('active',b.dataset.lvl===v));
+  const h=document.getElementById(prefix+'-sling-hint');if(h)h.innerHTML=_slingLvlHint(v);
+}
+// mode: 'lvl' = level picker, no kg · 'none' = sling stretch (no level, no kg) · 'load' = normal kg fields
+function _slingShowFields(prefix,mode,cur,note){
+  const sf=document.getElementById(prefix==='ex'?'ex-sling-fields':'edit-hist-sling');
+  const lf=document.getElementById(prefix==='ex'?'ex-load-fields':'edit-hist-load');
+  if(sf){sf.style.display=mode==='lvl'?'':'none';sf.innerHTML=mode==='lvl'?slingLvlPickerHtml(prefix,cur,note):'';}
+  if(lf)lf.style.display=mode==='load'?'':'none';
+}
+function _slingFillEdit(e){
+  if(!e||e.type==='cardio')return _slingShowFields('edit-hist','load');
+  if(_slingHasLvl(e))return _slingShowFields('edit-hist','lvl',e.slingLvl||'');
+  if(e.cat==='Sling'||_isSlingName(e.name))return _slingShowFields('edit-hist','none');
+  _slingShowFields('edit-hist','load');
+}
+// Writes the load part of the edit dialog back: Sling level for sling work, else kg / % / RIR
+function _editHistLoad(e){
+  const lf=document.getElementById('edit-hist-load');
+  if(lf&&lf.style.display==='none'){
+    const lv=(document.getElementById('edit-hist-sling-lvl')||{}).value||'';
+    if(lv)e.slingLvl=lv;else delete e.slingLvl;
+    return;
+  }
+  e.weight=_normalizeKgInput(document.getElementById('edit-hist-weight').value);
+  e.intensity=document.getElementById('edit-hist-intensity').value;
+  e.rir=_normalizeKgInput(document.getElementById('edit-hist-rir').value);
+}
+
+// ── 🪢 Sling mode (Gym → Sling) ───────────────────────────────────────────
+let _slingPos='all',_slingMus='',_slingMode='strength',_slingList=[];
+const SLING_SESSIONS=[
+  {icon:'🔥',name:'Sling warm-up',mode:'warmup',ex:['Sling Forward Plunge','Sling Knee-press','Sling Side Stretch','Sling Inclined Push-up','Sling Reversed Pull-up','Sling Plank (feet in slings)']},
+  {icon:'💪',name:'Sling strength · full body',mode:'strength',ex:['Sling Inclined Push-up','Sling Reversed Pull-up','Sling Trainer Ys','Sling Bulgarian Split Squat','Sling Hamstring Curl','Sling Bodysaw','Sling Side Plank Hip Abduction','Sling Triceps Press']},
+  {icon:'🧱',name:'Sling core',mode:'strength',ex:['Sling Plank (feet in slings)','Sling Omega (pike)','Sling Omega Side (knee tuck)','Sling Bodysaw','Sling Plank with a Twist','Sling Trainer "Marine Core"']},
+  {icon:'🧘',name:'Sling stretching',mode:'warmup',ex:['Sling Quad Stretch','Sling Hip Flexor Stretch','Sling Piriformis Stretch','Sling Hamstring Stretch','Sling Lat Stretch','Sling Chest Stretch','Sling Upper Back Stretch']},
+];
+// All sling exercises in the library (built-in + Jo's own), not hidden
+function _slingExercises(){return EXERCISES.filter(e=>e.cat==='Sling'&&!e.hidden&&!e.cardio);}
+// Library entry for a workbook name — Jo's own copy (e.g. "Reverse pull up") wins over the built-in
+function _slingResolve(name){
+  const list=_slingExercises();
+  return list.find(e=>e.custom&&_slingKey(e.name)===name)||list.find(e=>e.name===name)||null;
+}
+function _slingEntry(ex,mode,map){
+  const info=_slingInfo(ex.name)||{};
+  const stretch=info.pos==='stretch';
+  const M=SLING_MODES[mode]||SLING_MODES.strength;
+  let sets=stretch?ex.sets:M.sets;
+  if(!stretch&&mode==='strength'&&currentGymPhaseId()==='deload')sets=2; // deload = 2 sets
+  const last=stretch?null:_slingLast(ex.name,map);
+  const lvl=stretch?'':last?String(mode==='warmup'?Math.max(1,last.lvl-1):last.lvl):(mode==='warmup'?'1':'2');
+  return {name:ex.name,cat:'Sling',type:'strength',sets:String(sets),
+    reps:(stretch||info.hold)?String(ex.reps):M.reps,rest:stretch?String(ex.rest):M.rest,
+    intensity:'',weight:'',rir:'',notes:'',perSide:exDefaultPerSide(ex.name),
+    ...(lvl?{slingLvl:lvl}:{}),...(mode==='warmup'&&!stretch?{role:'light'}:{})};
+}
+function _slingInLog(name){return (gymSession.exercises||[]).some(e=>_slingKey(e.name)===_slingKey(name));}
+function slingSetPos(p){_slingPos=p;renderSlingMode();}
+function slingSetMus(m){_slingMus=m;renderSlingMode();}
+function slingSetMode(m){_slingMode=m;renderSlingMode();}
+function slingAdd(i){
+  const ex=_slingList[i];if(!ex)return;
+  if(_slingInLog(ex.name)){toast('Already in today\'s log');return;}
+  const en=_slingEntry(ex,_slingMode);
+  gymSession.exercises.push(en);markDirty('gym');renderSessionExercises();
+  toast(`✅ Added to today's Log${en.slingLvl?' · Lvl '+en.slingLvl:''}`);
+  renderSlingMode();
+}
+function slingLoadSession(i){
+  const S=SLING_SESSIONS[i];if(!S)return;
+  const map=_slingHistMap();
+  let n=0;
+  S.ex.forEach(nm=>{const ex=_slingResolve(nm);if(!ex||_slingInLog(ex.name))return;gymSession.exercises.push(_slingEntry(ex,S.mode,map));n++;});
+  if(!n){toast('All of these are already in today\'s log');return;}
+  markDirty('gym');renderSessionExercises();gymMode('log');
+  toast(`✅ ${S.name}: ${n} exercise${n>1?'s':''} added`);
+}
+function renderSlingMode(){
+  const root=document.getElementById('gym-sling');if(!root)return;
+  const map=_slingHistMap();
+  const all=_slingExercises();
+  const posOf=e=>(_slingInfo(e.name)||{}).pos||'other';
+  const list=all.filter(e=>(_slingPos==='all'||posOf(e)===_slingPos)&&(!_slingMus||exMuscles(e.name,e.cat).ms.includes(_slingMus)));
+  _slingList=list;
+  const fmtD=d=>d?new Date(d+'T12:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'';
+  const nLog=(gymSession.exercises||[]).filter(e=>e.cat==='Sling'||_isSlingName(e.name)).length;
+  const posChips=[['all','All'],...SLING_POS.map(p=>[p[0],p[1]])].map(([v,l])=>
+    `<button class="ex-chip${_slingPos===v?' active':''}" onclick="slingSetPos('${v}')">${l}</button>`).join('');
+  const musOpts=['<option value="">All muscles</option>',...Object.entries(MUSCLE_LABELS).filter(([k])=>all.some(e=>exMuscles(e.name,e.cat).ms.includes(k)))
+    .map(([k,l])=>`<option value="${k}"${_slingMus===k?' selected':''}>${l}</option>`)].join('');
+  const card=(e,i)=>{
+    const info=_slingInfo(e.name)||{};
+    const stretch=info.pos==='stretch';
+    const h=map[_slingKey(e.name)]||[];
+    const last=h[h.length-1];
+    const best=h.reduce((b,x)=>Math.max(b,x.lvl),0);
+    const trend=h.slice(-5).map(x=>x.lvl).join(' → ');
+    const ms=exMuscles(e.name,e.cat).ms.map(m=>MUSCLE_LABELS[m]||m).join(', ');
+    const inLog=_slingInLog(e.name);
+    const histTxt=stretch?'':last
+      ?`<b>Lvl ${last.lvl}</b> · ${esc(String(last.sets))}×${esc(String(last.reps))}${last.side?' /side':''} · ${fmtD(last.date)}${h.length>1?` <span style="color:var(--muted)">· ${trend}${best>last.lvl?' · best '+best:''}</span>`:''}`
+      :'<span style="color:var(--muted)">Not logged yet</span>';
+    return `<div class="card" style="padding:10px 12px;margin-bottom:6px;display:flex;gap:10px;align-items:center">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14px">${esc(e.name)}${e.custom?' <span style="font-size:10px;color:#b45309">★ yours</span>':''}${inLog?' <span style="font-size:11px;color:var(--gym);font-weight:700">✓ in log</span>':''}</div>
+        <div style="font-size:12px;margin-top:1px">${esc(ms)}${info.side?' · <span style="color:var(--muted)">per side</span>':''}${info.hold?' · <span style="color:var(--muted)">hold</span>':''}</div>
+        ${info.how?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(info.how)}</div>`:''}
+        ${histTxt?`<div style="font-size:12px;margin-top:3px">${histTxt}</div>`:''}
+      </div>
+      <button class="btn ${inLog?'btn-ghost':'btn-gym'}" style="padding:8px 14px;font-size:18px;flex-shrink:0" aria-label="Add ${esc(e.name)} to today's log" onclick="slingAdd(${i})">${inLog?'✓':'＋'}</button>
+    </div>`;
+  };
+  const groups=(_slingPos==='all'?[...SLING_POS.map(p=>p[0]),'other']:[_slingPos]).map(p=>{
+    const items=list.map((e,i)=>({e,i})).filter(x=>posOf(x.e)===p);
+    if(!items.length)return '';
+    const P=SLING_POS.find(x=>x[0]===p)||['other','Other','Your own sling exercises'];
+    return `<div style="font-size:11px;font-weight:700;color:var(--muted);margin:14px 0 2px;text-transform:uppercase">${P[1]} · ${items.length}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${P[2]}</div>`+items.map(x=>card(x.e,x.i)).join('');
+  }).join('');
+  root.innerHTML=`<div class="card" style="padding:12px">
+      <div style="font-weight:700;font-size:15px;margin-bottom:4px">🪢 Sling / TRX</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.5">No kg here — you log a <b>Sling level 1–5</b>: 1 = upright &amp; stable · 3 ≈ 45° · 5 = lowest angle or unstable (1 leg, ball).
+        Start at about 80% (more reps, small bend in the hips) and only move up a level when every rep is perfect.</div>
+      <div style="display:flex;gap:6px;margin-top:10px">${Object.entries(SLING_MODES).map(([k,m])=>
+        `<button class="ex-chip${_slingMode===k?' active':''}" style="flex:1;padding:8px 6px" onclick="slingSetMode('${k}')">${m.label}<br><span style="font-weight:500;font-size:11px">${m.hint}</span></button>`).join('')}</div>
+      <div class="text-xs-muted" style="margin-top:5px">＋ adds the exercise to today's Log this way. Level starts from your last time.</div>
+      ${nLog?`<button class="btn btn-ghost btn-block" style="margin-top:8px;font-size:13px" onclick="gymMode('log')">📋 Today's log: ${nLog} sling exercise${nLog>1?'s':''} → open</button>`:''}
+    </div>
+    <div class="card" style="padding:12px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px">Ready sessions</div>
+      ${SLING_SESSIONS.map((S,i)=>{const n=S.ex.filter(x=>_slingResolve(x)).length;
+        return `<button class="btn btn-ghost btn-block" style="text-align:left;justify-content:flex-start;margin-bottom:6px;font-size:13px" onclick="slingLoadSession(${i})">▶ ${S.icon} ${S.name} <span style="color:var(--muted);font-weight:500">· ${n} exercises · ${S.icon==='🧘'?"2×30''":SLING_MODES[S.mode].hint.split(' · ')[0]}</span></button>`}).join('')}
+      <div class="text-xs-muted">Adds them to today's Log (skips ones already there).</div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 8px">${posChips}</div>
+    <select onchange="slingSetMus(this.value)" style="margin-bottom:4px" aria-label="Filter by muscle">${musOpts}</select>
+    ${groups||'<div class="empty"><p>No sling exercises match.</p></div>'}`;
+}
+
 function addExerciseToSession(){
   const name=document.getElementById('ex-name').value;
   if(!name){toast('Select an exercise first');return}
@@ -3849,6 +4165,11 @@ function addExerciseToSession(){
       notes:document.getElementById('ex-notes').value,
       perSide:!!document.getElementById('ex-perside')?.checked,
     };
+    if(_isSlingName(name)){
+      entry.intensity='';entry.weight='';entry.rir='';
+      const _lv=(document.getElementById('ex-sling-lvl')||{}).value;
+      if(_lv&&!_slingIsStretch(name))entry.slingLvl=_lv;
+    }
   }
   if(quickAddSessionId){
     // append to an already-saved session
@@ -3940,6 +4261,7 @@ function _renderExRow(e,i){
         `📦 ${e.sets}×${e.reps}${_sideTag(e)}`,
         `⏱ ${e.rest}`,
         e.weight?`<span class="meta-pill weight">${e.weight} kg</span>`:'',
+        _slingPill(e),
         e.intensity?`<span class="meta-pill intensity">${e.intensity}%</span>`:'',
         (e.rir!=null&&String(e.rir).trim()!=='')?`RIR ${esc(e.rir)}`:'',
       ].filter(Boolean);
@@ -4241,6 +4563,7 @@ const EX_MUSCLES={
   'Leg Curl (Machine)':['hamstrings'],
   'Calfs Machine':['calves'],
 };
+Object.entries(SLING_INFO).forEach(([n,i])=>{if(!EX_MUSCLES[n]&&i.ms)EX_MUSCLES[n]=i.ms;});
 const MUSCLE_ZONE={pecs:'sup',delts:'sup',biceps:'sup',triceps:'sup',traps:'sup',lats:'sup',
   abs:'cor',obliques:'cor',lowerback:'cor',
   quads:'inf',glutes:'inf',hamstrings:'inf',calves:'inf',forearms:'wri'};
@@ -4309,7 +4632,7 @@ function drawBodyDiagram(exercises){
   // Accepts an exercises array; a Set of category names still works (legacy callers)
   const list=exercises instanceof Set?[...exercises].map(c=>({cat:c})):(exercises||[]);
   const worked=new Set(),worked2=new Set();
-  list.forEach(e=>{if(e.cat==='Warm-up'||e.cat==='Stretching'||e.type==='cardio')return;
+  list.forEach(e=>{if(e.cat==='Warm-up'||e.cat==='Stretching'||e.type==='cardio'||(e.name&&_slingIsStretch(e.name)))return;
     if(!e.name){(CAT_MUSCLES[e.cat]||[]).forEach(m=>worked.add(m));return}
     const r=exMuscles(e.name,e.cat);r.ms.forEach(m=>worked.add(m));(r.ms2||[]).forEach(m=>worked2.add(m));});
   worked.forEach(m=>worked2.delete(m));
@@ -4688,7 +5011,7 @@ function showSessionDetail(type,id){
         if(e.rpm)parts.push(`${e.rpm} ${e.rpmLabel||'rpm'}`);
         metaHtml=parts.map(p=>`<span>${p}</span>`).join('');
       } else {
-        metaHtml=`<span>📦 ${e.sets}×${e.reps}${_sideTag(e)}</span><span>⏱ ${e.rest}</span>${e.weight?`<span class="meta-pill weight">${e.weight} kg`+`</span>`:''}${e.intensity?`<span class="meta-pill intensity">${e.intensity}%</span>`:''}${(e.rir!=null&&String(e.rir).trim()!=='')?`<span>RIR ${esc(e.rir)}</span>`:''}`;
+        metaHtml=`<span>📦 ${e.sets}×${e.reps}${_sideTag(e)}</span><span>⏱ ${e.rest}</span>${e.weight?`<span class="meta-pill weight">${e.weight} kg`+`</span>`:''}${_slingPill(e)}${e.intensity?`<span class="meta-pill intensity">${e.intensity}%</span>`:''}${(e.rir!=null&&String(e.rir).trim()!=='')?`<span>RIR ${esc(e.rir)}</span>`:''}`;
       }
       return `<div class="ex-row">
       <div class="ex-row-info">
@@ -4942,7 +5265,7 @@ function openEditSessionExercise(i){
   if(!e)return;
   _editHistCtx={isSession:true,exIndex:i};
   document.getElementById('edit-hist-name').textContent='✏️ '+e.name;
-  _fillEditHistModal(e);
+  _fillEditHistModal(e);_slingFillEdit(e);
   openModal('modal-edit-history-ex');
 }
 
@@ -4953,7 +5276,7 @@ function openEditHistoryExercise(sessionId,exIndex){
   if(!e)return;
   _editHistCtx={sessionId,exIndex};
   document.getElementById('edit-hist-name').textContent='✏️ '+e.name;
-  _fillEditHistModal(e);
+  _fillEditHistModal(e);_slingFillEdit(e);
   openModal('modal-edit-history-ex');
 }
 
@@ -4973,9 +5296,7 @@ function saveEditHistoryExercise(){
       e.sets=document.getElementById('edit-hist-sets').value;
       e.perSide=!!document.getElementById('edit-hist-perside')?.checked;
       e.reps=document.getElementById('edit-hist-reps').value;
-      e.weight=_normalizeKgInput(document.getElementById('edit-hist-weight').value);
-      e.intensity=document.getElementById('edit-hist-intensity').value;
-      e.rir=_normalizeKgInput(document.getElementById('edit-hist-rir').value);
+      _editHistLoad(e);
       e.rest=document.getElementById('edit-hist-rest').value;
     }
     e.notes=document.getElementById('edit-hist-notes').value;
@@ -5001,9 +5322,11 @@ function saveEditHistoryExercise(){
     e.sets=document.getElementById('edit-hist-sets').value;
     e.perSide=!!document.getElementById('edit-hist-perside')?.checked;
     e.reps=document.getElementById('edit-hist-reps').value;
-    e.weight=_normalizeKgInput(document.getElementById('edit-hist-weight').value);
-    e.intensity=document.getElementById('edit-hist-intensity').value;
-    e.rir=_normalizeKgInput(document.getElementById('edit-hist-rir').value);
+    if(isFB){
+      e.weight=_normalizeKgInput(document.getElementById('edit-hist-weight').value);
+      e.intensity=document.getElementById('edit-hist-intensity').value;
+      e.rir=_normalizeKgInput(document.getElementById('edit-hist-rir').value);
+    } else _editHistLoad(e);
     e.rest=document.getElementById('edit-hist-rest').value;
   }
   e.notes=document.getElementById('edit-hist-notes').value;
@@ -10243,7 +10566,7 @@ function _effort(date,types,defRpe,mins){
   return {level:_levelFromRpe(rpe,m),rpe,mins:m,rpeSrc:(sl&&parseFloat(sl.rpe)>0)?'yours':'default'};
 }
 // A "legs day" for the 4-hard-days spacing rule: ≥2 lower-body exercises that aren't light
-function _legsHeavy(exs){return (exs||[]).filter(e=>e&&['Inferior Members','Rehab'].includes(e.cat)&&e.role!=='light').length>=2;}
+function _legsHeavy(exs){return (exs||[]).filter(e=>e&&(['Inferior Members','Rehab'].includes(e.cat)||(_slingInfo(e.name)||{}).pos==='legs')&&e.role!=='light').length>=2;}
 // A gym-logged session that is mostly rehab exercises counts as REHAB (easy), not gym (Jo, 2026-11-05:
 // "Wednesday I only climbed + rehab for the lower back")
 function _isRehabGym(s){
