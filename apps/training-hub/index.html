@@ -4925,6 +4925,38 @@ function weeklySetsByMuscle(){
 
 function _setsFmt(n){return Number.isInteger(n)?String(n):n.toFixed(1);}
 
+// Weekly set target per gym phase. Hypertrophy keeps the 10-set reference;
+// strength needs far less volume (Pelland et al. 2024: strength gains show much
+// sharper diminishing returns than hypertrophy), and power/deload less again.
+// Without these, a Strength week reads as a shortfall when it is doing its job.
+const PHASE_SETS_TARGET={hypertrophy:10,strength:6,power:4,deload:4};
+const PHASE_EMOJI={hypertrophy:'\u{1F4C8}',strength:'\u{1F4AA}',power:'⚡',deload:'\u{1F634}'};
+
+// Gym phase id for the week starting at weekKey (yyyy-mm-dd Monday), or null.
+function weekGymPhase(weekKey){
+  try{
+    const c=cycleWeekFor(weekKey);
+    if(c&&c.week&&c.week.gymPhase)return c.week.gymPhase;
+    if(c&&c.seg&&c.seg.type==='deload')return 'deload';
+  }catch(e){}
+  try{
+    const ranges=gymMacroDateRanges(DB.gymMacroData());
+    if(ranges){
+      const d=new Date(weekKey+'T12:00:00');
+      for(let i=0;i<ranges.length;i++){
+        const a=new Date(ranges[i].start),b=new Date(ranges[i].end);
+        a.setHours(0,0,0,0);b.setHours(23,59,59,999);
+        if(d>=a&&d<=b)return GYM_MACRO_PHASES[i].id;
+      }
+    }
+  }catch(e){}
+  return null;
+}
+function weekSetsTarget(weekKey){
+  const ph=weekGymPhase(weekKey);
+  return (ph&&PHASE_SETS_TARGET[ph])||SETS_TARGET;
+}
+
 // Mondays of every ISO week whose Monday falls in the given month.
 // A week is assigned to the month its MONDAY sits in, so no week is split.
 function monthWeekKeys(y,m){
@@ -4951,9 +4983,11 @@ function renderSetsPerMuscle(){
 
   // pace: completed weeks + the fraction of the current week that has passed
   const dayIdx=((new Date(today()+'T12:00:00').getDay())+6)%7;   // Mon=0
-  const elapsed=curIdx<0?weeks.length:(curIdx+(dayIdx+1)/7);
-  const pace=SETS_TARGET*elapsed;
-  const monthTarget=SETS_TARGET*weeks.length;
+  const _tg=weeks.map(weekSetsTarget);
+  const monthTarget=_tg.reduce((a,b)=>a+b,0);
+  // pace = every completed week's own target + the elapsed fraction of this week's
+  const pace=curIdx<0?monthTarget
+    :_tg.slice(0,curIdx).reduce((a,b)=>a+b,0)+_tg[curIdx]*(dayIdx+1)/7;
 
   const totals={};
   weeks.forEach(w=>Object.entries(byWeek[w]||{}).forEach(([mu,v])=>{totals[mu]=(totals[mu]||0)+v;}));
@@ -4961,9 +4995,12 @@ function renderSetsPerMuscle(){
   if(!keys.length){el.innerHTML=`<p class="text-sm-muted">Nothing logged in ${esc(new Date(y,m,1).toLocaleDateString('en-GB',{month:'long'}))} yet.</p>`;return;}
 
   const ZONE_COL={sup:'#388bfd',cor:'#f0883e',inf:'#2ea043',wri:'#a78bfa'};
+  const phases=weeks.map(weekGymPhase);
+  const tgts=weeks.map(weekSetsTarget);
   const hdr=weeks.map((w,i)=>{
-    const d=new Date(w+'T12:00:00');
-    return `<div style="flex:1;text-align:center;font-size:10px;color:var(--muted);font-weight:${i===curIdx?700:400}">${d.getDate()}/${d.getMonth()+1}</div>`;
+    const d=new Date(w+'T12:00:00'),e=PHASE_EMOJI[phases[i]]||'';
+    return `<div style="flex:1;text-align:center;font-size:10px;color:var(--muted);font-weight:${i===curIdx?700:400}">
+      ${d.getDate()}/${d.getMonth()+1}<div style="font-size:9px;line-height:1.3">${e||'&nbsp;'}<span style="opacity:.75">${tgts[i]}</span></div></div>`;
   }).join('');
 
   const rows=keys.map(mu=>{
@@ -4971,7 +5008,7 @@ function renderSetsPerMuscle(){
     const tot=totals[mu]||0;
     const cells=weeks.map((w,i)=>{
       const v=(byWeek[w]||{})[mu]||0;
-      const ratio=Math.min(1,v/SETS_TARGET);
+      const ratio=Math.min(1,v/(tgts[i]||SETS_TARGET));
       const cur=i===curIdx;
       return `<div title="${_setsFmt(v)} sets" style="flex:1;margin:0 1px;height:26px;border-radius:4px;position:relative;
         background:${v>0?col:'var(--border,#30363d)'};opacity:${v>0?(0.18+ratio*0.82).toFixed(2):0.35};
@@ -5005,7 +5042,8 @@ function renderSetsPerMuscle(){
     <div class="text-xxs-muted" style="margin-top:10px;line-height:1.5">
       One column per week; the outlined one is this week, still in progress.
       Prime mover (first muscle listed) = 1 set, every other muscle worked = ${SETS_PARTIAL}. Per-side sets count once.
-      Green means at or above the ${SETS_TARGET}-sets-a-week pace for the month so far; in a Strength block being under it is expected.
+      Each week is judged against its own phase target (${PHASE_EMOJI.hypertrophy} Hypertrophy ${PHASE_SETS_TARGET.hypertrophy} &middot; ${PHASE_EMOJI.strength} Strength ${PHASE_SETS_TARGET.strength} &middot; ${PHASE_EMOJI.power} Power ${PHASE_SETS_TARGET.power} &middot; ${PHASE_EMOJI.deload} Deload ${PHASE_SETS_TARGET.deload}), shown under each date; green means at or above the month's pace so far.
+      Strength needs less volume than growth, so a lower target there is the plan working, not a shortfall.
       Warm-ups and stretches are not counted.
     </div>`;
 }
