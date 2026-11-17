@@ -3187,6 +3187,7 @@ function saveSessionAsTemplate(sessionId){
 function renderTemplates(){
   _seedFullBodyTemplates();
   _seedTemplates(HOME_TEMPLATES,'_seed_home_v1');
+  _seedTemplates(FULLBODY_TEMPLATES.filter(t=>t.id==='fb-c-v1'),'_seed_fb_c_v1');
   const ts=DB.gymTemplates();
   const el=document.getElementById('templates-section');
   if(!el)return;
@@ -3250,6 +3251,23 @@ const FULLBODY_TEMPLATES=[
     {name:'Fly Deltoid N2',cat:'Superior – Machine',role:'light'},
     {name:'Biceps',cat:'Superior – Machine',role:'light'},
     {name:'Decline back',cat:'Core',role:'light'},
+    {name:'Cable Anti-rotation',cat:'Core',role:'light',perSide:true}]},
+  // Full body C (Jo, 2026-11-17): for a day when the gym is the ONLY session, so
+  // neither of A/B's constraints apply (A skips calves for a tennis day, B keeps
+  // calf work moderate for the Achilles). One movement per pattern - horizontal
+  // push, vertical pull, squat, hinge, horizontal pull - which is what corrects a
+  // shoulder- and core-dominant 5-week profile. No vertical press on purpose:
+  // shoulders were the most-trained muscle by a distance, chest the least.
+  {id:'fb-c-v1',name:'Full body C · Gym only (balanced)',exercises:[
+    {name:'Bike',cat:'Warm-up',type:'cardio',cardio:true,duration:'5',rpmLabel:'Avg RPM',distLabel:'Distance (km)',sets:1,reps:"5'",rest:'-'},
+    {name:'Chest Press',cat:'Superior – Machine',role:'heavy'},
+    {name:'Lat Pulldown / Pull-up Bar',cat:'Superior – Machine',role:'heavy'},
+    {name:'Leg Press',cat:'Inferior Members',role:'heavy'},
+    {name:'Single leg Romanian deadlift',cat:'Inferior Members',role:'moderate',perSide:true},
+    {name:'Low Row',cat:'Superior – Machine',role:'moderate'},
+    {name:'Seated Triceps Press',cat:'Superior – Machine',role:'light'},
+    {name:'Biceps',cat:'Superior – Machine',role:'light',ss:true},
+    {name:'Leg Press (Calf Raise)',cat:'Inferior Members',role:'light',perSide:true,notes:'Achilles: keep it moderate'},
     {name:'Cable Anti-rotation',cat:'Core',role:'light',perSide:true}]},
 ];
 // Home sessions (Jo, 2026-10-26): barbell + plates, light dumbbells, slings, bands, step, pull-up bar.
@@ -11194,7 +11212,7 @@ function _plannedFor(date){
     const level=_levelFromRpe(rpe,t==='gym'&&!mins?60:mins);
     let legs=false;
     if(t==='gym'){const ps=s.psId&&typeof _psById==='function'?_psById(s.psId):null;
-      legs=ps&&ps.gym&&ps.gym.plan?_legsHeavy(ps.gym.plan):/inferior|leg|lower/i.test(sub);}
+      legs=ps&&ps.gym&&ps.gym.plan?_legsHeavy(ps.gym.plan):/inferior|leg|lower|full\s*body/i.test(sub);}
     return {type:t,sub,level,mins,rpe,legs};
   });
 }
