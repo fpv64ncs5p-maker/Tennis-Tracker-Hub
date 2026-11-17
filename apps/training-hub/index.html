@@ -4957,46 +4957,44 @@ function weekSetsTarget(weekKey){
   return (ph&&PHASE_SETS_TARGET[ph])||SETS_TARGET;
 }
 
-// Mondays of every ISO week whose Monday falls in the given month.
-// A week is assigned to the month its MONDAY sits in, so no week is split.
-function monthWeekKeys(y,m){
-  const out=[],d=new Date(y,m,1,12,0,0);
-  while(d.getDay()!==1)d.setDate(d.getDate()+1);
-  while(d.getMonth()===m){const x=new Date(d.getTime());x.setHours(12,0,0,0);out.push(x.toISOString().split('T')[0]);d.setDate(d.getDate()+7);}
+// Rolling window of ISO weeks ending with the CURRENT week.
+// Replaced calendar months (2026-11-17): a month grid only held weeks whose
+// Monday fell inside it, so Jo's 1 Nov session - her only triceps press of the
+// month - sat in the 26 Oct week and never appeared in November at all. A
+// rolling window never hides a week.
+const SETS_WINDOW_WEEKS=5;
+function recentWeekKeys(n){
+  const out=[],d=new Date(_weekKey(today())+'T12:00:00');
+  for(let i=n-1;i>=0;i--){
+    const x=new Date(d.getTime());x.setDate(d.getDate()-i*7);x.setHours(12,0,0,0);
+    out.push(x.toISOString().split('T')[0]);
+  }
   return out;
 }
 
-// Month grid: one column per week, current week outlined, month total vs pace.
-// Replaces the this-week-only card (2026-11-17): on a Tuesday that card showed
-// every muscle at 0 with a red delta, which read as a decline rather than as a
-// week still in progress.
+// Week grid: one column per week over a rolling window, current week outlined,
+// each week judged against its own phase target, window total on the right.
 function renderSetsPerMuscle(){
   const el=document.getElementById('gym-sets-muscle');
   if(!el)return;
   const byWeek=weeklySetsByMuscle();
   if(!Object.keys(byWeek).length){el.innerHTML='<p class="text-sm-muted">No sessions yet.</p>';return;}
-  const now=new Date(), y=now.getFullYear(), m=now.getMonth();
-  const weeks=monthWeekKeys(y,m);
-  if(!weeks.length){el.innerHTML='<p class="text-sm-muted">No full weeks in this month yet.</p>';return;}
-  const thisKey=_weekKey(today());
-  const curIdx=weeks.indexOf(thisKey);
+  const weeks=recentWeekKeys(SETS_WINDOW_WEEKS);
+  const curIdx=weeks.length-1;          // the window always ends on this week
 
-  // pace: completed weeks + the fraction of the current week that has passed
-  const dayIdx=((new Date(today()+'T12:00:00').getDay())+6)%7;   // Mon=0
-  const _tg=weeks.map(weekSetsTarget);
-  const monthTarget=_tg.reduce((a,b)=>a+b,0);
+  const phases=weeks.map(weekGymPhase);
+  const tgts=weeks.map(weekSetsTarget);
+  const windowTarget=tgts.reduce((a,b)=>a+b,0);
   // pace = every completed week's own target + the elapsed fraction of this week's
-  const pace=curIdx<0?monthTarget
-    :_tg.slice(0,curIdx).reduce((a,b)=>a+b,0)+_tg[curIdx]*(dayIdx+1)/7;
+  const dayIdx=((new Date(today()+'T12:00:00').getDay())+6)%7;   // Mon=0
+  const pace=tgts.slice(0,curIdx).reduce((a,b)=>a+b,0)+tgts[curIdx]*(dayIdx+1)/7;
 
   const totals={};
   weeks.forEach(w=>Object.entries(byWeek[w]||{}).forEach(([mu,v])=>{totals[mu]=(totals[mu]||0)+v;}));
   const keys=Object.keys(totals).sort((a,b)=>totals[b]-totals[a]);
-  if(!keys.length){el.innerHTML=`<p class="text-sm-muted">Nothing logged in ${esc(new Date(y,m,1).toLocaleDateString('en-GB',{month:'long'}))} yet.</p>`;return;}
+  if(!keys.length){el.innerHTML='<p class="text-sm-muted">Nothing logged in the last '+SETS_WINDOW_WEEKS+' weeks.</p>';return;}
 
   const ZONE_COL={sup:'#388bfd',cor:'#f0883e',inf:'#2ea043',wri:'#a78bfa'};
-  const phases=weeks.map(weekGymPhase);
-  const tgts=weeks.map(weekSetsTarget);
   const hdr=weeks.map((w,i)=>{
     const d=new Date(w+'T12:00:00'),e=PHASE_EMOJI[phases[i]]||'';
     return `<div style="flex:1;text-align:center;font-size:10px;color:var(--muted);font-weight:${i===curIdx?700:400}">
@@ -5023,26 +5021,25 @@ function renderSetsPerMuscle(){
       <div style="flex:1;display:flex">${cells}</div>
       <div style="width:52px;flex-shrink:0;text-align:right">
         <span style="font-size:14px;font-weight:700;color:${hit?'#2ea043':'var(--text,#c9d1d9)'}">${_setsFmt(tot)}</span>
-        <span style="font-size:10px;color:var(--muted)">/${monthTarget}</span>
+        <span style="font-size:10px;color:var(--muted)">/${windowTarget}</span>
       </div>
     </div>`;
   }).join('');
 
-  const monthName=new Date(y,m,1).toLocaleDateString('en-GB',{month:'long',year:'numeric'});
   el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
-      <span style="font-size:13px;font-weight:700">${esc(monthName)}</span>
-      <span class="text-xs-muted">${curIdx>=0?`week ${curIdx+1} of ${weeks.length}`:`${weeks.length} weeks`}</span>
+      <span style="font-size:13px;font-weight:700">Last ${SETS_WINDOW_WEEKS} weeks</span>
+      <span class="text-xs-muted">${fmtDate(weeks[0])} – today</span>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:4px">
       <div style="width:84px;flex-shrink:0"></div>
       <div style="flex:1;display:flex">${hdr}</div>
-      <div style="width:52px;flex-shrink:0;text-align:right;font-size:10px;color:var(--muted)">month</div>
+      <div style="width:52px;flex-shrink:0;text-align:right;font-size:10px;color:var(--muted)">total</div>
     </div>
     ${rows}
     <div class="text-xxs-muted" style="margin-top:10px;line-height:1.5">
-      One column per week; the outlined one is this week, still in progress.
+      One column per week, oldest left; the outlined one is this week, still in progress.
       Prime mover (first muscle listed) = 1 set, every other muscle worked = ${SETS_PARTIAL}. Per-side sets count once.
-      Each week is judged against its own phase target (${PHASE_EMOJI.hypertrophy} Hypertrophy ${PHASE_SETS_TARGET.hypertrophy} &middot; ${PHASE_EMOJI.strength} Strength ${PHASE_SETS_TARGET.strength} &middot; ${PHASE_EMOJI.power} Power ${PHASE_SETS_TARGET.power} &middot; ${PHASE_EMOJI.deload} Deload ${PHASE_SETS_TARGET.deload}), shown under each date; green means at or above the month's pace so far.
+      Each week is judged against its own phase target (${PHASE_EMOJI.hypertrophy} Hypertrophy ${PHASE_SETS_TARGET.hypertrophy} &middot; ${PHASE_EMOJI.strength} Strength ${PHASE_SETS_TARGET.strength} &middot; ${PHASE_EMOJI.power} Power ${PHASE_SETS_TARGET.power} &middot; ${PHASE_EMOJI.deload} Deload ${PHASE_SETS_TARGET.deload}), shown under each date; green means at or above the pace so far.
       Strength needs less volume than growth, so a lower target there is the plan working, not a shortfall.
       Warm-ups and stretches are not counted.
     </div>`;
