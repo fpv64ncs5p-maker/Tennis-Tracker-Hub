@@ -730,6 +730,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       <!-- PROGRESS MODE -->
       <div id="gym-progress" style="display:none">
         <div class="card" style="margin-bottom:12px">
+          <div class="card-title">Weekly Sets per Muscle</div>
+          <div id="gym-weekly-sets"></div>
+        </div>
+        <div class="card" style="margin-bottom:12px">
           <div class="card-title">Weekly Volume</div>
           <div id="gym-weekly-vol"></div>
         </div>
@@ -1764,21 +1768,21 @@ const EXERCISES = [
   {name:"Bike",cat:"Warm-up",equip:"m",cardio:true,rpmLabel:"Avg RPM",distLabel:"Distance (km)",sets:1,reps:"20'",rest:"-"},
   {name:"Elliptical",cat:"Warm-up",equip:"m",cardio:true,rpmLabel:"Stride rate",distLabel:"Distance (km)",sets:1,reps:"5'",rest:"-"},
   {name:"Assault Bike",cat:"Warm-up",equip:"m",cardio:true,rpmLabel:"Avg RPM",distLabel:"Calories",sets:2,reps:"4'",rest:"-"},
-  {name:"Hip Abductor",cat:"Inferior Members",equip:"m",sets:4,reps:"6",rest:"3'"},
-  {name:"Hip Adductor",cat:"Inferior Members",equip:"m",sets:4,reps:"6",rest:"3'"},
-  {name:"Ext. Quadriceps",cat:"Inferior Members",equip:"m",sets:4,reps:"6",rest:"3'"},
-  {name:"Prone Leg Curl",cat:"Inferior Members",equip:"m",sets:3,reps:"8",rest:"3'"},
-  {name:"Leg Press",cat:"Inferior Members",equip:"m",sets:4,reps:"8",rest:"3'"},
-  {name:"Leg Press (Calf Raise)",cat:"Inferior Members",equip:"m",sets:3,reps:"10",rest:"3'"},
-  {name:"Leg Extension",cat:"Inferior Members",equip:"m",sets:4,reps:"8",rest:"3'"},
-  {name:"Hip Thrust Machine",cat:"Inferior Members",equip:"m",sets:4,reps:"8",rest:"3'"},
-  {name:"Plank",cat:"Core",equip:"bw",sets:4,reps:"1×1'",rest:"3'"},
-  {name:"Russian Sit-ups",cat:"Core",equip:"bw",sets:4,reps:"30",rest:"3'"},
+  {name:"Hip Abductor",cat:"Inferior Members",equip:"m",sets:4,reps:"10",rest:"1'30''"},
+  {name:"Hip Adductor",cat:"Inferior Members",equip:"m",sets:4,reps:"10",rest:"1'30''"},
+  {name:"Ext. Quadriceps",cat:"Inferior Members",equip:"m",sets:4,reps:"10",rest:"1'30''"},
+  {name:"Prone Leg Curl",cat:"Inferior Members",equip:"m",sets:3,reps:"8",rest:"1'30''"},
+  {name:"Leg Press",cat:"Inferior Members",equip:"m",sets:4,reps:"8",rest:"2'"},
+  {name:"Leg Press (Calf Raise)",cat:"Inferior Members",equip:"m",sets:3,reps:"10",rest:"1'30''"},
+  {name:"Leg Extension",cat:"Inferior Members",equip:"m",sets:4,reps:"8",rest:"1'30''"},
+  {name:"Hip Thrust Machine",cat:"Inferior Members",equip:"m",sets:4,reps:"8",rest:"2'"},
+  {name:"Plank",cat:"Core",equip:"bw",sets:4,reps:"1×1'",rest:"1'"},
+  {name:"Russian Sit-ups",cat:"Core",equip:"bw",sets:4,reps:"30",rest:"1'"},
   {name:"Floor ABS Rotation",cat:"Core",equip:"bw",sets:3,reps:"20",rest:"1'"},
-  {name:"Leg + Arms Ups",cat:"Core",equip:"bw",sets:3,reps:"10",rest:"3'"},
-  {name:"Matrix Abd. N4",cat:"Core",equip:"m",sets:4,reps:"8",rest:"3'"},
-  {name:"Matrix Abd. Up",cat:"Core",equip:"m",sets:4,reps:"10",rest:"3'"},
-  {name:"Rotary Torso",cat:"Core",equip:"m",sets:4,reps:"8",rest:"3'"},
+  {name:"Leg + Arms Ups",cat:"Core",equip:"bw",sets:3,reps:"10",rest:"1'"},
+  {name:"Matrix Abd. N4",cat:"Core",equip:"m",sets:4,reps:"8",rest:"1'30''"},
+  {name:"Matrix Abd. Up",cat:"Core",equip:"m",sets:4,reps:"10",rest:"1'30''"},
+  {name:"Rotary Torso",cat:"Core",equip:"m",sets:4,reps:"8",rest:"1'30''"},
   {name:"Pallof Press",cat:"Core",equip:"m",sets:3,reps:"12",rest:"1'"},
   {name:"Cable Anti-rotation",cat:"Core",equip:"m",sets:3,reps:"10",rest:"1'"},
   {name:"Hanging Knees",cat:"Core",equip:"bw",sets:3,reps:"12",rest:"1'"},
@@ -1801,24 +1805,24 @@ const EXERCISES = [
   {name:"1-Arm Scap. Pull-up",cat:"Superior – No Machine",equip:"bw",sets:3,reps:"4",rest:"1'"},
   {name:"Pull-up",cat:"Superior – No Machine",equip:"bw",sets:4,reps:"2",rest:"3'"},
   {name:"Pull-up + Weight",cat:"Superior – No Machine",equip:"bw",sets:4,reps:"2",rest:"3'"},
-  {name:"Lat Pulldown / Pull-up Bar",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"3'"},
-  {name:"Rear Deltoid N1",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"3'"},
-  {name:"Fly Deltoid N2",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"3'"},
-  {name:"Shoulder Press",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"3'"},
+  {name:"Lat Pulldown / Pull-up Bar",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"2'"},
+  {name:"Rear Deltoid N1",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"1'30''"},
+  {name:"Fly Deltoid N2",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"1'30''"},
+  {name:"Shoulder Press",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"2'"},
   {name:"Chest Press",cat:"Superior – Machine",equip:"m",sets:4,reps:"6",rest:"3'"},
   {name:"Cable Cross Over",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"1'"},
-  {name:"Low Row",cat:"Superior – Machine",equip:"m",sets:3,reps:"8",rest:"3'"},
+  {name:"Low Row",cat:"Superior – Machine",equip:"m",sets:3,reps:"8",rest:"2'"},
   {name:"Shoulder Rotation",cat:"Superior – Machine",equip:"m",sets:3,reps:"8",rest:"1'"},
   {name:"Biceps",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"1'"},
-  {name:"Seated Triceps Press",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"3'"},
-  {name:"Seated Row – Matrix",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"3'"},
+  {name:"Seated Triceps Press",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"1'30''"},
+  {name:"Seated Row – Matrix",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"2'"},
   {name:"Arm Curls (Biceps)",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"1'"},
   {name:"Div. Seated Row",cat:"Superior – Machine",equip:"m",sets:3,reps:"8",rest:"2'"},
   {name:"Conv. Shoulder Press",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"2'"},
   {name:"Wrist Extension",cat:"Wrist",equip:"bw",sets:3,reps:"12",rest:"1'"},
   {name:"Wrist Internal",cat:"Wrist",equip:"bw",sets:3,reps:"12",rest:"1'"},
-  {name:"Wrist Curls Int Roll",cat:"Wrist",equip:"bw",sets:3,reps:"3×3'",rest:"3'"},
-  {name:"Wrist Curls Ext Roll",cat:"Wrist",equip:"bw",sets:3,reps:"3×3'",rest:"3'"},
+  {name:"Wrist Curls Int Roll",cat:"Wrist",equip:"bw",sets:3,reps:"3×30''",rest:"3'"},
+  {name:"Wrist Curls Ext Roll",cat:"Wrist",equip:"bw",sets:3,reps:"3×30''",rest:"3'"},
   {name:"Grips w/ Machine",cat:"Fingers",equip:"m",sets:3,reps:"3×10''",rest:"5'"},
   // ── Climbing Gym: Finger Flexors ───────────────────
   {name:"Bouldering",cat:"CG-Fingers",equip:"bw",sets:4,reps:"4×4'",rest:"5'",level:"both"},
@@ -4855,6 +4859,7 @@ function showVolumeSummary(session){
 
 // ── Progress tab ──────────────────────────────────────
 function renderProgress(){
+  renderWeeklySets();
   renderWeeklyVolume();
   // populate exercise selector
   const sessions=DB.gymSessions();
@@ -4863,6 +4868,101 @@ function renderProgress(){
   const cur=sel.value;
   sel.innerHTML='<option value="">— Select exercise —</option>'+exNames.map(n=>`<option value="${n}"${n===cur?' selected':''}>${n}</option>`).join('');
   renderExProgression();
+}
+
+// ══════════════════════════════════════════════════
+//  WEEKLY SETS PER MUSCLE (2026-11-17)
+// ══════════════════════════════════════════════════
+// The volume metric with the clearest dose-response in the literature is
+// WEEKLY HARD SETS PER MUSCLE, not tonnage (Schoenfeld 2017; Pelland 2024).
+// Counting follows Pelland's direct/fractional split: a main muscle gets the
+// full set, a secondary ("also works") muscle gets half a set.
+// Per-side sets are NOT doubled — 3 sets of single-leg RDL is 3 sets for the
+// hamstrings, done twice, not 6.
+const SETS_TARGET=10;          // weekly sets per muscle commonly used for growth
+const SETS_SECONDARY=0.5;      // weight for a "also works" muscle
+
+// {muscleKey: sets} for one session's exercise list
+function calcSetsByMuscle(exercises){
+  const out={};
+  (exercises||[]).forEach(e=>{
+    if(!e||e.type==='cardio'||!e.name)return;
+    if(e.cat==='Warm-up'||e.cat==='Stretching')return;
+    if(_slingIsStretch(e.name))return;
+    const s=parseFloat(e.sets);
+    if(isNaN(s)||s<=0)return;
+    const r=exMuscles(e.name,e.cat);
+    (r.ms||[]).forEach(m=>{out[m]=(out[m]||0)+s;});
+    (r.ms2||[]).forEach(m=>{if(!(r.ms||[]).includes(m))out[m]=(out[m]||0)+s*SETS_SECONDARY;});
+  });
+  return out;
+}
+
+// Monday of the ISO week a yyyy-mm-dd date falls in
+function _weekKey(dateStr){
+  const d=new Date(dateStr+'T12:00:00');
+  if(isNaN(d))return null;
+  const mon=new Date(d);mon.setDate(d.getDate()-((d.getDay()+6)%7));
+  return mon.toISOString().split('T')[0];
+}
+
+// {weekKey: {muscle: sets}} across every logged gym session
+function weeklySetsByMuscle(){
+  const out={};
+  DB.gymSessions().forEach(s=>{
+    const k=_weekKey(s.date);if(!k)return;
+    const m=calcSetsByMuscle(s.exercises);
+    if(!out[k])out[k]={};
+    Object.entries(m).forEach(([mu,v])=>{out[k][mu]=(out[k][mu]||0)+v;});
+  });
+  return out;
+}
+
+function _setsFmt(n){return Number.isInteger(n)?String(n):n.toFixed(1);}
+
+function renderWeeklySets(){
+  const el=document.getElementById('gym-weekly-sets');
+  if(!el)return;
+  const byWeek=weeklySetsByMuscle();
+  const weeks=Object.keys(byWeek).sort();
+  if(!weeks.length){el.innerHTML='<p class="text-sm-muted">No sessions yet.</p>';return;}
+  const thisKey=_weekKey(today());
+  const cur=byWeek[thisKey]||{};
+  const idx=weeks.indexOf(thisKey);
+  // previous week with data (the week before this one, or the latest if this week is empty)
+  const prevKey=idx>0?weeks[idx-1]:(idx===-1?weeks[weeks.length-1]:null);
+  const prev=prevKey?byWeek[prevKey]:{};
+  const keys=[...new Set([...Object.keys(cur),...Object.keys(prev)])]
+    .sort((a,b)=>(cur[b]||0)-(cur[a]||0)||(prev[b]||0)-(prev[a]||0));
+  if(!keys.length){el.innerHTML='<p class="text-sm-muted">No strength sets logged yet.</p>';return;}
+  const ZONE_COL={sup:'#388bfd',cor:'#f0883e',inf:'#2ea043',wri:'#a78bfa'};
+  const maxV=Math.max(SETS_TARGET+2,...keys.map(m=>Math.max(cur[m]||0,prev[m]||0)));
+  const rows=keys.map(m=>{
+    const v=cur[m]||0,pv=prev[m]||0;
+    const col=ZONE_COL[MUSCLE_ZONE[m]]||'#8b949e';
+    const pct=Math.min(100,v/maxV*100),tpct=Math.min(100,SETS_TARGET/maxV*100);
+    const d=v-pv;
+    const arrow=!prevKey?'':(Math.abs(d)<0.5?'<span style="color:var(--muted)">–</span>'
+      :(d>0?`<span style="color:#2ea043">▲${_setsFmt(Math.abs(d))}</span>`:`<span style="color:#f85149">▼${_setsFmt(Math.abs(d))}</span>`));
+    return `<div style="margin-bottom:9px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+        <span style="font-weight:600">${MUSCLE_LABELS[m]||m}</span>
+        <span><span style="font-weight:700;font-size:14px">${_setsFmt(v)}</span><span style="color:var(--muted)"> sets</span> ${arrow}</span>
+      </div>
+      <div style="position:relative;height:9px;background:var(--border,#30363d);border-radius:5px;overflow:hidden">
+        <div style="position:absolute;left:0;top:0;height:100%;width:${pct}%;background:${col};opacity:${v>=SETS_TARGET?1:.55};border-radius:5px"></div>
+        <div style="position:absolute;left:${tpct}%;top:0;height:100%;width:2px;background:var(--muted,#8b949e);opacity:.9"></div>
+      </div>
+    </div>`;
+  }).join('');
+  el.innerHTML=`<div class="text-xs-muted" style="margin-bottom:8px">
+      Week of ${fmtDate(thisKey)}${prevKey?` · ▲▼ vs ${fmtDate(prevKey)}`:''} · the line marks ${SETS_TARGET} sets
+    </div>${rows}
+    <div class="text-xxs-muted" style="margin-top:10px;line-height:1.5">
+      Main muscle = 1 set, “also works” = ${SETS_SECONDARY} set. Per-side sets count once.
+      Around ${SETS_TARGET}+ weekly sets per muscle is the usual target for growth; strength needs fewer.
+      Warm-ups and stretches are not counted.
+    </div>`;
 }
 
 function renderWeeklyVolume(){
