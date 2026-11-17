@@ -3268,7 +3268,10 @@ const FULLBODY_TEMPLATES=[
     {name:'Seated Triceps Press',cat:'Superior – Machine',role:'light'},
     {name:'Biceps',cat:'Superior – Machine',role:'light',ss:true},
     {name:'Leg Press (Calf Raise)',cat:'Inferior Members',role:'light',perSide:true,notes:'Achilles: keep it moderate'},
-    {name:'Cable Anti-rotation',cat:'Core',role:'light',perSide:true}]},
+    // Position 1 specifically: the generic 'Cable Anti-rotation' has never been
+    // logged, while Position 1 has 61 sessions since March - and Jo's saved
+    // copies of Full body A/B already point at it (2026-11-17).
+    {name:'Cable Anti-rotation Position 1',cat:'Core',role:'light',perSide:true}]},
 ];
 // Home sessions (Jo, 2026-10-26): barbell + plates, light dumbbells, slings, bands, step, pull-up bar.
 const HOME_TEMPLATES=[ // ss:true = superset, done in the rests of the exercise above it (Jo chose supersets to fit 60 min)
