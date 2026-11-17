@@ -4880,7 +4880,12 @@ function renderProgress(){
 // Per-side sets are NOT doubled — 3 sets of single-leg RDL is 3 sets for the
 // hamstrings, done twice, not 6.
 const SETS_TARGET=10;          // weekly sets per muscle commonly used for growth
-const SETS_SECONDARY=0.5;      // weight for a "also works" muscle
+const SETS_PARTIAL=0.5;        // weight for any muscle that isn't the prime mover
+// Only the FIRST main muscle counts as a full (direct) set. Jo's own muscle tags
+// are written for the body diagram, where lighting a whole region is harmless —
+// as set counters they inflated badly (2026-11-17: 47.5 "abs" sets in one week,
+// because abs was tagged on eight different exercises). Extra main muscles and
+// every "also works" muscle therefore count as a fractional set.
 
 // {muscleKey: sets} for one session's exercise list
 function calcSetsByMuscle(exercises){
@@ -4891,9 +4896,9 @@ function calcSetsByMuscle(exercises){
     if(_slingIsStretch(e.name))return;
     const s=parseFloat(e.sets);
     if(isNaN(s)||s<=0)return;
-    const r=exMuscles(e.name,e.cat);
-    (r.ms||[]).forEach(m=>{out[m]=(out[m]||0)+s;});
-    (r.ms2||[]).forEach(m=>{if(!(r.ms||[]).includes(m))out[m]=(out[m]||0)+s*SETS_SECONDARY;});
+    const r=exMuscles(e.name,e.cat),ms=r.ms||[];
+    ms.forEach((m,i)=>{out[m]=(out[m]||0)+s*(i===0?1:SETS_PARTIAL);});
+    (r.ms2||[]).forEach(m=>{if(!ms.includes(m))out[m]=(out[m]||0)+s*SETS_PARTIAL;});
   });
   return out;
 }
@@ -4959,7 +4964,7 @@ function renderWeeklySets(){
       Week of ${fmtDate(thisKey)}${prevKey?` · ▲▼ vs ${fmtDate(prevKey)}`:''} · the line marks ${SETS_TARGET} sets
     </div>${rows}
     <div class="text-xxs-muted" style="margin-top:10px;line-height:1.5">
-      Main muscle = 1 set, “also works” = ${SETS_SECONDARY} set. Per-side sets count once.
+      Prime mover (first muscle listed) = 1 set, every other muscle worked = ${SETS_PARTIAL}. Per-side sets count once.
       Around ${SETS_TARGET}+ weekly sets per muscle is the usual target for growth; strength needs fewer.
       Warm-ups and stretches are not counted.
     </div>`;
