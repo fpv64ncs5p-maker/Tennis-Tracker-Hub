@@ -730,8 +730,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
       <!-- PROGRESS MODE -->
       <div id="gym-progress" style="display:none">
         <div class="card" style="margin-bottom:12px">
-          <div class="card-title">Weekly Sets per Muscle</div>
-          <div id="gym-weekly-sets"></div>
+          <div class="card-title">Sets per Muscle</div>
+          <div id="gym-sets-muscle"></div>
         </div>
         <div class="card" style="margin-bottom:12px">
           <div class="card-title">Weekly Volume</div>
@@ -4859,7 +4859,7 @@ function showVolumeSummary(session){
 
 // ── Progress tab ──────────────────────────────────────
 function renderProgress(){
-  renderWeeklySets();
+  renderSetsPerMuscle();
   renderWeeklyVolume();
   // populate exercise selector
   const sessions=DB.gymSessions();
@@ -4925,47 +4925,87 @@ function weeklySetsByMuscle(){
 
 function _setsFmt(n){return Number.isInteger(n)?String(n):n.toFixed(1);}
 
-function renderWeeklySets(){
-  const el=document.getElementById('gym-weekly-sets');
+// Mondays of every ISO week whose Monday falls in the given month.
+// A week is assigned to the month its MONDAY sits in, so no week is split.
+function monthWeekKeys(y,m){
+  const out=[],d=new Date(y,m,1,12,0,0);
+  while(d.getDay()!==1)d.setDate(d.getDate()+1);
+  while(d.getMonth()===m){const x=new Date(d.getTime());x.setHours(12,0,0,0);out.push(x.toISOString().split('T')[0]);d.setDate(d.getDate()+7);}
+  return out;
+}
+
+// Month grid: one column per week, current week outlined, month total vs pace.
+// Replaces the this-week-only card (2026-11-17): on a Tuesday that card showed
+// every muscle at 0 with a red delta, which read as a decline rather than as a
+// week still in progress.
+function renderSetsPerMuscle(){
+  const el=document.getElementById('gym-sets-muscle');
   if(!el)return;
   const byWeek=weeklySetsByMuscle();
-  const weeks=Object.keys(byWeek).sort();
-  if(!weeks.length){el.innerHTML='<p class="text-sm-muted">No sessions yet.</p>';return;}
+  if(!Object.keys(byWeek).length){el.innerHTML='<p class="text-sm-muted">No sessions yet.</p>';return;}
+  const now=new Date(), y=now.getFullYear(), m=now.getMonth();
+  const weeks=monthWeekKeys(y,m);
+  if(!weeks.length){el.innerHTML='<p class="text-sm-muted">No full weeks in this month yet.</p>';return;}
   const thisKey=_weekKey(today());
-  const cur=byWeek[thisKey]||{};
-  const idx=weeks.indexOf(thisKey);
-  // previous week with data (the week before this one, or the latest if this week is empty)
-  const prevKey=idx>0?weeks[idx-1]:(idx===-1?weeks[weeks.length-1]:null);
-  const prev=prevKey?byWeek[prevKey]:{};
-  const keys=[...new Set([...Object.keys(cur),...Object.keys(prev)])]
-    .sort((a,b)=>(cur[b]||0)-(cur[a]||0)||(prev[b]||0)-(prev[a]||0));
-  if(!keys.length){el.innerHTML='<p class="text-sm-muted">No strength sets logged yet.</p>';return;}
+  const curIdx=weeks.indexOf(thisKey);
+
+  // pace: completed weeks + the fraction of the current week that has passed
+  const dayIdx=((new Date(today()+'T12:00:00').getDay())+6)%7;   // Mon=0
+  const elapsed=curIdx<0?weeks.length:(curIdx+(dayIdx+1)/7);
+  const pace=SETS_TARGET*elapsed;
+  const monthTarget=SETS_TARGET*weeks.length;
+
+  const totals={};
+  weeks.forEach(w=>Object.entries(byWeek[w]||{}).forEach(([mu,v])=>{totals[mu]=(totals[mu]||0)+v;}));
+  const keys=Object.keys(totals).sort((a,b)=>totals[b]-totals[a]);
+  if(!keys.length){el.innerHTML=`<p class="text-sm-muted">Nothing logged in ${esc(new Date(y,m,1).toLocaleDateString('en-GB',{month:'long'}))} yet.</p>`;return;}
+
   const ZONE_COL={sup:'#388bfd',cor:'#f0883e',inf:'#2ea043',wri:'#a78bfa'};
-  const maxV=Math.max(SETS_TARGET+2,...keys.map(m=>Math.max(cur[m]||0,prev[m]||0)));
-  const rows=keys.map(m=>{
-    const v=cur[m]||0,pv=prev[m]||0;
-    const col=ZONE_COL[MUSCLE_ZONE[m]]||'#8b949e';
-    const pct=Math.min(100,v/maxV*100),tpct=Math.min(100,SETS_TARGET/maxV*100);
-    const d=v-pv;
-    const arrow=!prevKey?'':(Math.abs(d)<0.5?'<span style="color:var(--muted)">–</span>'
-      :(d>0?`<span style="color:#2ea043">▲${_setsFmt(Math.abs(d))}</span>`:`<span style="color:#f85149">▼${_setsFmt(Math.abs(d))}</span>`));
-    return `<div style="margin-bottom:9px">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
-        <span style="font-weight:600">${MUSCLE_LABELS[m]||m}</span>
-        <span><span style="font-weight:700;font-size:14px">${_setsFmt(v)}</span><span style="color:var(--muted)"> sets</span> ${arrow}</span>
-      </div>
-      <div style="position:relative;height:9px;background:var(--border,#30363d);border-radius:5px;overflow:hidden">
-        <div style="position:absolute;left:0;top:0;height:100%;width:${pct}%;background:${col};opacity:${v>=SETS_TARGET?1:.55};border-radius:5px"></div>
-        <div style="position:absolute;left:${tpct}%;top:0;height:100%;width:2px;background:var(--muted,#8b949e);opacity:.9"></div>
+  const hdr=weeks.map((w,i)=>{
+    const d=new Date(w+'T12:00:00');
+    return `<div style="flex:1;text-align:center;font-size:10px;color:var(--muted);font-weight:${i===curIdx?700:400}">${d.getDate()}/${d.getMonth()+1}</div>`;
+  }).join('');
+
+  const rows=keys.map(mu=>{
+    const col=ZONE_COL[MUSCLE_ZONE[mu]]||'#8b949e';
+    const tot=totals[mu]||0;
+    const cells=weeks.map((w,i)=>{
+      const v=(byWeek[w]||{})[mu]||0;
+      const ratio=Math.min(1,v/SETS_TARGET);
+      const cur=i===curIdx;
+      return `<div title="${_setsFmt(v)} sets" style="flex:1;margin:0 1px;height:26px;border-radius:4px;position:relative;
+        background:${v>0?col:'var(--border,#30363d)'};opacity:${v>0?(0.18+ratio*0.82).toFixed(2):0.35};
+        ${cur?'box-shadow:0 0 0 2px var(--text,#c9d1d9)':''}">
+        <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+          font-size:10px;font-weight:700;color:${ratio>0.55?'#fff':'var(--text,#c9d1d9)'};opacity:${v>0?1:0.45}">${v>0?_setsFmt(v):''}</span>
+      </div>`;
+    }).join('');
+    const hit=tot>=pace;
+    return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+      <div style="width:84px;flex-shrink:0;font-size:12px;font-weight:600">${MUSCLE_LABELS[mu]||mu}</div>
+      <div style="flex:1;display:flex">${cells}</div>
+      <div style="width:52px;flex-shrink:0;text-align:right">
+        <span style="font-size:14px;font-weight:700;color:${hit?'#2ea043':'var(--text,#c9d1d9)'}">${_setsFmt(tot)}</span>
+        <span style="font-size:10px;color:var(--muted)">/${monthTarget}</span>
       </div>
     </div>`;
   }).join('');
-  el.innerHTML=`<div class="text-xs-muted" style="margin-bottom:8px">
-      Week of ${fmtDate(thisKey)}${prevKey?` · ▲▼ vs ${fmtDate(prevKey)}`:''} · the line marks ${SETS_TARGET} sets
-    </div>${rows}
+
+  const monthName=new Date(y,m,1).toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+  el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+      <span style="font-size:13px;font-weight:700">${esc(monthName)}</span>
+      <span class="text-xs-muted">${curIdx>=0?`week ${curIdx+1} of ${weeks.length}`:`${weeks.length} weeks`}</span>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:4px">
+      <div style="width:84px;flex-shrink:0"></div>
+      <div style="flex:1;display:flex">${hdr}</div>
+      <div style="width:52px;flex-shrink:0;text-align:right;font-size:10px;color:var(--muted)">month</div>
+    </div>
+    ${rows}
     <div class="text-xxs-muted" style="margin-top:10px;line-height:1.5">
+      One column per week; the outlined one is this week, still in progress.
       Prime mover (first muscle listed) = 1 set, every other muscle worked = ${SETS_PARTIAL}. Per-side sets count once.
-      Around ${SETS_TARGET}+ weekly sets per muscle is the usual target for growth; strength needs fewer.
+      Green means at or above the ${SETS_TARGET}-sets-a-week pace for the month so far; in a Strength block being under it is expected.
       Warm-ups and stretches are not counted.
     </div>`;
 }
