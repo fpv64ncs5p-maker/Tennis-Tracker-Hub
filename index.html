@@ -1282,7 +1282,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           </div>
           <div>
             <label>Reps / Time <span class="auto-badge">⚡ auto</span></label>
-            <input id="ex-reps" style="color:var(--yellow)" oninput="renderRirPreview('ex')">
+            <input id="ex-reps" style="color:var(--yellow)" oninput="renderRirPreview('ex');calcSuggestedWeight()">
           </div>
           <div>
             <label>Rest <span class="auto-badge">⚡ auto</span></label>
@@ -3488,6 +3488,7 @@ function onExerciseSelect(){
     const _psEl=document.getElementById('ex-perside');if(_psEl)_psEl.checked=exDefaultPerSide(name);
     document.getElementById('ex-sets').value=phDef?phDef.sets:ex.sets;
     document.getElementById('ex-reps').value=phDef?phDef.reps:ex.reps;
+    _exBaseReps=_plainReps(phDef?phDef.reps:ex.reps);   // the rep count the % was chosen for
     // Rest priority: explicit session goal → macro phase → exercise default
     document.getElementById('ex-rest').value=_goalDefaultRest()||(phDef?phDef.rest:null)||ex.rest;
     calcSuggestedWeight();
@@ -3969,12 +3970,38 @@ function removeCustomExercise(name){
   toast('Removed from library');_libRefresh();
 }
 
+// ── Rep-aware weight suggestion (2026-11-18) ────────────────────────────────
+// The suggestion used to be orm x intensity% and ignored the reps field entirely,
+// so changing 10 reps to 12 kept the 10-rep weight. Jo hit this on Seated Row:
+// 44.75 kg was right for the planned 3x10, too heavy for the 12 she did.
+//
+// It deliberately does NOT recompute the weight from the reps alone. The % is not
+// always the one the reps imply - a deload is 60% for 10 reps precisely because it
+// is meant to be submaximal, and a reps-only formula would make deload weeks
+// HEAVIER. Instead the auto-filled reps are kept as the baseline the % was chosen
+// for, and the weight is scaled only by how far the reps have moved from it, via
+// the Epley ratio. Leave the reps alone and nothing changes.
+let _exBaseReps=null;
+function _plainReps(v){
+  const m=String(v==null?'':v).trim().match(/^(\d+)$/);   // "12" only - not "1x30''" or "5'"
+  return m?parseInt(m[1],10):null;
+}
+function _repAdjust(baseReps,curReps){
+  if(!baseReps||!curReps||baseReps===curReps)return 1;
+  if(baseReps>30||curReps>30)return 1;                   // Epley is unreliable out there
+  return (1+baseReps/30)/(1+curReps/30);
+}
+
 function calcSuggestedWeight(){
   const name=document.getElementById('ex-name').value;
   const intensityPct=parseFloat(document.getElementById('ex-intensity').value);
   if(!name)return;
   const swFull=suggestWeightFull(name, intensityPct);
-  const sw=swFull.weight;
+  const curReps=_plainReps(document.getElementById('ex-reps').value);
+  const adj=_repAdjust(_exBaseReps,curReps);
+  const sw=(typeof swFull.weight==='number'&&adj!==1)
+    ? Math.round(swFull.weight*adj*4)/4      // nearest 0.25 kg, as elsewhere
+    : swFull.weight;
   const box=document.getElementById('ex-suggest');
   if(sw===null){box.style.display='none';return;}
   const wStr=typeof sw==='number'?`${sw} kg`:sw;
@@ -3986,7 +4013,8 @@ function calcSuggestedWeight(){
   box.style.display='block';
   const ormStr=swFull.orm?` &nbsp;·&nbsp; 1RM ~<strong>${swFull.orm} kg</strong>`:'';
   const srcLabel=swFull.label||'seeded reference data';
-  box.innerHTML=`💡 <strong>${wStr}</strong> at ${intensityPct}%${ormStr}<br><span style="color:var(--muted);font-size:11px">${srcLabel}</span>`;
+  const adjStr=adj!==1?` &nbsp;·&nbsp; <span style="color:var(--yellow)">adjusted for ${curReps} reps (plan ${_exBaseReps})</span>`:'';
+  box.innerHTML=`💡 <strong>${wStr}</strong> at ${intensityPct}%${ormStr}${adjStr}<br><span style="color:var(--muted);font-size:11px">${srcLabel}</span>`;
 }
 
 // ── Sling level: picker in Add Exercise + edit dialogs, history (2026-11-14) ──
