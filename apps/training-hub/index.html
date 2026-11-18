@@ -3009,7 +3009,7 @@ function renderBuildPlan(){
   const btn='background:none;border:1px solid var(--border);border-radius:8px;padding:4px 9px;font-size:14px;cursor:pointer;line-height:1.2';
   const rows=plan.map((ex,i)=>{
     const _pct=ex.pct||intensity;
-    const swFull=suggestWeightFull(ex.name,_pct);
+    const swFull=suggestWeightRep(ex.name,_pct,ex.reps,_baseRepsFor(ex,st.date));
     const sw=swFull.weight;
     const wStr=typeof sw==='number'?`${sw} kg`:(sw||'—');
     const usageCount=freq[ex.name]||0;
@@ -3136,7 +3136,8 @@ function loadPlanIntoLog(plan,intensity,phaseId){
       };
     }
     const _pct=ex.pct||intensity;
-    const suggested=suggestWeightFull(ex.name,_pct);
+    const _reps=phDef?phDef.reps:ex.reps;
+    const suggested=suggestWeightRep(ex.name,_pct,_reps,_baseRepsFor(ex,null));
     const suggestedWeight=(suggested&&suggested.weight!=null)?String(suggested.weight):(ex.weight||'');
     const _o={
       name:ex.name,cat:ex.cat,type:'strength',
@@ -3981,7 +3982,28 @@ function removeCustomExercise(name){
 // HEAVIER. Instead the auto-filled reps are kept as the baseline the % was chosen
 // for, and the weight is scaled only by how far the reps have moved from it, via
 // the Epley ratio. Leave the reps alone and nothing changes.
-let _exBaseReps=null;
+let _exBaseReps=null, _editHistBaseReps=null;
+// The rep count a given row's % was prescribed for. Roles pair a % with a rep
+// count (_roleDefaults), so a role row's baseline is that role's reps; otherwise
+// it is the season week's / phase's own prescription.
+function _baseRepsFor(ex,date){
+  try{
+    if(ex&&ex.role&&ex.role!=='fixed')return _plainReps(_roleDefaults(ex.role,date).reps);
+    const cw=cycleWeekFor(date||today());
+    if(cw&&cw.week&&cw.week.reps!=null)return _plainReps(cw.week.reps);
+    const d=currentPhaseExDefaults();
+    return d?_plainReps(d.reps):null;
+  }catch(e){return null;}
+}
+// suggestWeightFull + the rep adjustment, in one place so every caller agrees.
+function suggestWeightRep(name,intensity,curReps,baseReps){
+  const f=suggestWeightFull(name,intensity)||{};
+  const adj=_repAdjust(_plainReps(baseReps),_plainReps(curReps));
+  if(typeof f.weight==='number'&&adj!==1)
+    return {...f,weight:Math.round(f.weight*adj*4)/4,repAdj:adj,
+            baseReps:_plainReps(baseReps),curReps:_plainReps(curReps)};
+  return {...f,repAdj:1};
+}
 function _plainReps(v){
   const m=String(v==null?'':v).trim().match(/^(\d+)$/);   // "12" only - not "1x30''" or "5'"
   return m?parseInt(m[1],10):null;
@@ -3996,12 +4018,10 @@ function calcSuggestedWeight(){
   const name=document.getElementById('ex-name').value;
   const intensityPct=parseFloat(document.getElementById('ex-intensity').value);
   if(!name)return;
-  const swFull=suggestWeightFull(name, intensityPct);
   const curReps=_plainReps(document.getElementById('ex-reps').value);
-  const adj=_repAdjust(_exBaseReps,curReps);
-  const sw=(typeof swFull.weight==='number'&&adj!==1)
-    ? Math.round(swFull.weight*adj*4)/4      // nearest 0.25 kg, as elsewhere
-    : swFull.weight;
+  const swFull=suggestWeightRep(name,intensityPct,curReps,_exBaseReps);
+  const adj=swFull.repAdj;
+  const sw=swFull.weight;
   const box=document.getElementById('ex-suggest');
   if(sw===null){box.style.display='none';return;}
   const wStr=typeof sw==='number'?`${sw} kg`:sw;
@@ -5388,8 +5408,9 @@ function _fillEditHistModal(e){
 
     // Assessment-aware fill: derive 1RM context, auto-fill weight if empty
     const intensityVal = e.intensity || '85';
-    const sw = (typeof suggestWeightFull==='function')
-      ? suggestWeightFull(e.name, parseFloat(intensityVal))
+    _editHistBaseReps = _baseRepsFor(e,null);
+    const sw = (typeof suggestWeightRep==='function')
+      ? suggestWeightRep(e.name, parseFloat(intensityVal), e.reps, _editHistBaseReps)
       : null;
     _editEx1RM = (sw && sw.orm) ? sw.orm : null;
 
@@ -5459,7 +5480,10 @@ function onExWeightChange(){
   const pctNow = parseFloat(document.getElementById('ex-intensity').value);
   const sw = suggestWeightFull(name, isNaN(pctNow)?85:pctNow);
   if(sw && sw.orm){
-    const newPct = Math.round((w / sw.orm) * 100);
+    // the typed weight is for the reps in the field; map it back to the plan's
+    // rep count before reading off a %, so the suggested weight implies the plan %
+    const _adj=_repAdjust(_exBaseReps,_plainReps(document.getElementById('ex-reps').value));
+    const newPct = Math.round(((w/_adj) / sw.orm) * 100);
     if(newPct >= 30 && newPct <= 130){
       document.getElementById('ex-intensity').value = newPct;
     }
