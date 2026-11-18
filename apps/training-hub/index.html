@@ -1811,13 +1811,11 @@ const EXERCISES = [
   {name:"Shoulder Press",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"2'"},
   {name:"Chest Press",cat:"Superior – Machine",equip:"m",sets:4,reps:"6",rest:"3'"},
   {name:"Cable Cross Over",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"1'"},
-  {name:"Low Row",cat:"Superior – Machine",equip:"m",sets:3,reps:"8",rest:"2'"},
+  {name:"Seated Row",cat:"Superior – Machine",equip:"m",sets:3,reps:"8",rest:"2'"},
   {name:"Shoulder Rotation",cat:"Superior – Machine",equip:"m",sets:3,reps:"8",rest:"1'"},
   {name:"Biceps",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"1'"},
   {name:"Seated Triceps Press",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"1'30''"},
-  {name:"Seated Row – Matrix",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"2'"},
   {name:"Arm Curls (Biceps)",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"1'"},
-  {name:"Div. Seated Row",cat:"Superior – Machine",equip:"m",sets:3,reps:"8",rest:"2'"},
   {name:"Conv. Shoulder Press",cat:"Superior – Machine",equip:"m",sets:4,reps:"8",rest:"2'"},
   {name:"Wrist Extension",cat:"Wrist",equip:"bw",sets:3,reps:"12",rest:"1'"},
   {name:"Wrist Internal",cat:"Wrist",equip:"bw",sets:3,reps:"12",rest:"1'"},
@@ -1862,7 +1860,7 @@ const EXERCISES = [
   // ── Climbing Gym: Antagonist Push Muscles ──────────
   {name:"Tricep Pushdown",cat:"CG-Push",equip:"m",sets:3,reps:"12",rest:"1'",level:"intermediate"},
   {name:"Sling Trainer Pec Flys",cat:"Sling",equip:"bw",sets:3,reps:"10",rest:"1'",level:"intermediate"},
-  {name:"Shoulder Press",cat:"CG-Push",equip:"bw",sets:3,reps:"10",rest:"1'30''",level:"both"},
+  {name:"Shoulder Press (CG)",cat:"CG-Push",equip:"bw",sets:3,reps:"10",rest:"1'30''",level:"both"},
   {name:"Bench Press",cat:"CG-Push",equip:"m",sets:3,reps:"8",rest:"2'",level:"both"},
   {name:"Dips",cat:"CG-Push",equip:"bw",sets:3,reps:"8",rest:"2'",level:"intermediate"},
   // ── Climbing Gym: Climbing Core ────────────────────
@@ -2021,10 +2019,9 @@ const WEIGHT_REF = {
   "Lat Pulldown / Pull-up Bar":{w:39,i:0.85},"Rear Deltoid N1":{w:25.13,i:0.85},
   "Fly Deltoid N2":{w:39,i:0.85},"Shoulder Press":{w:18,i:0.85},
   "Chest Press":{w:27.3,i:0.85},"Cable Cross Over":{w:10.5,i:0.85},
-  "Low Row":{w:27.2,i:0.85},"Shoulder Rotation":{w:1.5,i:null},
+  "Seated Row":{w:27.2,i:0.85},"Shoulder Rotation":{w:1.5,i:null},
   "Biceps":{w:6,i:0.85},"Seated Triceps Press":{w:38.25,i:0.85},
-  "Seated Row – Matrix":{w:26.3,i:0.85},
-  "Arm Curls (Biceps)":{w:10.95,i:null},"Div. Seated Row":{w:28.95,i:null},
+  "Arm Curls (Biceps)":{w:10.95,i:null},
   "Conv. Shoulder Press":{w:9,i:null},
   "Wrist Extension":{w:8.03,i:0.85},"Wrist Internal":{w:4.01,i:0.85},
   "Wrist Curls Int Roll":{w:5.33,i:0.85},"Wrist Curls Ext Roll":{w:3.75,i:0.85},
@@ -3232,7 +3229,7 @@ function _applyRole(e,date){
 const FULLBODY_TEMPLATES=[
   {id:'fb-a-v1',name:'Full body A · Mon (upper focus, no calves)',exercises:[
     {name:'Bike',cat:'Warm-up',type:'cardio',cardio:true,duration:'5',rpmLabel:'Avg RPM',distLabel:'Distance (km)',sets:1,reps:"5'",rest:'-'},
-    {name:'Low Row',cat:'Superior – Machine',role:'heavy'},
+    {name:'Seated Row',cat:'Superior – Machine',role:'heavy'},
     {name:'Shoulder Press',cat:'Superior – Machine',role:'heavy'},
     {name:'Seated Triceps Press',cat:'Superior – Machine',role:'heavy'},
     {name:'Rear Deltoid N1',cat:'Superior – Machine',role:'light'},
@@ -3247,7 +3244,7 @@ const FULLBODY_TEMPLATES=[
     {name:'Hip Adductor',cat:'Inferior Members',role:'heavy'},
     {name:'Single leg Romanian deadlift',cat:'Inferior Members',role:'moderate',perSide:true},
     {name:'Leg Press (Calf Raise)',cat:'Inferior Members',role:'moderate',perSide:true,notes:'Achilles: keep it moderate'},
-    {name:'Low Row',cat:'Superior – Machine',role:'light'},
+    {name:'Seated Row',cat:'Superior – Machine',role:'light'},
     {name:'Fly Deltoid N2',cat:'Superior – Machine',role:'light'},
     {name:'Biceps',cat:'Superior – Machine',role:'light'},
     {name:'Decline back',cat:'Core',role:'light'},
@@ -3264,14 +3261,15 @@ const FULLBODY_TEMPLATES=[
     {name:'Lat Pulldown / Pull-up Bar',cat:'Superior – Machine',role:'heavy'},
     {name:'Leg Press',cat:'Inferior Members',role:'heavy'},
     {name:'Single leg Romanian deadlift',cat:'Inferior Members',role:'moderate',perSide:true},
-    {name:'Low Row',cat:'Superior – Machine',role:'moderate'},
+    {name:'Seated Row',cat:'Superior – Machine',role:'moderate'},
     {name:'Seated Triceps Press',cat:'Superior – Machine',role:'light'},
     {name:'Biceps',cat:'Superior – Machine',role:'light',ss:true},
     {name:'Leg Press (Calf Raise)',cat:'Inferior Members',role:'light',perSide:true,notes:'Achilles: keep it moderate'},
-    // Position 1 specifically: the generic 'Cable Anti-rotation' has never been
-    // logged, while Position 1 has 61 sessions since March - and Jo's saved
-    // copies of Full body A/B already point at it (2026-11-17).
-    {name:'Cable Anti-rotation Position 1',cat:'Core',role:'light',perSide:true}]},
+    // Position = the cable's PULLEY HEIGHT, and the numbering differs by gym: at
+    // Jo's old Portugal gym Position 1 was the TOP; at her current gym the top is
+    // 18. Her normal work here is 8 (neutral) and 18 (top), adding 1 (lowest) only
+    // when she feels good - so the template defaults to the neutral one (2026-11-17).
+    {name:'Cable Anti-rotation Position 8',cat:'Core',role:'light',perSide:true}]},
 ];
 // Home sessions (Jo, 2026-10-26): barbell + plates, light dumbbells, slings, bands, step, pull-up bar.
 const HOME_TEMPLATES=[ // ss:true = superset, done in the rests of the exercise above it (Jo chose supersets to fit 60 min)
@@ -4568,13 +4566,11 @@ const EX_MUSCLES={
   'Shoulder Press':['delts','triceps'],
   'Chest Press':['pecs','triceps','delts'],
   'Cable Cross Over':['pecs'],
-  'Low Row':['lats','traps','biceps'],
+  'Seated Row':['lats','traps','biceps'],
   'Shoulder Rotation':['delts'],
   'Biceps':['biceps'],
   'Seated Triceps Press':['triceps'],
-  'Seated Row – Matrix':['lats','traps','biceps'],
   'Arm Curls (Biceps)':['biceps'],
-  'Div. Seated Row':['lats','traps','biceps'],
   'Conv. Shoulder Press':['delts','triceps'],
   // Wrist / Fingers
   'Wrist Extension':['forearms'],
@@ -11107,7 +11103,8 @@ function _effort(date,types,defRpe,mins){
   return {level:_levelFromRpe(rpe,m),rpe,mins:m,rpeSrc:(sl&&parseFloat(sl.rpe)>0)?'yours':'default'};
 }
 // A "legs day" for the 4-hard-days spacing rule: ≥2 lower-body exercises that aren't light
-function _legsHeavy(exs){return (exs||[]).filter(e=>e&&(['Inferior Members','Rehab'].includes(e.cat)||(_slingInfo(e.name)||{}).pos==='legs')&&e.role!=='light').length>=2;}
+const LEG_NAME_RE=/squat|dead\s*lift|lunge|\brdl\b|romanian|hip\s*thrust|glute|clam|calf|step.?up/i;
+function _legsHeavy(exs){return (exs||[]).filter(e=>e&&(['Inferior Members','Rehab'].includes(e.cat)||(_slingInfo(e.name)||{}).pos==='legs'||LEG_NAME_RE.test(e.name||''))&&e.role!=='light').length>=2;}
 // A gym-logged session that is mostly rehab exercises counts as REHAB (easy), not gym (Jo, 2026-11-05:
 // "Wednesday I only climbed + rehab for the lower back")
 function _isRehabGym(s){
@@ -11927,7 +11924,7 @@ const ASSESS_DEFAULTS=[
   {name:'Pull-up + Weight',        area:'💙 Superior',   type:'strength'},
   {name:'Lat Pulldown / Pull-up Bar',area:'💙 Superior', type:'strength'},
   {name:'Chest Press',             area:'💙 Superior',   type:'strength'},
-  {name:'Low Row',                 area:'💙 Superior',   type:'strength'},
+  {name:'Seated Row',               area:'💙 Superior',   type:'strength'},
   {name:'Rear Deltoid N1',         area:'💙 Superior',   type:'strength'},
   {name:'Fly Deltoid N2',          area:'💙 Superior',   type:'strength'},
   // ── Core ──────────────────────────────────────────
