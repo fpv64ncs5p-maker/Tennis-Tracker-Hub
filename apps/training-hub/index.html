@@ -940,6 +940,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           <button class="seg-btn" onclick="pyramidAngleFilter('Roof')">Roof</button>
         </div>
         <div id="pyramid-angle-note" style="display:none;font-size:11px;color:var(--muted);margin:-4px 0 8px;padding:0 2px"></div>
+        <div id="pyramid-ladder"></div>
         <div id="pyramid-tiers"></div>
         <div class="card" style="margin-top:8px">
           <div class="card-title">Stats by Grade</div>
@@ -2213,7 +2214,7 @@ const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
   'gym_height','tennis_matches','tennis_overlay','tennis_merges','custom_gyms','fb_custom_ex',
   'custom_exercises','training_cycle','planned_sessions','exercise_overrides','tennis_serve_sessions','climb_projects',
-  'gym_reports'];
+  'gym_reports','climb_ladder'];
 
 function exportAllData(){
   const data={};
@@ -8392,7 +8393,121 @@ function pyramidAngleFilter(a){
   renderPyramid();
 }
 
+// ══════════════════════════════════════════════════
+//  ROUTE PYRAMID LADDER (2026-11-19, Jo chose B)
+// ══════════════════════════════════════════════════
+// The 1-2-4-8 route pyramid from Appendix C of Jo's training book: 1 route at
+// the target grade, 2 one step below, 4 below that, 8 across the two grades at
+// the base. The book's "pyramid to 5.11a" = 2x 5.10d, 4x 5.10c, 8x 5.10a/b;
+// in French that is 7a = 2x 6c+, 4x 6c, 8x 6b/6b+.
+//
+// WHAT FILLS A BLOCK: the book wants one distinct ROUTE per block, name + date.
+// Jo's log stores grade + result, not route names, so ticks are counted instead
+// - but only OS / Flash / RP, each of which can only happen once per route for
+// her. Repeat is deliberately EXCLUDED (by definition not a new route) and so is
+// Project (not sent). Without that rule, 8 ticks at 6b could be the same two
+// routes climbed four times each.
+// Rope is the priority (Jo, 2026-11-19); boulder is training for rope or for
+// sessions without a belay partner, so it carries its own lower default target.
+const LADDER_DEFAULTS={sport:'7a',boulder:'6c+'};
+const LADDER_SHAPE=[{step:0,need:1},{step:1,need:2},{step:2,need:4},{step:3,need:8,band:2}];
+function _ladderTargets(){
+  const saved=DB.get('climb_ladder')||{};
+  return {sport:saved.sport||LADDER_DEFAULTS.sport,boulder:saved.boulder||LADDER_DEFAULTS.boulder};
+}
+function ladderTargetFor(disc){
+  const t=_ladderTargets();
+  return disc==='boulder'?t.boulder:t.sport;
+}
+function setLadderTarget(g){
+  const disc=_pyramidDisc==='boulder'?'boulder':'sport';
+  const t=_ladderTargets();t[disc]=g;
+  DB.set('climb_ladder',t);
+  renderPyramid();
+}
+// Tiers from the target down. The base is a BAND of two grades, as in the book.
+function ladderTiers(target){
+  const i=CLIMB_GRADES.indexOf(target);
+  if(i<0)return [];
+  return LADDER_SHAPE.map(t=>{
+    const gs=[];
+    for(let k=0;k<(t.band||1);k++){
+      const j=i-t.step-k;
+      if(j>=0&&gs.indexOf(CLIMB_GRADES[j])<0)gs.push(CLIMB_GRADES[j]);
+    }
+    return {grades:gs.reverse(),need:t.need};
+  }).filter(t=>t.grades.length);
+}
+// {grade: sends} under the current discipline / angle filters. OS, Flash, RP only.
+function ladderSends(){
+  const out={};
+  for(const s of DB.climbSessions()){
+    for(const r of getSessionRoutes(s)){
+      if(_pyramidDisc!=='all'){
+        const d=_discOf(r);
+        if(!d||d!==_pyramidDisc)continue;
+      }
+      if(_pyramidAngle){ if(!r.angle||r.angle!==_pyramidAngle)continue; }
+      if(!r.grade)continue;
+      if(r.result==='OS'||r.result==='Flash'||r.result==='RP')out[r.grade]=(out[r.grade]||0)+1;
+    }
+  }
+  return out;
+}
+// The lowest tier that is not full is where the work is (the book fills bottom-up).
+function ladderStatus(target){
+  const tiers=ladderTiers(target),sends=ladderSends();
+  const rows=tiers.map(t=>{
+    const have=t.grades.reduce((a,g)=>a+(sends[g]||0),0);
+    return {grades:t.grades,need:t.need,have:Math.min(have,t.need),raw:have,done:have>=t.need};
+  });
+  let next=null;
+  for(let i=rows.length-1;i>=0;i--){ if(!rows[i].done){next=rows[i];break;} }
+  return {target,rows,next,complete:!next};
+}
+function renderPyramidLadder(){
+  const el=document.getElementById('pyramid-ladder');
+  if(!el)return;
+  const disc=_pyramidDisc==='boulder'?'boulder':'sport';
+  const target=ladderTargetFor(disc);
+  const st=ladderStatus(target);
+  if(!st.rows.length){el.innerHTML='';return;}
+  const opts=CLIMB_GRADES.slice(CLIMB_GRADES.indexOf('5c')).map(g=>
+    `<option value="${g}"${g===target?' selected':''}>${g}</option>`).join('');
+  const rows=st.rows.map(t=>{
+    const label=t.grades.join('/');
+    const blocks=[];
+    for(let i=0;i<t.need;i++){
+      const filled=i<t.have;
+      blocks.push(`<div style="flex:1;height:18px;border-radius:3px;margin:0 1px;
+        background:${filled?'#2ea043':'transparent'};border:1px solid ${filled?'#2ea043':'var(--border,#30363d)'}"></div>`);
+    }
+    const pad=(8-t.need)/2;
+    return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+      <div style="width:62px;flex-shrink:0;font-size:12px;font-weight:700;text-align:right">${label}</div>
+      <div style="flex:1;display:flex">${pad>0?`<div style="flex:${pad}"></div>`:''}${blocks.join('')}${pad>0?`<div style="flex:${pad}"></div>`:''}</div>
+      <div style="width:40px;flex-shrink:0;text-align:right;font-size:11px;color:${t.done?'#2ea043':'var(--muted)'};font-weight:700">${t.raw}/${t.need}</div>
+    </div>`;
+  }).join('');
+  const verdict=st.complete
+    ? `<strong style="color:#2ea043">Every tier is full — ${target} is the next project.</strong>`
+    : `<strong style="color:var(--text)">Work on ${st.next.grades.join('/')}</strong> — ${st.next.need-st.next.have} more to fill that tier.`;
+  el.innerHTML=`<div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div class="card-title" style="margin:0">\u{1F3AF} Pyramid to</div>
+      <select onchange="setLadderTarget(this.value)" style="font-size:13px;font-weight:700;padding:3px 6px;border-radius:6px;background:var(--surface);color:var(--text);border:1px solid var(--border)">${opts}</select>
+    </div>
+    ${rows}
+    <div style="margin-top:8px;font-size:13px;line-height:1.5">${verdict}</div>
+    <div class="text-xxs-muted" style="margin-top:6px;line-height:1.5">
+      1 · 2 · 4 · 8 from the top down. A block fills on an onsight, flash or redpoint — repeats don't count, since they aren't a new route.
+      ${disc==='boulder'?'Boulder has its own target; rope is the priority.':'Lead + top rope.'}
+    </div>
+  </div>`;
+}
+
 function renderPyramid(){
+  try{renderPyramidLadder();}catch(e){}
   renderBoardProgress(); // 🟫 Board Training card at the bottom of this tab
   // Count OS/Flash/RP/Project per grade band from all climb sessions
   const counts={};
