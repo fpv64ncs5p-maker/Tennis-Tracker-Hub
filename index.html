@@ -5023,6 +5023,19 @@ function _weekKey(dateStr){
   return mon.toISOString().split('T')[0];
 }
 
+// Fingerboard hangs per ISO week (2026-11-19). Kept OUT of weeklySetsByMuscle
+// on purpose: a fingerboard set is one 7-10 s hang, a gym set is 8-12 reps over
+// 30-40 s. Merging them would apply the phase target to half a number, so the
+// card shows Fingers as its own row, in hangs, with no target.
+function fbHangsByWeek(){
+  const out={};
+  DB.fbSessions().forEach(s=>{
+    const k=_weekKey(s.date);if(!k)return;
+    out[k]=(out[k]||0)+fbHangCount(s);
+  });
+  return out;
+}
+
 // {weekKey: {muscle: sets}} across every logged gym session
 function weeklySetsByMuscle(){
   const out={};
@@ -5138,6 +5151,25 @@ function renderSetsPerMuscle(){
     </div>`;
   }).join('');
 
+  // Fingers: its own row, its own unit (hangs), no target - see fbHangsByWeek.
+  const hangs=fbHangsByWeek();
+  const hangTot=weeks.reduce((a,w)=>a+(hangs[w]||0),0);
+  const fingerRow=hangTot?`<div style="display:flex;align-items:center;gap:6px;margin-top:10px;padding-top:8px;border-top:1px solid var(--border,#30363d)">
+      <div style="width:84px;flex-shrink:0;font-size:12px;font-weight:600">Fingers<div class="text-xxs-muted" style="font-weight:400">hangs</div></div>
+      <div style="flex:1;display:flex">${weeks.map((w,i)=>{
+        const v=hangs[w]||0;
+        const mx=Math.max.apply(null,weeks.map(x=>hangs[x]||0).concat([1]));
+        return `<div title="${v} hangs" style="flex:1;margin:0 1px;height:26px;border-radius:4px;position:relative;
+          background:${v>0?'#a78bfa':'var(--border,#30363d)'};opacity:${v>0?(0.25+Math.min(1,v/mx)*0.75).toFixed(2):0.35};
+          ${i===curIdx?'box-shadow:0 0 0 2px var(--text,#c9d1d9)':''}">
+          <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+            font-size:10px;font-weight:700;color:${v/mx>0.55?'#fff':'var(--text,#c9d1d9)'}">${v>0?v:''}</span></div>`;
+      }).join('')}</div>
+      <div style="width:52px;flex-shrink:0;text-align:right">
+        <span style="font-size:14px;font-weight:700">${hangTot}</span></div>
+    </div>
+    <div class="text-xxs-muted" style="margin-top:6px;line-height:1.5">Fingerboard hangs, counted per side where you ticked it. No target - a 7-10 s hang and a 12-rep set aren't the same unit, so it sits outside the sets above. Climbing isn't counted here either.</div>`:'';
+
   el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
       <span style="font-size:13px;font-weight:700">Last ${SETS_WINDOW_WEEKS} weeks</span>
       <span class="text-xs-muted">${fmtDate(weeks[0])} – today</span>
@@ -5148,6 +5180,7 @@ function renderSetsPerMuscle(){
       <div style="width:52px;flex-shrink:0;text-align:right;font-size:10px;color:var(--muted)">total</div>
     </div>
     ${rows}
+    ${fingerRow}
     <div class="text-xxs-muted" style="margin-top:10px;line-height:1.5">
       One column per week, oldest left; the outlined one is this week, still in progress.
       Prime mover (first muscle listed) = 1 set, every other muscle worked = ${SETS_PARTIAL}. Per-side sets count once.
@@ -11058,7 +11091,11 @@ function renderFBExercises(){
           <span style="font-size:10px;color:var(--muted);font-weight:600">FILL ALL (±KG)</span>
           <input type="text" placeholder="e.g. 39.5" style="width:72px;text-align:center;padding:6px 2px;font-size:13px" onchange="fbFillLoads(${i},this.value)">
         </div>
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--muted);align-self:flex-end;padding-bottom:6px;cursor:pointer">
+          <input type="checkbox" ${e.perSide?'checked':''} onchange="fbExSide(${i},this.checked)" style="width:15px;height:15px">Per side (L + R)
+        </label>
       </div>
+      ${e.perSide?`<div class="text-xxs-muted" style="margin:-4px 0 8px">${e.sets} × /side — counts as ${(parseFloat(e.sets)||0)*2} hangs</div>`:''}
       <div style="font-size:10px;color:var(--muted);font-weight:600;margin-bottom:4px">LOAD PER SET (±KG) · TAP DOT WHEN DONE</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
         ${(e.loads||[]).map((v,s)=>`<div style="display:flex;flex-direction:column;align-items:center;gap:4px">
@@ -11074,6 +11111,36 @@ function renderFBExercises(){
       <input type="text" value="${esc(e.notes||'')}" placeholder="Notes (grip, edge, feel…)" style="width:100%;padding:6px 8px;font-size:12px" onchange="fbExField(${i},'notes',this.value)">
     </div>`;
   }).join('');
+}
+
+// ── Fingerboard per-side hangs (2026-11-19) ────────────────────────────────
+// Jo's fingerboard work is one hand/arm at a time (1-arm hangs, pinch blocks),
+// but the FB tab had no per-side concept at all - the gym has `perSide`, this
+// never got it. So "10 sets" was ambiguous: 10 hangs, or 10 per side? Today's
+// session was 36 logged / 72 actual. Any volume count built on top of that
+// would have been silently wrong by 2x, so the flag comes first.
+// Day Max is unaffected either way: it is a max load, not a count.
+function fbExSide(i,on){
+  const e=fbSession.exercises[i];if(!e)return;
+  e.perSide=!!on;
+  markDirty('fb');renderFBExercises();
+}
+// Default from the last time this exercise was logged, like the load prefill -
+// no name-guessing, and it learns from what Jo actually does.
+function _fbLastPerSide(name){
+  const ss=DB.fbSessions()
+    .filter(s=>s&&s.fbv===2&&(s.exercises||[]).some(x=>x.name===name&&x.perSide!==undefined))
+    .sort((a,b)=>String(b.date).localeCompare(String(a.date))||(Number(b.id)-Number(a.id)));
+  if(!ss.length)return false;
+  const ex=(ss[0].exercises||[]).find(x=>x.name===name&&x.perSide!==undefined);
+  return !!(ex&&ex.perSide);
+}
+// Total hangs in a session, honouring per side.
+function fbHangCount(sess){
+  return (sess&&sess.exercises||[]).reduce((a,e)=>{
+    const n=parseFloat(e.sets)||0;
+    return a+n*(e.perSide?2:1);
+  },0);
 }
 
 function fbExField(i,field,val){
@@ -11172,7 +11239,7 @@ function saveFBAsTemplate(){
     if(DB.fbTemplates().some(t=>String(t.name).toLowerCase()===nm.toLowerCase())){toast('That name is taken');return;}
     DB.saveFBTemplate({id:'fbt'+Date.now(),name:nm,createdAt:Date.now(),
       exercises:fbSession.exercises.map(e=>({name:e.name,sets:e.sets,reps:e.reps,time:e.time,
-        restRep:e.restRep,restSet:e.restSet}))});
+        restRep:e.restRep,restSet:e.restSet,perSide:!!e.perSide}))});
     toast('⭐ Template saved');
     renderFBTemplates();
   });
@@ -11200,7 +11267,7 @@ function saveFBSessionAsTemplate(sessionId){
     if(DB.fbTemplates().some(t=>String(t.name).toLowerCase()===nm.toLowerCase())){toast('That name is taken');return;}
     DB.saveFBTemplate({id:'fbt'+Date.now(),name:nm,createdAt:Date.now(),
       exercises:s.exercises.map(e=>({name:e.name,sets:e.sets,reps:e.reps,time:e.time,
-        restRep:e.restRep,restSet:e.restSet}))});
+        restRep:e.restRep,restSet:e.restSet,perSide:!!e.perSide}))});
     closeModal('modal-session-detail');
     toast('⭐ Template saved');
     try{renderFBTemplates();}catch(e){}
@@ -11244,9 +11311,10 @@ function renderFBTemplates(){
 function _pushFBEntry(p,fromTemplate){
   const n=p.sets||5;
   const prev=_fbLastLoads(p.name,n);
+  const side=p.perSide!==undefined?!!p.perSide:_fbLastPerSide(p.name);
   fbSession.exercises.push({
     name:p.name,sets:n,reps:p.reps||1,time:p.time||7,
-    restRep:p.restRep||"3'",restSet:p.restSet||"5'",
+    restRep:p.restRep||"3'",restSet:p.restSet||"5'",perSide:side,
     loads:prev?prev.loads:Array(n).fill(''),done:Array(n).fill(false),rpe:'',notes:''
   });
   if(prev&&!fromTemplate)toast('Loads from '+fmtDate(prev.date));
@@ -11444,6 +11512,13 @@ function cancelFBEdit(){
 }
 
 // ── Edit one exercise inside History (Option B) ────────
+// perSide arrives from a checkbox, so keep it boolean and redraw for the hint line
+function _fbHistEdSide(on){
+  if(!_fbHistEdit||!_fbHistEdit.e)return;
+  _fbHistEdit.e.perSide=!!on;
+  _fbHistEditRerender();
+}
+
 function fbEditHistEx(sid,i){
   const s=DB.fbSessions().find(x=>String(x.id)===String(sid));
   if(!s||!s.exercises[i])return;
@@ -11469,7 +11544,11 @@ function _renderFBHistEdit(s){
     ${_fbHistIn('REST REP','restRep',e.restRep,60)}
     ${_fbHistIn('REST SET','restSet',e.restSet,60)}
     ${_fbHistIn('RPE /10','rpe',e.rpe,50,'numeric')}
+    <label style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--muted);align-self:flex-end;padding-bottom:6px;cursor:pointer">
+      <input type="checkbox" ${e.perSide?'checked':''} onchange="_fbHistEdSide(this.checked)" style="width:15px;height:15px">Per side (L + R)
+    </label>
   </div>
+  ${e.perSide?`<div class="text-xxs-muted" style="margin:-4px 0 10px">${e.sets} × /side — counts as ${(parseFloat(e.sets)||0)*2} hangs</div>`:''}
   <div style="font-size:10px;color:var(--muted);font-weight:600;margin-bottom:4px">LOAD PER SET (±KG) · TAP DOT = DONE</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
     ${e.loads.map((v,si)=>`<div style="display:flex;flex-direction:column;align-items:center;gap:4px">
