@@ -11177,6 +11177,36 @@ function saveFBAsTemplate(){
     renderFBTemplates();
   });
 }
+// Save a PAST session as a template, the way the Gym tab does
+// (saveSessionAsTemplate). Jo asked for this because the in-log button only
+// appears while the log has exercises - once a session is saved the log is
+// empty, so there was no way to turn a session you just did into a template.
+// Structure only, same as saveFBAsTemplate: loads always come from history.
+function saveFBSessionAsTemplate(sessionId){
+  const s=DB.fbSessions().find(x=>String(x.id)===String(sessionId));
+  if(!s||!(s.exercises||[]).length){toast('No exercises to save');return;}
+  const n=s.exercises.length;
+  let suffix;
+  if(s.durationMins){
+    const h=Math.floor(s.durationMins/60),m=s.durationMins%60;
+    suffix=`${h>0?h+'h ':''}${m}min`;
+  }else{
+    suffix=fmtDate(s.date);
+  }
+  const def=`${n} hang${n===1?'':'s'} · ${suffix}`;
+  showTextModal('Save as template',def,'Save',name=>{
+    const nm=String(name||'').trim();
+    if(!nm){toast('Give it a name');return;}
+    if(DB.fbTemplates().some(t=>String(t.name).toLowerCase()===nm.toLowerCase())){toast('That name is taken');return;}
+    DB.saveFBTemplate({id:'fbt'+Date.now(),name:nm,createdAt:Date.now(),
+      exercises:s.exercises.map(e=>({name:e.name,sets:e.sets,reps:e.reps,time:e.time,
+        restRep:e.restRep,restSet:e.restSet}))});
+    closeModal('modal-session-detail');
+    toast('⭐ Template saved');
+    try{renderFBTemplates();}catch(e){}
+  });
+}
+
 function loadFBTemplate(id){
   const t=DB.fbTemplates().find(x=>String(x.id)===String(id));
   if(!t)return;
@@ -11356,7 +11386,8 @@ function showFBSessionDetail(id){
     <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-session-detail');fbLoadSessionIntoLog('${s.id}')">🔁 Load into Log</button>
     <button class="btn btn-gym" style="flex:1" onclick="editFBSession('${s.id}')">✏️ Edit Session</button>
     <button class="btn btn-ghost" style="flex:1;color:var(--red)" onclick="deleteFBSession('${s.id}')">🗑 Delete</button>
-  </div>`;
+  </div>
+  <button class="btn btn-ghost btn-block" style="margin-top:8px" onclick="saveFBSessionAsTemplate('${s.id}')">⭐ Save as template</button>`;
   document.getElementById('session-detail-content').innerHTML=html+'<div style="height:8px"></div>';
   openModal('modal-session-detail');
 }
