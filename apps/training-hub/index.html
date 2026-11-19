@@ -590,12 +590,14 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
         <button class="seg-btn" style="flex-shrink:0" data-mode="assess" onclick="gymMode('assess')">📋 Assess</button>
         <button class="seg-btn" style="flex-shrink:0" data-mode="stretch" onclick="gymMode('stretch')">🧘 Stretch</button>
         <button class="seg-btn" style="flex-shrink:0" data-mode="library" onclick="gymMode('library')">📚 Library</button>
+        <button class="seg-btn" style="flex-shrink:0" data-mode="report" onclick="gymMode('report')">📊 Report</button>
       </div>
       <div id="gym-library" style="display:none"></div>
       <div id="gym-sling" style="display:none"></div>
 
       <!-- LOG MODE -->
       <div id="gym-log">
+        <div id="gym-report-banner"></div>
         <div id="gym-planned-banner"></div>
         <div id="gym-edit-banner" style="display:none;background:var(--warn,#f59e0b);color:#000;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:13px;font-weight:600;text-align:center">✏️ Editing saved session — changes will overwrite the original <button onclick="cancelGymEdit()" style="background:#fff3;border:none;border-radius:4px;padding:2px 8px;margin-left:8px;cursor:pointer;font-size:12px">Cancel</button></div>
         <div id="gym-draft-banner" style="display:none;background:#dbeafe;border:1px solid #93c5fd;padding:8px 12px;border-radius:8px;margin-bottom:8px;font-size:13px;align-items:center;gap:8px;flex-wrap:wrap">
@@ -745,6 +747,9 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           <div id="gym-ex-progression"></div>
         </div>
       </div>
+
+      <!-- REPORT MODE -->
+      <div id="gym-report" style="display:none"></div>
 
       <!-- GYM MACRO MODE -->
       <div id="gym-macro" style="display:none">
@@ -2164,6 +2169,7 @@ const DB = {
   saveTrainingCycle(c){this.set('training_cycle',c)},
   saveGymMacro(d){this.set('gym_macro_data',d)},
   gymAssessments(){return this.get('gym_assessments')||[]},
+  gymReports(){return this.get('gym_reports')||[]},
   saveGymAssessment(a){const arr=this.gymAssessments();arr.unshift(a);this.set('gym_assessments',arr)},
   deleteGymAssessment(id){const arr=this.gymAssessments().filter(a=>String(a.id)!==String(id));this.set('gym_assessments',arr)},
   ormCache(){return this.get('gym_orm_cache')||{}},
@@ -2203,7 +2209,8 @@ const DATA_KEYS=['gym_sessions','gym_templates','fb_sessions','fb_templates',
   'climb_sessions','climb_assessments','plan_data','rehab_data','macro_data',
   'gym_macro_data','gym_assessments','stretch_sessions','self_assessments',
   'gym_height','tennis_matches','tennis_overlay','tennis_merges','custom_gyms','fb_custom_ex',
-  'custom_exercises','training_cycle','planned_sessions','exercise_overrides','tennis_serve_sessions','climb_projects'];
+  'custom_exercises','training_cycle','planned_sessions','exercise_overrides','tennis_serve_sessions','climb_projects',
+  'gym_reports'];
 
 function exportAllData(){
   const data={};
@@ -2797,7 +2804,7 @@ let buildCats=[];
 let buildEquip='';
 
 function gymMode(mode){
-  ['log','build','history','progress','macro','assess','stretch','library','sling'].forEach(m=>{
+  ['log','build','history','progress','macro','assess','stretch','library','sling','report'].forEach(m=>{
     const el=document.getElementById('gym-'+m);
     if(el)el.style.display=m===mode?'':'none';
   });
@@ -2808,7 +2815,7 @@ function gymMode(mode){
     b.classList.toggle('active',b.dataset.mode===mode);
   });
   if(mode==='history')_gymHistoryShown=HISTORY_PAGE_SIZE;
-  if(mode==='log')renderGymMacroContextBanner();
+  if(mode==='log'){renderGymMacroContextBanner();try{renderGymReportBanner();}catch(e){}}
   if(mode==='build'){
     buildCats=[];buildEquip='';
     document.querySelectorAll('[data-build-area]').forEach(b=>b.classList.remove('active'));
@@ -2831,6 +2838,7 @@ function gymMode(mode){
   if(mode==='stretch')renderStretchHistory();
   if(mode==='library')renderExLibrary();
   if(mode==='sling')renderSlingMode();
+  if(mode==='report')renderGymReport();
 }
 
 function toggleBuildArea(el){
@@ -5108,6 +5116,599 @@ function renderSetsPerMuscle(){
       Strength needs less volume than growth, so a lower target there is the plan working, not a shortfall.
       Warm-ups and stretches are not counted.
     </div>`;
+}
+
+// ══════════════════════════════════════════════════
+//  GYM REPORT (2026-11-19, Jo chose B)
+// ══════════════════════════════════════════════════
+// A period report: the full picture, plus headlines to plan the next block from.
+// Everything is DERIVED from gym_sessions / gym_assessments / rehab_data on the
+// fly (like currentORMMap) — only a small headline snapshot is stored in
+// `gym_reports`, so this report can be compared with the next one.
+//
+// Period choice is anchored to the SEASON, not a hard 12 weeks: Jo's season is
+// lead deload + 4w + deload + 4w + 2w final deload ≈ 12 weeks anyway, but a
+// fixed count eventually cuts a strength block in half and the sets-per-muscle
+// numbers then read as a shortfall when the plan is working. "Last 12 weeks"
+// and "Since day 1" are still offered.
+const REPORT_FIXED_WEEKS=12;
+const REPORT_WEEK_SESSION_TARGET=2;     // Jo's 2×/week gym target (CYCLE_RULES)
+const REPORT_STALE_WEEKS=6;             // "not trained since" threshold
+const REPORT_MIN_SESSIONS=3;            // before an exercise gets a progression verdict
+
+// Sets that are deliberately submaximal, or whose exercise name doesn't identify
+// ONE movement, are excluded from STRENGTH PROGRESSION only. They still count
+// everywhere else (sessions, sets per muscle, tonnage) — this is a display rule,
+// nothing is removed from the log.
+//  • GTG = grease-the-groove: easy repeat sets, never a progression signal.
+//  • Cable Anti-rotation before 1 Nov 2026: ONE exercise name ("Position 1")
+//    covered three different pulley heights, the real height typed in the notes
+//    (37 of 59 entries say so, 10 say nothing at all). Confirmed with Jo
+//    2026-11-19: this was NOT a gym change — the naming changed. Supersedes the
+//    2026-11-17 note in this file that called those entries "the old gym".
+const REPORT_SKIP_BEFORE=[{re:/anti-?rotation/i,before:'2026-11-01',
+  why:'one name covered three pulley heights (the height was typed in the notes), and most were GTG practice'}];
+function _reportGTG(e){return /\bgtg\b|grease[ -]the[ -]groove/i.test(String((e&&e.notes)||''));}
+function _reportSkipProgression(e,date){
+  if(!e||e.type==='cardio')return null;
+  if(_reportGTG(e))return 'grease-the-groove practice sets';
+  for(let i=0;i<REPORT_SKIP_BEFORE.length;i++){
+    const r=REPORT_SKIP_BEFORE[i];
+    if(r.re.test(e.name||'')&&date&&date<r.before)return r.why;
+  }
+  return null;
+}
+
+// Epley estimate, so a 6-rep best and a 12-rep best are comparable.
+// Deliberately NOT ormFromSet(): that requires RIR and returns null without it,
+// which would drop most of the history out of the report. Labelled "est." in the
+// UI for exactly that reason.
+function _reportE1RM(w,reps){
+  const W=parseFloat(_normalizeKgInput(w));
+  if(!(W>0))return null;
+  const r=String(reps==null?'':reps).trim();
+  if(!/^\d+$/.test(r))return null;
+  const n=parseInt(r,10);
+  if(n<1||n>20)return null;
+  return n===1?W:W*(1+n/30);
+}
+
+function _reportWeeks(from,to){
+  const out=[];
+  if(!from||!to)return out;
+  let w=getMonday(from);
+  const end=getMonday(to);
+  let guard=0;
+  while(w<=end&&guard++<520){out.push(w);w=addDays(w,7);}
+  return out;
+}
+
+// Available periods, best first.
+function reportPeriods(){
+  const dates=DB.gymSessions().filter(s=>s.date).map(s=>s.date).sort();
+  const first=dates.length?dates[0]:today();
+  const t=today();
+  const out=[];
+  let s=null;
+  try{s=getSeason();}catch(e){}
+  if(s){
+    const segs=seasonSegments(s);
+    if(segs.length){
+      const a=segs[0].start,b=segs[segs.length-1].end;
+      out.push({id:'season',label:'This season',from:a,to:b<t?b:t,
+        sub:_fmtShort(a)+' – '+_fmtShort(b)+(b<t?' · finished':' · in progress')});
+    }
+  }
+  out.push({id:'w12',label:'Last '+REPORT_FIXED_WEEKS+' weeks',
+    from:addDays(getMonday(t),-(REPORT_FIXED_WEEKS-1)*7),to:t,sub:''});
+  out.push({id:'all',label:'Since day 1',from:first,to:t,sub:_fmtShort(first)+' – today'});
+  return out;
+}
+
+// Push/pull and front/back are read off the same muscle tags the body map uses.
+const REPORT_BALANCE=[
+  {label:'Push vs pull',a:['pecs','delts','triceps'],b:['lats','traps','biceps'],an:'push',bn:'pull'},
+  {label:'Upper vs lower',a:['pecs','delts','triceps','lats','traps','biceps','forearms'],
+   b:['quads','hamstrings','glutes','calves'],an:'upper',bn:'lower'},
+  {label:'Front vs back chain',a:['quads','abs'],b:['hamstrings','glutes','lowerback'],an:'front',bn:'back'}
+];
+
+// ── the engine: pure, no DOM ────────────────────────────────────────────────
+function buildGymReport(from,to){
+  const all=DB.gymSessions().filter(s=>s&&s.date&&s.date>=from&&s.date<=to)
+    .slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const weeks=_reportWeeks(from,to);
+  const R={from:from,to:to,weeks:weeks.length,generated:today()};
+
+  // ── overview ──────────────────────────────────────────
+  let mins=0,durN=0,sets=0,entries=0,noRir=0,noPct=0,prev=null;
+  const phases={},gaps=[];
+  all.forEach(s=>{
+    const d=parseFloat(s.durationMins);
+    if(d>0){mins+=d;durN++;}
+    if(s.goal)phases[s.goal]=(phases[s.goal]||0)+1;
+    if(prev)gaps.push(_daysBetween(prev,s.date));
+    prev=s.date;
+    (s.exercises||[]).forEach(e=>{
+      if(!e||e.type==='cardio')return;
+      entries++;
+      const n=parseFloat(e.doneSets)||parseFloat(e.sets)||0;
+      if(n>0)sets+=n;
+      if(e.rir===undefined||e.rir===null||String(e.rir).trim()==='')noRir++;
+      if(!(parseFloat(e.intensity)>0))noPct++;
+    });
+  });
+  R.overview={sessions:all.length,hours:Math.round(mins/60*10)/10,
+    avgMin:durN?Math.round(mins/durN):0,
+    perWeek:weeks.length?Math.round(all.length/weeks.length*10)/10:0,
+    target:REPORT_WEEK_SESSION_TARGET,
+    longestGap:gaps.length?Math.max.apply(null,gaps):0,
+    firstDate:all.length?all[0].date:null,lastDate:all.length?all[all.length-1].date:null,
+    sets:Math.round(sets),entries:entries,phases:phases,
+    noRirPct:entries?Math.round(noRir/entries*100):0,
+    noPctPct:entries?Math.round(noPct/entries*100):0};
+
+  // ── week by week ──────────────────────────────────────
+  const wk={};
+  weeks.forEach(w=>{wk[w]={week:w,sessions:0,mins:0,target:weekSetsTarget(w),phase:weekGymPhase(w)};});
+  all.forEach(s=>{
+    const k=_weekKey(s.date);
+    if(!wk[k])return;
+    wk[k].sessions++;
+    const d=parseFloat(s.durationMins);
+    if(d>0)wk[k].mins+=d;
+  });
+  R.weekly=weeks.map(w=>wk[w]);
+  R.weeksTrained=R.weekly.filter(w=>w.sessions>0).length;
+
+  // ── sets per muscle vs each week's own phase target ───
+  const tot={};
+  all.forEach(s=>{
+    const m=calcSetsByMuscle(s.exercises);
+    Object.keys(m).forEach(k=>{tot[k]=(tot[k]||0)+m[k];});
+  });
+  const target=weeks.reduce((a,w)=>a+weekSetsTarget(w),0);
+  R.setsTarget=target;
+  R.muscles=Object.keys(tot).map(k=>({key:k,label:MUSCLE_LABELS[k]||k,zone:MUSCLE_ZONE[k]||'',
+    sets:Math.round(tot[k]*10)/10,target:target,
+    pct:target?Math.round(tot[k]/target*100):0}))
+    .sort((a,b)=>b.sets-a.sets);
+
+  // ── balance ratios ────────────────────────────────────
+  const sum=keys=>keys.reduce((a,k)=>a+(tot[k]||0),0);
+  R.balance=REPORT_BALANCE.map(g=>{
+    const a=sum(g.a),b=sum(g.b);
+    const lo=Math.min(a,b),hi=Math.max(a,b);
+    return {label:g.label,an:g.an,bn:g.bn,a:Math.round(a*10)/10,b:Math.round(b*10)/10,
+      ratio:lo>0?Math.round(hi/lo*10)/10:null,
+      heavier:a===b?null:(a>b?g.an:g.bn)};
+  });
+
+  // ── strength progression ──────────────────────────────
+  const exMap={},skipped={};
+  all.forEach(s=>{
+    (s.exercises||[]).forEach(e=>{
+      if(!e||e.type==='cardio'||!e.name)return;
+      const why=_reportSkipProgression(e,s.date);
+      if(why){
+        if(!skipped[e.name])skipped[e.name]={name:e.name,n:0,why:why,reasons:[]};
+        const sk=skipped[e.name];
+        if(sk.reasons.indexOf(why)<0){sk.reasons.push(why);sk.why=sk.reasons.join('; ');}
+        sk.n++;
+        return;
+      }
+      const e1=_reportE1RM(e.weight,e.reps);
+      if(e1==null)return;
+      if(!exMap[e.name])exMap[e.name]={name:e.name,cat:e.cat||'',byDate:{}};
+      const cur=exMap[e.name].byDate[s.date];
+      const cand={e1:e1,w:parseFloat(_normalizeKgInput(e.weight)),reps:parseInt(e.reps,10)};
+      if(!cur||cand.e1>cur.e1)exMap[e.name].byDate[s.date]=cand;
+    });
+  });
+  R.progression=Object.keys(exMap).map(k=>{
+    const x=exMap[k],ds=Object.keys(x.byDate).sort();
+    const f=x.byDate[ds[0]],l=x.byDate[ds[ds.length-1]];
+    let bestD=ds[0],best=f;
+    ds.forEach(d=>{if(x.byDate[d].e1>best.e1){best=x.byDate[d];bestD=d;}});
+    const chg=f.e1>0?(l.e1-f.e1)/f.e1*100:0;
+    return {name:x.name,cat:x.cat,n:ds.length,
+      firstD:ds[0],firstW:f.w,firstR:f.reps,firstE1:Math.round(f.e1*10)/10,
+      lastD:ds[ds.length-1],lastW:l.w,lastR:l.reps,lastE1:Math.round(l.e1*10)/10,
+      bestD:bestD,bestW:best.w,bestR:best.reps,bestE1:Math.round(best.e1*10)/10,
+      chg:Math.round(chg)};
+  }).sort((a,b)=>b.n-a.n||b.lastE1-a.lastE1);
+  R.excluded=Object.keys(skipped).map(k=>skipped[k]).sort((a,b)=>b.n-a.n);
+
+  // ── not trained lately (inside the period) ────────────
+  const staleCut=addDays(to,-REPORT_STALE_WEEKS*7);
+  R.stale=R.progression.filter(p=>p.n>=2&&p.lastD<staleCut)
+    .map(p=>({name:p.name,lastD:p.lastD,weeks:Math.floor(_daysBetween(p.lastD,to)/7)}))
+    .sort((a,b)=>b.weeks-a.weeks);
+
+  // ── 1RM now vs the assessments in this period ─────────
+  let orm={};
+  try{orm=currentORMMap();}catch(e){orm={};}
+  const assessIn=DB.gymAssessments().filter(a=>a.date&&a.date>=from&&a.date<=to)
+    .slice().sort((a,b)=>a.date.localeCompare(b.date));
+  R.assessments=assessIn.map(a=>({date:a.date,phase:a.phase||'',
+    n:(a.exercises||[]).filter(e=>e.orm).length}));
+  R.orm=Object.keys(orm).map(k=>({name:k,orm:Math.round(orm[k].orm*10)/10,
+    source:orm[k].source,date:orm[k].date}))
+    .filter(o=>o.date>=from&&o.date<=to)
+    .sort((a,b)=>b.orm-a.orm);
+
+  // ── body weight ───────────────────────────────────────
+  R.bodyWeight=all.filter(s=>parseFloat(s.bodyWeight)>0)
+    .map(s=>({date:s.date,kg:parseFloat(s.bodyWeight)}));
+
+  // ── rehab + sling inside the period ───────────────────
+  let rehab=[];
+  try{
+    const rd=DB.rehabData()||{};
+    rehab=(rd.sessions||[]).filter(x=>x&&x.date&&x.date>=from&&x.date<=to);
+  }catch(e){}
+  R.rehab={sessions:rehab.length,
+    gymLogged:all.filter(s=>{try{return _isRehabGym(s);}catch(e){return false;}}).length};
+  const sling={};
+  all.forEach(s=>{
+    (s.exercises||[]).forEach(e=>{
+      if(!e||!e.name)return;
+      let info=null;
+      try{info=_slingInfo(e.name);}catch(err){}
+      if(!info)return;
+      const lv=parseFloat(e.slingLvl);
+      if(!sling[e.name])sling[e.name]={name:e.name,n:0,first:null,last:null};
+      sling[e.name].n++;
+      if(lv>0){
+        if(sling[e.name].first===null)sling[e.name].first=lv;
+        sling[e.name].last=lv;
+      }
+    });
+  });
+  R.sling=Object.keys(sling).map(k=>sling[k]).sort((a,b)=>b.n-a.n);
+
+  R.headlines=_reportHeadlines(R);
+  return R;
+}
+
+// Short, numbered statements to plan the next block from. Ordered by how much
+// they should change what Jo does next, not by how impressive they sound.
+function _reportHeadlines(R){
+  const H=[],push=(k,t)=>H.push({k:k,t:t});
+  const o=R.overview;
+
+  // consistency
+  if(o.sessions===0){push('watch','No gym sessions in this period.');return H;}
+  if(o.perWeek>=o.target)
+    push('good','Consistency held: '+o.perWeek+' sessions a week against a target of '+o.target+' ('+o.sessions+' sessions over '+R.weeks+' weeks).');
+  else
+    push('watch','Consistency: '+o.perWeek+' sessions a week against a target of '+o.target+'. '+(R.weeks-R.weeksTrained)+' of '+R.weeks+' weeks had no gym session at all.');
+  if(o.longestGap>=14)push('watch','Longest gap between sessions was '+o.longestGap+' days.');
+
+  // volume vs target
+  const behind=R.muscles.filter(m=>m.pct<70).slice(0,4);
+  const ahead=R.muscles.filter(m=>m.pct>=130).slice(0,3);
+  if(behind.length)
+    push('watch','Behind the volume target: '+behind.map(m=>m.label+' '+_setsFmt(m.sets)+'/'+R.setsTarget).join(' · ')+'. These are the first candidates for the next block.');
+  if(ahead.length)
+    push('info','Well covered: '+ahead.map(m=>m.label+' '+_setsFmt(m.sets)).join(' · ')+' sets — partly rehab and core work, which is the programme doing its job.');
+
+  // balance
+  R.balance.forEach(b=>{
+    if(b.ratio&&b.ratio>=2&&b.heavier)
+      push('watch',b.label+': '+b.heavier+' is '+b.ratio+'× the other side ('+_setsFmt(b.a)+' '+b.an+' vs '+_setsFmt(b.b)+' '+b.bn+').');
+  });
+
+  // progression
+  const solid=R.progression.filter(p=>p.n>=REPORT_MIN_SESSIONS);
+  const up=solid.filter(p=>p.chg>=10).sort((a,b)=>b.chg-a.chg).slice(0,3);
+  const flat=solid.filter(p=>p.n>=4&&Math.abs(p.chg)<=2);
+  const down=solid.filter(p=>p.chg<=-8).sort((a,b)=>a.chg-b.chg).slice(0,3);
+  if(up.length)
+    push('good','Still progressing: '+up.map(p=>p.name+' +'+p.chg+'%').join(' · ')+' (estimated 1RM, first to last session in the period).');
+  if(flat.length)
+    push('watch',flat.length+' lift'+(flat.length>1?'s':'')+' flat over 4+ sessions: '+flat.slice(0,3).map(p=>p.name).join(' · ')+'. Worth a load or rep change next block.');
+  if(down.length)
+    push('watch','Down on estimated 1RM: '+down.map(p=>p.name+' '+p.chg+'%').join(' · ')+'.');
+  if(R.stale.length)
+    push('gap','Not trained in '+REPORT_STALE_WEEKS+'+ weeks: '+R.stale.slice(0,4).map(p=>p.name+' ('+p.weeks+'w)').join(' · ')+'.');
+
+  // body weight
+  if(R.bodyWeight.length>=2){
+    const a=R.bodyWeight[0],b=R.bodyWeight[R.bodyWeight.length-1];
+    const d=Math.round((b.kg-a.kg)*10)/10;
+    push('info','Body weight '+a.kg+' → '+b.kg+' kg ('+(d>0?'+':'')+d+' kg) between '+fmtDate(a.date)+' and '+fmtDate(b.date)+'.');
+  }
+
+  // data quality — this is what makes the NEXT report sharper
+  if(o.noRirPct>=60)
+    push('gap','RIR is missing on '+o.noRirPct+'% of sets, so Current 1RM leans on assessments rather than your actual sets. Logging RIR on the last set of the main lifts would fix that.');
+  if(R.excluded.length){
+    const n=R.excluded.reduce((a,x)=>a+x.n,0);
+    push('info',n+' entries are left out of the progression table: '+R.excluded.slice(0,2).map(x=>x.name).join(' · ')+' — '+R.excluded[0].why+'. They still count as work done.');
+  }
+  return H;
+}
+
+// ── saved snapshots + the prompt ────────────────────────────────────────────
+// Only headline numbers are stored, never a copy of the raw sessions.
+function saveGymReport(){
+  if(!_reportCur){toast('Nothing to save yet');return;}
+  const R=_reportCur;
+  const snap={id:Date.now(),createdAt:today(),from:R.from,to:R.to,label:_reportLabel||'',
+    sessions:R.overview.sessions,hours:R.overview.hours,perWeek:R.overview.perWeek,
+    sets:R.overview.sets,weeks:R.weeks,muscles:{},top:[],
+    bw:R.bodyWeight.length?R.bodyWeight[R.bodyWeight.length-1].kg:null};
+  R.muscles.forEach(m=>{snap.muscles[m.key]=m.sets;});
+  R.progression.filter(p=>p.n>=REPORT_MIN_SESSIONS).slice(0,14)
+    .forEach(p=>{snap.top.push({name:p.name,e1:p.lastE1});});
+  const list=DB.gymReports();
+  list.push(snap);
+  DB.set('gym_reports',list);
+  toast('Report saved');
+  renderGymReport();
+}
+function deleteGymReport(id){
+  const list=DB.gymReports().filter(r=>String(r.id)!==String(id));
+  DB.set('gym_reports',list);
+  toast('Report deleted');
+  renderGymReport();
+}
+// The previous saved report that ENDS before this one starts.
+function _reportPrevSnap(from){
+  const list=DB.gymReports().filter(r=>r.to&&r.to<=from)
+    .slice().sort((a,b)=>String(a.to).localeCompare(String(b.to)));
+  return list.length?list[list.length-1]:null;
+}
+
+// Is a report due? A finished season with no report covering it, else 12 weeks
+// since the last one.
+function reportDue(){
+  const dates=DB.gymSessions().filter(s=>s.date).map(s=>s.date).sort();
+  if(dates.length<4)return null;
+  const saved=DB.gymReports().slice().sort((a,b)=>String(a.to).localeCompare(String(b.to)));
+  const last=saved.length?saved[saved.length-1]:null;
+  let s=null;
+  try{s=getSeason();}catch(e){}
+  if(s){
+    const segs=seasonSegments(s);
+    if(segs.length){
+      const end=segs[segs.length-1].end;
+      if(end<today()&&(!last||!last.to||last.to<end))
+        return {id:'season',from:segs[0].start,to:end,
+          reason:'Your season finished on '+_fmtShort(end)+'.'};
+    }
+  }
+  const since=(last&&last.to)?last.to:dates[0];
+  const d=_daysBetween(since,today());
+  if(d>=REPORT_FIXED_WEEKS*7)
+    return {id:'w12',from:since,to:today(),
+      reason:'It has been '+Math.floor(d/7)+' weeks since your last report.'};
+  return null;
+}
+function renderGymReportBanner(){
+  const el=document.getElementById('gym-report-banner');
+  if(!el)return;
+  let due=null;
+  try{due=reportDue();}catch(e){}
+  if(!due){el.innerHTML='';return;}
+  el.innerHTML='<div class="card" style="margin-bottom:12px;border-left:3px solid #f0883e">'+
+    '<div style="font-size:13px;font-weight:700;margin-bottom:2px">📊 A training report is due</div>'+
+    '<div class="text-xs-muted" style="margin-bottom:8px">'+_esc(due.reason)+'</div>'+
+    '<button class="btn btn-gym btn-sm" onclick="gymMode(\'report\');reportRange(\''+due.id+'\')">Generate it</button>'+
+    '</div>';
+}
+
+// ── UI ──────────────────────────────────────────────────────────────────────
+let _reportCur=null,_reportRangeId='',_reportLabel='',_reportCustomOpen=false;
+function _esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+function reportRange(id,fromVal,toVal){
+  const ps=reportPeriods();
+  let p=ps.filter(x=>x.id===id)[0];
+  if(id==='custom'){
+    const a=fromVal||document.getElementById('report-from').value;
+    const b=toVal||document.getElementById('report-to').value;
+    if(!a||!b){toast('Pick both dates');return;}
+    if(a>b){toast('Start date is after the end date');return;}
+    p={id:'custom',label:'Custom',from:a,to:b,sub:''};
+  }
+  if(!p)p=ps[ps.length-1];
+  _reportRangeId=p.id;_reportLabel=p.label;
+  _reportCur=buildGymReport(p.from,p.to);
+  renderGymReport();
+}
+
+function renderGymReport(){
+  const el=document.getElementById('gym-report');
+  if(!el)return;
+  const ps=reportPeriods();
+  if(!_reportCur){
+    const p=ps[0];
+    _reportRangeId=p.id;_reportLabel=p.label;
+    _reportCur=buildGymReport(p.from,p.to);
+  }
+  const R=_reportCur,o=R.overview;
+  const picker=ps.map(p=>'<button class="seg-btn'+(p.id===_reportRangeId?' active':'')+'" style="flex:1;flex-shrink:0" onclick="reportRange(\''+p.id+'\')">'+_esc(p.label)+'</button>').join('')+
+    '<button class="seg-btn'+(_reportRangeId==='custom'?' active':'')+'" style="flex-shrink:0" onclick="_reportCustomOpen=!_reportCustomOpen;renderGymReport()">Custom</button>';
+  const custom=_reportCustomOpen?'<div style="display:flex;gap:6px;align-items:flex-end;margin-top:8px">'+
+    '<div style="flex:1"><label class="text-xxs-muted">From</label><input type="date" id="report-from" value="'+R.from+'" style="width:100%"></div>'+
+    '<div style="flex:1"><label class="text-xxs-muted">To</label><input type="date" id="report-to" value="'+R.to+'" style="width:100%"></div>'+
+    '<button class="btn btn-gym btn-sm" onclick="reportRange(\'custom\')">Go</button></div>':'';
+
+  const sub=ps.filter(p=>p.id===_reportRangeId)[0];
+  const head='<div class="card" style="margin-bottom:12px">'+
+    '<div style="display:flex;gap:4px;overflow-x:auto">'+picker+'</div>'+custom+
+    '<div class="text-xs-muted" style="margin-top:8px">'+fmtDate(R.from)+' – '+fmtDate(R.to)+' · '+R.weeks+' weeks'+(sub&&sub.sub?' · '+_esc(sub.sub):'')+'</div>'+
+    '</div>';
+
+  if(!o.sessions)
+    return void(el.innerHTML=head+'<div class="card"><p class="text-sm-muted">No gym sessions in this period.</p></div>');
+
+  // headlines
+  const ICON={good:'✅',watch:'⚠️',gap:'📭',info:'ℹ️'};
+  const COL={good:'#2ea043',watch:'#f0883e',gap:'#8b949e',info:'#388bfd'};
+  const headlines='<div class="card" style="margin-bottom:12px">'+
+    '<div class="card-title">Headlines</div>'+
+    R.headlines.map(h=>'<div style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-start">'+
+      '<span style="flex-shrink:0">'+ICON[h.k]+'</span>'+
+      '<span style="font-size:13px;line-height:1.5;border-left:2px solid '+COL[h.k]+';padding-left:8px">'+_esc(h.t)+'</span></div>').join('')+
+    '</div>';
+
+  // overview numbers
+  const prev=_reportPrevSnap(R.from);
+  const dlt=(now,was,unit)=>{
+    if(was==null||was===undefined)return '';
+    const d=Math.round((now-was)*10)/10;
+    if(!d)return '<span class="text-xxs-muted"> =</span>';
+    return '<span class="text-xxs-muted" style="color:'+(d>0?'#2ea043':'#8b949e')+'"> '+(d>0?'▲':'▼')+Math.abs(d)+(unit||'')+'</span>';
+  };
+  const box=(v,l,extra)=>'<div style="flex:1;min-width:72px;text-align:center;padding:8px 4px">'+
+    '<div style="font-size:19px;font-weight:800">'+v+(extra||'')+'</div>'+
+    '<div class="text-xxs-muted">'+l+'</div></div>';
+  const phaseStr=Object.keys(o.phases).map(k=>k+' '+o.phases[k]).join(' · ')||'—';
+  const overview='<div class="card" style="margin-bottom:12px">'+
+    '<div class="card-title">The period</div>'+
+    '<div style="display:flex;flex-wrap:wrap">'+
+      box(o.sessions,'sessions',prev?dlt(o.sessions,prev.sessions):'')+
+      box(o.hours,'hours',prev?dlt(o.hours,prev.hours,'h'):'')+
+      box(o.perWeek,'per week',prev?dlt(o.perWeek,prev.perWeek):'')+
+      box(o.avgMin,'avg min')+
+      box(o.sets,'sets',prev?dlt(o.sets,prev.sets):'')+
+    '</div>'+
+    '<div class="text-xs-muted" style="margin-top:6px;line-height:1.6">Phases logged: '+_esc(phaseStr)+
+      '<br>Trained in '+R.weeksTrained+' of '+R.weeks+' weeks · longest gap '+o.longestGap+' days'+
+      (prev?'<br>Compared with your report to '+fmtDate(prev.to):'')+'</div>'+
+    '</div>';
+
+  // week strip
+  const maxS=Math.max.apply(null,R.weekly.map(w=>w.sessions).concat([1]));
+  const strip='<div class="card" style="margin-bottom:12px">'+
+    '<div class="card-title">Week by week</div>'+
+    '<div style="display:flex;gap:2px;align-items:flex-end;height:60px">'+
+    R.weekly.map(w=>{
+      const h=Math.round(w.sessions/maxS*52)||3;
+      const col=w.sessions>=REPORT_WEEK_SESSION_TARGET?'#2ea043':(w.sessions?'#f0883e':'var(--border,#30363d)');
+      return '<div title="'+w.week+': '+w.sessions+' sessions" style="flex:1;background:'+col+';height:'+h+'px;border-radius:3px 3px 0 0"></div>';
+    }).join('')+'</div>'+
+    '<div class="text-xxs-muted" style="margin-top:6px">'+_fmtShort(R.weekly[0].week)+' → '+_fmtShort(R.weekly[R.weekly.length-1].week)+' · green = hit the '+REPORT_WEEK_SESSION_TARGET+'×/week target</div>'+
+    '</div>';
+
+  // muscles
+  const muscles='<div class="card" style="margin-bottom:12px">'+
+    '<div class="card-title">Sets per muscle</div>'+
+    R.muscles.map(m=>{
+      const col=({sup:'#388bfd',cor:'#f0883e',inf:'#2ea043',wri:'#a78bfa'})[m.zone]||'#8b949e';
+      const w=Math.min(100,m.pct);
+      const pv=prev&&prev.muscles?prev.muscles[m.key]:null;
+      return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'+
+        '<div style="width:84px;flex-shrink:0;font-size:12px;font-weight:600">'+_esc(m.label)+'</div>'+
+        '<div style="flex:1;height:16px;background:var(--border,#30363d);border-radius:4px;overflow:hidden">'+
+          '<div style="width:'+w+'%;height:100%;background:'+col+';opacity:'+(m.pct>=100?1:0.6)+'"></div></div>'+
+        '<div style="width:74px;flex-shrink:0;text-align:right;font-size:12px;font-weight:700">'+_setsFmt(m.sets)+
+          '<span class="text-xxs-muted">/'+R.setsTarget+'</span>'+(pv!=null?dlt(m.sets,pv):'')+'</div></div>';
+    }).join('')+
+    '<div class="text-xxs-muted" style="margin-top:8px;line-height:1.5">Target is the sum of each week\'s own phase target ('+
+      PHASE_EMOJI.hypertrophy+' '+PHASE_SETS_TARGET.hypertrophy+' · '+PHASE_EMOJI.strength+' '+PHASE_SETS_TARGET.strength+' · '+
+      PHASE_EMOJI.power+' '+PHASE_SETS_TARGET.power+' · '+PHASE_EMOJI.deload+' '+PHASE_SETS_TARGET.deload+' sets a week), so a strength block is judged on its own terms. Prime mover = 1 set, every other muscle worked = '+SETS_PARTIAL+'.</div>'+
+    '</div>';
+
+  // balance
+  const balance='<div class="card" style="margin-bottom:12px">'+
+    '<div class="card-title">Balance</div>'+
+    R.balance.map(b=>{
+      const t=b.a+b.b,pa=t?Math.round(b.a/t*100):50;
+      return '<div style="margin-bottom:10px">'+
+        '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'+
+          '<span style="font-weight:600">'+_esc(b.label)+'</span>'+
+          '<span class="text-xxs-muted">'+_setsFmt(b.a)+' '+b.an+' · '+_setsFmt(b.b)+' '+b.bn+(b.ratio?' · '+b.ratio+'×':'')+'</span></div>'+
+        '<div style="display:flex;height:12px;border-radius:4px;overflow:hidden">'+
+          '<div style="width:'+pa+'%;background:#388bfd"></div><div style="flex:1;background:#2ea043"></div></div></div>';
+    }).join('')+
+    '<div class="text-xxs-muted">Read off the same muscle tags as the body map, so rehab and core drills count here too.</div>'+
+    '</div>';
+
+  // progression
+  const prog=R.progression.filter(p=>p.n>=2);
+  const progression='<div class="card" style="margin-bottom:12px">'+
+    '<div class="card-title">Strength progression</div>'+
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'+
+    '<tr style="text-align:left;color:var(--muted)"><th style="padding:4px 2px">Exercise</th><th class="n">First</th><th class="n">Latest</th><th class="n">Best</th><th class="n">est. 1RM</th></tr>'+
+    prog.map(p=>{
+      const col=p.chg>=5?'#2ea043':(p.chg<=-5?'#f85149':'var(--muted)');
+      return '<tr style="border-top:1px solid var(--border,#30363d)">'+
+        '<td style="padding:5px 2px"><div style="font-weight:600">'+_esc(p.name)+'</div><div class="text-xxs-muted">'+p.n+' sessions</div></td>'+
+        '<td class="n" style="text-align:center">'+p.firstW+'<span class="text-xxs-muted">×'+p.firstR+'</span></td>'+
+        '<td class="n" style="text-align:center">'+p.lastW+'<span class="text-xxs-muted">×'+p.lastR+'</span></td>'+
+        '<td class="n" style="text-align:center">'+p.bestW+'<span class="text-xxs-muted">×'+p.bestR+'</span></td>'+
+        '<td class="n" style="text-align:center;color:'+col+';font-weight:700">'+(p.chg>0?'+':'')+p.chg+'%</td></tr>';
+    }).join('')+'</table></div>'+
+    '<div class="text-xxs-muted" style="margin-top:8px;line-height:1.5">Weight × reps, so a heavy 6-rep set and a lighter 12-rep set are comparable (Epley estimate — it is an estimate, not a tested 1RM). Change is first to latest session in the period.'+
+    (R.excluded.length?'<br>Left out: '+R.excluded.map(x=>_esc(x.name)+' ('+x.n+')').join(' · ')+' — '+_esc(R.excluded[0].why)+'. Still counted as work done everywhere else.':'')+'</div>'+
+    '</div>';
+
+  // extras
+  let extras='';
+  if(R.bodyWeight.length||R.rehab.sessions||R.sling.length||R.stale.length){
+    extras='<div class="card" style="margin-bottom:12px"><div class="card-title">Also in this period</div><div style="font-size:12px;line-height:1.8">';
+    if(R.bodyWeight.length)extras+='⚖️ Body weight '+R.bodyWeight[0].kg+' → '+R.bodyWeight[R.bodyWeight.length-1].kg+' kg ('+R.bodyWeight.length+' readings)<br>';
+    if(R.rehab.sessions||R.rehab.gymLogged)extras+='🦵 Rehab: '+R.rehab.sessions+' logged in the Rehab tab'+(R.rehab.gymLogged?', '+R.rehab.gymLogged+' rehab-dominant gym sessions':'')+'<br>';
+    if(R.sling.length)extras+='🪢 Sling: '+R.sling.length+' exercises, '+R.sling.reduce((a,x)=>a+x.n,0)+' entries'+(R.sling.filter(x=>x.first!=null&&x.last>x.first).length?' · levels up on '+R.sling.filter(x=>x.first!=null&&x.last>x.first).length:'')+'<br>';
+    if(R.assessments.length)extras+='📋 Assessments: '+R.assessments.map(a=>fmtDate(a.date)+(a.phase?' ('+_esc(a.phase)+')':'')).join(' · ')+'<br>';
+    if(R.stale.length)extras+='📭 Not trained in '+REPORT_STALE_WEEKS+'+ weeks: '+R.stale.slice(0,6).map(p=>_esc(p.name)).join(' · ');
+    extras+='</div></div>';
+  }
+
+  // saved reports
+  const saved=DB.gymReports().slice().sort((a,b)=>String(b.to).localeCompare(String(a.to)));
+  const savedHtml='<div class="card" style="margin-bottom:12px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+      '<div class="card-title" style="margin:0">Saved reports</div>'+
+      '<button class="btn btn-gym btn-sm" onclick="saveGymReport()">💾 Save this one</button></div>'+
+    (saved.length?saved.map(r=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid var(--border,#30363d)">'+
+      '<div><div style="font-size:12px;font-weight:600">'+_esc(r.label||'Report')+'</div>'+
+      '<div class="text-xxs-muted">'+fmtDate(r.from)+' – '+fmtDate(r.to)+' · '+r.sessions+' sessions · '+r.hours+'h</div></div>'+
+      '<button class="btn btn-ghost btn-sm" onclick="deleteGymReport(\''+r.id+'\')">🗑</button></div>').join('')
+      :'<p class="text-xs-muted">None yet. Saving one lets the next report show ▲▼ against it.</p>')+
+    '</div>';
+
+  const exportBtn='<button class="btn btn-gym" style="width:100%;margin-bottom:16px" onclick="exportGymReport()">📄 Export as PDF</button>';
+
+  el.innerHTML=head+headlines+overview+strip+muscles+balance+progression+extras+savedHtml+exportBtn;
+}
+
+// PDF via print — same approach as the tennis scoresheet and the monthly report
+// (no library, keeps the single-file no-CDN architecture).
+function exportGymReport(){
+  if(!_reportCur){toast('Nothing to export');return;}
+  const R=_reportCur,o=R.overview;
+  const rows=R.progression.filter(p=>p.n>=2).map(p=>
+    '<tr><td>'+_esc(p.name)+'</td><td class="n">'+p.n+'</td><td class="n">'+p.firstW+'×'+p.firstR+'</td>'+
+    '<td class="n">'+p.lastW+'×'+p.lastR+'</td><td class="n">'+p.bestW+'×'+p.bestR+'</td>'+
+    '<td class="n">'+(p.chg>0?'+':'')+p.chg+'%</td></tr>').join('');
+  const mus=R.muscles.map(m=>'<tr><td>'+_esc(m.label)+'</td><td class="n">'+_setsFmt(m.sets)+'</td><td class="n">'+R.setsTarget+'</td><td class="n">'+m.pct+'%</td></tr>').join('');
+  const html='<div class="mr">'+
+    '<h1>Gym training report</h1>'+
+    '<div class="pr-sub">'+fmtDate(R.from)+' – '+fmtDate(R.to)+' · '+R.weeks+' weeks · generated '+fmtDate(R.generated)+'</div>'+
+    '<h2>Headlines</h2><ul>'+R.headlines.map(h=>'<li>'+_esc(h.t)+'</li>').join('')+'</ul>'+
+    '<h2>The period</h2>'+
+    '<table><tr><th>Sessions</th><th>Hours</th><th>Per week</th><th>Avg min</th><th>Sets</th><th>Longest gap</th></tr>'+
+    '<tr><td class="n">'+o.sessions+'</td><td class="n">'+o.hours+'</td><td class="n">'+o.perWeek+'</td><td class="n">'+o.avgMin+'</td><td class="n">'+o.sets+'</td><td class="n">'+o.longestGap+'d</td></tr></table>'+
+    '<h2>Sets per muscle</h2>'+
+    '<table><tr><th>Muscle</th><th class="n">Sets</th><th class="n">Target</th><th class="n">%</th></tr>'+mus+'</table>'+
+    '<h2>Strength progression</h2>'+
+    '<table><tr><th>Exercise</th><th class="n">Sessions</th><th class="n">First</th><th class="n">Latest</th><th class="n">Best</th><th class="n">Change</th></tr>'+rows+'</table>'+
+    '<div class="pr-foot">Estimated 1RM (Epley) from weight × reps — an estimate, not a tested max. '+
+    (R.excluded.length?'Excluded from progression: '+R.excluded.map(x=>_esc(x.name)).join(', ')+' — '+_esc(R.excluded[0].why)+'.':'')+'</div>'+
+    '</div>';
+  const root=document.getElementById('print-root');
+  root.innerHTML=html;
+  const prevTitle=document.title;
+  document.title='Gym report '+R.from+' to '+R.to;
+  const restore=()=>{root.innerHTML='';document.title=prevTitle;window.removeEventListener('afterprint',restore);};
+  window.addEventListener('afterprint',restore);
+  setTimeout(restore,120000);
+  setTimeout(()=>window.print(),60);
 }
 
 function renderWeeklyVolume(){
