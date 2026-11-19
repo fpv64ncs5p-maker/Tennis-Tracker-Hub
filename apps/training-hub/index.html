@@ -1010,6 +1010,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
           <div id="fb-ex-picker"></div>
           <button class="btn btn-gym btn-block" id="btn-add-fb-exercise" onclick="openFBAddExercise()">＋ Add Hang Exercise</button>
           <button class="btn btn-ghost btn-block" id="btn-fb-repeat" style="margin-top:8px" onclick="repeatLastFBSession()">🔁 Repeat last session</button>
+          <div id="fb-templates"></div>
+          <button class="btn btn-ghost btn-block" id="btn-fb-save-tmpl" style="margin-top:8px;display:none" onclick="saveFBAsTemplate()">⭐ Save as template</button>
           <div style="height:8px"></div>
           <div class="flex-gap8">
             <button class="btn btn-ghost" id="btn-clear-fb" style="flex:1;display:none;color:var(--red)" onclick="clearFBSession()">✕ Clear</button>
@@ -2145,6 +2147,7 @@ const DB = {
   fbSessions(){return this.get('fb_sessions')||[]},
   saveFB(s){const a=this.fbSessions();a.unshift(s);this.set('fb_sessions',a)},
   updateFB(s){const a=this.fbSessions().map(x=>String(x.id)===String(s.id)?s:x);this.set('fb_sessions',a)},
+  deleteFB(id){this.set('fb_sessions',this.fbSessions().filter(x=>String(x.id)!==String(id)))},
   fbTemplates(){return this.get('fb_templates')||[]},
   saveFBTemplate(t){const a=this.fbTemplates();a.push(t);this.set('fb_templates',a)},
   deleteFBTemplate(id){const a=this.fbTemplates().filter(t=>t.id!==id);this.set('fb_templates',a)},
@@ -2515,6 +2518,10 @@ function suggestWeight(exName, intensity){
 const RIR_MAX=5, ORM_MAX_TOTAL_REPS=20;
 function ormFromSet(e){
   if(!e||e.type==='cardio')return null;
+  // A ballistic set is deliberately submaximal (50-60%) and moved fast - it says nothing
+  // about the 1RM. Without this guard it would be the NEWEST set and would win
+  // currentORMMap, dragging every later heavy suggestion down. (2026-11-19)
+  if(e.ballistic)return null;
   const w=parseFloat(_normalizeKgInput(e.weight));
   if(!(w>0))return null;
   if(e.rir===undefined||e.rir===null||String(e.rir).trim()==='')return null;
@@ -3194,6 +3201,7 @@ function renderTemplates(){
   _seedFullBodyTemplates();
   _seedTemplates(HOME_TEMPLATES,'_seed_home_v1');
   _seedTemplates(FULLBODY_TEMPLATES.filter(t=>t.id==='fb-c-v1'),'_seed_fb_c_v1');
+  _seedTemplates(POWER_TEMPLATES,'_seed_power_v1');
   const ts=DB.gymTemplates();
   const el=document.getElementById('templates-section');
   if(!el)return;
@@ -3222,6 +3230,12 @@ function _roleDefaults(role,date){
   const pct=w?w.pct:currentPhaseIntensity();
   const main=w?{sets:w.sets,reps:w.reps,rest:w.rest}:(currentPhaseExDefaults()||{sets:3,reps:'10',rest:"1'30\""});
   if((w&&w.id==='deload')||role==='heavy'||!role)return {...main,pct};
+  // ballistic: light enough to actually accelerate, long rest, quality over fatigue.
+  // Uses the week's ballistic band when the phase has one, else ~60% of the working %.
+  if(role==='ballistic'){
+    const bp=(w&&w.pctBallistic)||Math.max(40,Math.round(pct*0.65));
+    return {sets:(w&&w.bSets)||4,reps:(w&&w.bReps)||'5',rest:(w&&w.bRest)||"3'",pct:bp};
+  }
   if(role==='moderate')return {sets:3,reps:'10',rest:"2'",pct:Math.max(50,pct-10)};
   return {sets:2,reps:'12',rest:"1'30\"",pct:Math.max(50,pct-20)}; // light
 }
@@ -3232,9 +3246,33 @@ function _applyRole(e,date){
     return {...e,sets:dl?Math.min(2,e.sets||2):e.sets,pct:null,perSide:e.perSide!==undefined?e.perSide:exDefaultPerSide(e.name)};
   }
   const d=_roleDefaults(e.role,date);
-  return {...e,sets:d.sets,reps:d.reps,rest:d.rest,pct:d.pct,perSide:e.perSide!==undefined?e.perSide:exDefaultPerSide(e.name)};
+  // ballistic:true rides along on the entry so ormFromSet can ignore it (see below)
+  return {...e,sets:d.sets,reps:d.reps,rest:d.rest,pct:d.pct,
+    ballistic:e.role==='ballistic'||undefined,
+    perSide:e.perSide!==undefined?e.perSide:exDefaultPerSide(e.name)};
 }
+// Exercises suitable for the ballistic half of a Power block (2026-11-19).
+// Jo: NO plyometrics - nothing with a jump or a landing. The Achilles is in rehab round 2
+// and jump/land work is the highest-risk category for it. Everything here accelerates a load
+// without an impact: machine speed reps, an explosive hip drive, or upper-body ballistics.
+const BALLISTIC_OK=['Leg Press','Hip Thrust Machine','Barbell Hip Thrust (step)',
+  'Lat Pulldown / Pull-up Bar','Seated Row','Chest Press','Push-up','Dumbbell Snatch',
+  'Barbell Overhead Press','Barbell Bent-over Row'];
+function exIsBallisticOk(name){return BALLISTIC_OK.indexOf(name)>=0;}
+
 // Ready-made full-body templates (Jo, 2026-10-22). Added once per device when missing.
+const POWER_TEMPLATES=[
+  {id:'pw-v1',name:'Power day · heavy + ballistic (no jumps)',exercises:[
+    {name:'Bike',cat:'Warm-up',type:'cardio',cardio:true,duration:'5',rpmLabel:'Avg RPM',distLabel:'Distance (km)',sets:1,reps:"5'",rest:'-'},
+    {name:'Leg Press',cat:'Inferior Members',role:'heavy'},
+    {name:'Lat Pulldown / Pull-up Bar',cat:'Superior – Machine',role:'heavy'},
+    {name:'Hip Thrust Machine',cat:'Inferior Members',role:'ballistic'},
+    {name:'Dumbbell Snatch',cat:'Core',role:'ballistic'},
+    {name:'Push-up',cat:'Superior – No Machine',role:'ballistic'},
+    {name:'Cable Anti-rotation Position 8',cat:'Core',role:'light',perSide:true},
+    {name:'Decline Crunch (Upper Abs)',cat:'Core',role:'light'}
+  ]}
+];
 const FULLBODY_TEMPLATES=[
   {id:'fb-a-v1',name:'Full body A · Mon (upper focus, no calves)',exercises:[
     {name:'Bike',cat:'Warm-up',type:'cardio',cardio:true,duration:'5',rpmLabel:'Avg RPM',distLabel:'Distance (km)',sets:1,reps:"5'",rest:'-'},
@@ -6107,7 +6145,21 @@ function renderRirPreview(prefix){
       :'1RM needs a plain rep count (e.g. 10) — ranges or times can\'t be converted.';
     return;
   }
-  box.innerHTML=`🎯 New 1RM ≈ <strong>${Math.round(orm*10)/10} kg</strong> — updates when saved`;
+  // Show the CONSEQUENCE, not just the 1RM (2026-11-19, Jo chose B).
+  // Each RIR point adds ~3.3% to the Epley estimate and that flows straight into
+  // the next suggestion, so a generous RIR comes back as a too-heavy Tuesday.
+  // Jo could only discover that at the machine a week later; now it is on screen
+  // while the number can still be corrected.
+  const _rpReps=parseInt(String(val('reps')).trim(),10);
+  const _rpRir=parseFloat(_normalizeKgInput(rirRaw));
+  const _rpTotal=(!isNaN(_rpReps)&&!isNaN(_rpRir))?_rpReps+_rpRir:null;
+  let _rpTail='';
+  try{
+    const pct=currentPhaseIntensity();
+    if(pct>0)_rpTail=` → next suggestion ≈ <strong>${Math.round(orm*pct/100*4)/4} kg</strong> at ${pct}%`;
+  }catch(e){}
+  box.innerHTML=`🎯 New 1RM ≈ <strong>${Math.round(orm*10)/10} kg</strong>`+
+    (_rpTotal!=null?` — read as a max of ${_rpTotal} reps`:'')+_rpTail+` · updates when saved`;
 }
 
 function openEditSessionExercise(i){
@@ -10864,6 +10916,7 @@ function _fbCfgInput(label,i,field,val,w){
   </div>`;
 }
 function renderFBExercises(){
+  try{renderFBTemplates();}catch(e){}
   const el=document.getElementById('fb-exercises-list');
   const clearBtn=document.getElementById('btn-clear-fb');
   if(clearBtn)clearBtn.style.display=fbSession.exercises.length?'':'none';
@@ -10968,13 +11021,90 @@ function addFBExercise(idx){
   const p=_fbAllPresets()[idx];if(!p)return;
   _pushFBEntry(p);
 }
-function _pushFBEntry(p){
+// ── Fingerboard: loads prefill from the last time you did that exercise ─────
+// (2026-11-19, Jo chose A). Every added exercise used to start with blank loads,
+// so the only way to carry numbers forward was "Repeat last session", which
+// copies the whole session. Reading history instead means a template can store
+// STRUCTURE ONLY and never goes stale as Jo progresses.
+function _fbLastLoads(name,n){
+  const ss=DB.fbSessions()
+    .filter(s=>s&&s.fbv===2&&String(s.id)!==String(typeof fbEditId!=='undefined'?fbEditId:'')&&
+      (s.exercises||[]).some(x=>x.name===name&&(x.loads||[]).some(l=>String(l).trim()!=='')))
+    .sort((a,b)=>String(b.date).localeCompare(String(a.date))||(Number(b.id)-Number(a.id)));
+  if(!ss.length)return null;
+  const ex=(ss[0].exercises||[]).filter(x=>x.name===name)
+    .sort((a,b)=>(b.loads||[]).filter(l=>String(l).trim()!=='').length-(a.loads||[]).filter(l=>String(l).trim()!=='').length)[0];
+  const src=(ex&&ex.loads||[]).map(l=>String(l==null?'':l));
+  const filled=src.filter(l=>l.trim()!=='');
+  if(!filled.length)return null;
+  // Jo's choice: when the set counts differ, extra sets repeat the last value
+  // rather than being left blank.
+  const last=filled[filled.length-1];
+  const out=[];
+  for(let i=0;i<n;i++)out.push(i<src.length&&src[i].trim()!==''?src[i]:last);
+  return {loads:out,date:ss[0].date};
+}
+
+// ── Fingerboard session templates (2026-11-19) ──────────────────────────────
+// The July 2026 rebuild removed the template UI but kept `fb_templates` and its
+// DB methods. A template stores the SHAPE of a session only — never the loads,
+// which come from history (see _fbLastLoads).
+function saveFBAsTemplate(){
+  if(!fbSession.exercises.length){toast('Add an exercise first');return;}
+  showTextModal('Save as template','','Save',name=>{
+    const nm=String(name||'').trim();
+    if(!nm){toast('Give it a name');return;}
+    if(DB.fbTemplates().some(t=>String(t.name).toLowerCase()===nm.toLowerCase())){toast('That name is taken');return;}
+    DB.saveFBTemplate({id:'fbt'+Date.now(),name:nm,createdAt:Date.now(),
+      exercises:fbSession.exercises.map(e=>({name:e.name,sets:e.sets,reps:e.reps,time:e.time,
+        restRep:e.restRep,restSet:e.restSet}))});
+    toast('⭐ Template saved');
+    renderFBTemplates();
+  });
+}
+function loadFBTemplate(id){
+  const t=DB.fbTemplates().find(x=>String(x.id)===String(id));
+  if(!t)return;
+  if(fbSession.exercises.length&&!confirm('Replace the '+fbSession.exercises.length+' exercise(s) in the log with "'+t.name+'"?'))return;
+  fbSession.exercises=[];
+  (t.exercises||[]).forEach(p=>_pushFBEntry(p,true));
+  markDirty('fb');renderFBExercises();renderFBTemplates();
+  toast('Loaded "'+t.name+'"');
+}
+function deleteFBTemplate(id){
+  const t=DB.fbTemplates().find(x=>String(x.id)===String(id));
+  if(!t)return;
+  if(!confirm('Delete the template "'+t.name+'"?'))return;
+  DB.deleteFBTemplate(t.id);
+  renderFBTemplates();
+  if(typeof pushUndo==='function')pushUndo('Template deleted',()=>{DB.saveFBTemplate(t);renderFBTemplates();});
+  else toast('Template deleted');
+}
+function renderFBTemplates(){
+  const el=document.getElementById('fb-templates');
+  const btn=document.getElementById('btn-fb-save-tmpl');
+  if(btn)btn.style.display=fbSession.exercises.length?'':'none';
+  if(!el)return;
+  const ts=DB.fbTemplates();
+  if(!ts.length){el.innerHTML='';return;}
+  el.innerHTML='<div class="card" style="margin-top:8px"><div class="card-title">⭐ Templates</div>'+
+    ts.map(t=>'<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-top:1px solid var(--border,#30363d)">'+
+      '<button class="btn btn-ghost" style="flex:1;text-align:left;font-size:13px" onclick="loadFBTemplate(\''+t.id+'\')">'+
+        esc(t.name)+' <span class="text-xxs-muted">'+((t.exercises||[]).length)+' exercises</span></button>'+
+      '<button class="btn btn-ghost" style="color:var(--red);font-size:12px;padding:3px 9px" onclick="deleteFBTemplate(\''+t.id+'\')">🗑</button>'+
+      '</div>').join('')+
+    '<div class="text-xxs-muted" style="margin-top:8px">Templates store the exercises and sets — the loads come from the last time you did each one, so they never go stale.</div></div>';
+}
+
+function _pushFBEntry(p,fromTemplate){
   const n=p.sets||5;
+  const prev=_fbLastLoads(p.name,n);
   fbSession.exercises.push({
     name:p.name,sets:n,reps:p.reps||1,time:p.time||7,
     restRep:p.restRep||"3'",restSet:p.restSet||"5'",
-    loads:Array(n).fill(''),done:Array(n).fill(false),rpe:'',notes:''
+    loads:prev?prev.loads:Array(n).fill(''),done:Array(n).fill(false),rpe:'',notes:''
   });
+  if(prev&&!fromTemplate)toast('Loads from '+fmtDate(prev.date));
   document.getElementById('fb-ex-picker').innerHTML='';
   markDirty('fb');renderFBExercises();
   setTimeout(()=>document.getElementById('btn-add-fb-exercise')?.scrollIntoView({behavior:'smooth',block:'nearest'}),80);
@@ -11110,12 +11240,30 @@ function showFBSessionDetail(id){
   html+=`<div class="flex-gap8" style="margin-top:8px">
     <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-session-detail');fbLoadSessionIntoLog('${s.id}')">🔁 Load into Log</button>
     <button class="btn btn-gym" style="flex:1" onclick="editFBSession('${s.id}')">✏️ Edit Session</button>
+    <button class="btn btn-ghost" style="flex:1;color:var(--red)" onclick="deleteFBSession('${s.id}')">🗑 Delete</button>
   </div>`;
   document.getElementById('session-detail-content').innerHTML=html+'<div style="height:8px"></div>';
   openModal('modal-session-detail');
 }
 
 // ── Edit a saved session (Option A: reopen in Log) ─────
+// Fingerboard sessions had no delete at all (every other log has one) — so a
+// session saved by mistake, or an empty one kept as a stand-in template, could
+// only be edited, never removed. (2026-11-19)
+function deleteFBSession(id){
+  const all=DB.fbSessions();
+  const s=all.find(x=>String(x.id)===String(id));
+  if(!s)return;
+  const n=(s.exercises||[]).length;
+  if(!confirm(`Delete the fingerboard session of ${fmtDate(s.date)}${n?` (${n} exercises)`:''}?`))return;
+  DB.deleteFB(id);
+  if(typeof fbEditId!=='undefined'&&String(fbEditId)===String(id)&&typeof _fbResetEditUI==='function')_fbResetEditUI();
+  closeModal('modal-session-detail');
+  renderFBHistory();
+  if(typeof pushUndo==='function')pushUndo('Fingerboard session deleted',()=>{DB.set('fb_sessions',[s,...DB.fbSessions()]);renderFBHistory();});
+  else toast('Session deleted');
+}
+
 function editFBSession(id){
   const s=DB.fbSessions().find(x=>String(x.id)===String(id));
   if(!s)return;
@@ -11317,7 +11465,7 @@ function renderFBProgression(){
 const GOAL_HINTS={
   'Strength':'💪 Strength — 80–90% 1RM · 4–6 reps · 3–5 sets · 2–4 min rest between sets',
   'Hypertrophy':'📈 Hypertrophy — 67–85% 1RM · 8–12 reps · 3–4 sets · 1–2 min rest',
-  'Power':'⚡ Power — 85–100% 1RM · 1–6 explosive reps · 3–5 sets · 3–5 min rest',
+  'Power':'⚡ Power — two halves: heavy 85–90% × 3–5 reps for force, PLUS ballistic 50–60% × 5 moved fast for velocity · 3–5 min rest · ≤24 reps per exercise',
   'Endurance':'🔁 Endurance — 50–67% 1RM · 15–20 reps · 2–3 sets · <1 min rest',
   'Deload':'😴 Deload — ~60% 1RM · 10 reps · 2 sets · 1–2 min rest · max 45 min, nothing to failure',
 };
@@ -11350,7 +11498,12 @@ function _goalDefaultRest(){
 const SEASON_GYM={
   hypertrophy:{label:'Hypertrophy',emoji:'📈',color:'#16a34a',goal:'Hypertrophy',lo:70,hi:75,sets:3,reps:'10',rest:"1'30\"",scheme:'3 × 8–12'},
   strength:   {label:'Strength',emoji:'💪',color:'#2563eb',goal:'Strength',lo:80,hi:85,sets:4,reps:'5',rest:"3'",scheme:'4 × 4–6'},
-  power:      {label:'Power',emoji:'⚡',color:'#7c3aed',goal:'Power',lo:85,hi:90,sets:4,reps:'3',rest:"4'",scheme:'4 × 3 explosive'},
+  // Power carries TWO bands (2026-11-19, Jo chose B). ACSM prescribes power at 30-70% 1RM moved
+  // fast (peak-power / ballistic); the 85-90% band here is strength-speed - heavy load, maximal
+  // INTENT, but the bar still moves slowly. ACSM's position stand asks for both, so a power week
+  // now prescribes heavy compounds at lo/hi AND ballistic work at bLo/bHi (role:'ballistic').
+  power:      {label:'Power',emoji:'⚡',color:'#7c3aed',goal:'Power',lo:85,hi:90,sets:4,reps:'3',rest:"4'",scheme:'4 × 3 explosive',
+               bLo:50,bHi:60,bSets:4,bReps:'5',bRest:"3'",bScheme:'4 × 5 ballistic @ 50-60%'},
 };
 const SEASON_CLIMB={
   prep: {label:'Preparation',emoji:'🌱',focus:'General fitness · easy volume',wedDouble:false},
@@ -11402,7 +11555,10 @@ function seasonWeekDef(seg,wi){
   const g=SEASON_GYM[seg.gym]||SEASON_GYM.hypertrophy;
   const c=SEASON_CLIMB[seg.climb]||SEASON_CLIMB.base;
   const pct=seg.weeks>1?Math.round(g.lo+(g.hi-g.lo)*wi/(seg.weeks-1)):g.lo;
+  // ballistic band ramps the same way; null on phases that have no ballistic half
+  const pctB=g.bLo?(seg.weeks>1?Math.round(g.bLo+(g.bHi-g.bLo)*wi/(seg.weeks-1)):g.bLo):null;
   return {id:'block',label:`${g.label} + ${c.label}`,emoji:g.emoji,climbEmoji:c.emoji,color:g.color,
+    pctBallistic:pctB,bSets:g.bSets,bReps:g.bReps,bRest:g.bRest,bScheme:g.bScheme,
     gymPhase:seg.gym,climbPhase:seg.climb,goal:g.goal,pct,sets:g.sets,reps:g.reps,rest:g.rest,
     gym:`${g.scheme} @ ~${pct}%`,gymFreq:'2×/week',climb:`${c.emoji} ${c.label} — ${c.focus}`,tennis:'Normal',
     wedDouble:c.wedDouble,maxHard:3};
@@ -12411,8 +12567,8 @@ const GYM_MACRO_PHASES=[
   {
     id:'power',label:'Power',emoji:'⚡',
     defaultWeeks:3,minWeeks:2,maxWeeks:4,
-    volume:'Low–Moderate',intensity:'High (85–100% 1RM, explosive)',
-    reps:'1–6 explosive',sets:'3–5',rest:'3–5 min',
+    volume:'Low–Moderate',intensity:'Heavy 85–90% + ballistic 50–60% (ACSM)',
+    reps:'3–5 heavy · 5 ballistic',sets:'3–5',rest:'3–5 min',
     focus:'Explosive force & max power',color:'#7c3aed',
     description:'Emphasis on velocity. Max force production. Plyometrics, Olympic variations.'
   },
