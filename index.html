@@ -2065,7 +2065,7 @@ const BOULDER_PYRAMID = [
 
 const TRAINING_TYPES = {
   gym:    {icon:'💪', label:'Gym',      color:'#2ea043', subs:['Inferior + Core','Superior + Core','Superior + Wrist','Full Body','Custom']},
-  climb:  {icon:'🧗', label:'Climbing', color:'#388bfd', subs:['Technique + Volume','Projects + Strength','Board + Projects','Easy Volume','Custom']},
+  climb:  {icon:'🧗', label:'Climbing', color:'#388bfd', subs:['Base','Power','Project day','Power endurance','Board','Boulder','Easy volume','Custom']},
   tennis: {icon:'🎾', label:'Tennis',   color:'#a78bfa', subs:['Match','Training Session','Hitting']},
   golf:   {icon:'⛳', label:'Golf',      color:'#34d399', subs:['Round','Practice','Driving Range']},
   rehab:  {icon:'🦵', label:'Rehab',    color:'#f0883e', subs:['Calf Protocol']},
@@ -12052,17 +12052,17 @@ function _cs(type,sub,dur){return {trainingType:type,trainingSubtype:sub,duratio
 function _csEmpty(){return {trainingType:'',trainingSubtype:'',duration:'',rpe:'',actual:''};}
 function cycleDayPlans(w){
   const dl=w.id==='deload';
-  const wedClimb=w.climbPhase==='peak'?'Board + Projects':'Projects + Strength';
+  const wedClimb=w.climbPhase==='peak'?'Board':'Power';
   return [
     {day:'Monday',work:true,type:dl?'Tennis (easy)':'Gym upper + Tennis',
      sessions:dl?[_csEmpty(),_cs('tennis','Training Session',90)]:[_cs('gym','Superior + Core',60),_cs('tennis','Training Session',120)]},
     {day:'Tuesday',work:true,type:'Golf',sessions:[_cs('golf','Practice',60)]},
     {day:'Wednesday',work:false,type:dl?'Easy climbing':w.wedDouble?'Climbing + Tennis':'Tennis',
-     sessions:dl?[_cs('climb','Easy Volume',60)]:w.wedDouble?[_cs('climb',wedClimb,60),_cs('tennis','Training Session',120)]:[_cs('tennis','Training Session',120)]},
+     sessions:dl?[_cs('climb','Easy volume',60)]:w.wedDouble?[_cs('climb',wedClimb,60),_cs('tennis','Training Session',120)]:[_cs('tennis','Training Session',120)]},
     {day:'Thursday',work:true,type:'Golf (easy)',sessions:[_cs('golf','Practice',60)]},
     {day:'Friday',work:true,type:'Rest',sessions:[]},
     {day:'Saturday',work:false,type:dl?'Gym light':'Gym legs + easy extra',
-     sessions:dl?[_cs('gym','Full Body',45)]:[_cs('gym','Inferior + Core',75),_cs('climb','Easy Volume',60)]},
+     sessions:dl?[_cs('gym','Full Body',45)]:[_cs('gym','Inferior + Core',75),_cs('climb','Easy volume',60)]},
     {day:'Sunday',work:false,type:'Rest',sessions:[_cs('rest','Full Rest','')]},
   ];
 }
@@ -12135,6 +12135,33 @@ function renderPlannerCycle(weekKey){
 // (tennis 7, golf 3, rehab 3, easy climbing 5, board/projects 8, fingerboard 8, gym from load/length).
 const EFFORT_RULES={easyMax:4,modMax:6,longMin:120,shortMin:30};
 const DEFAULT_RPE={tennis:7,golf:3,rehab:3,active:4,fb:8,climb:5,board:8};
+// Climbing subtypes now name the SESSION (2026-11-21, Jo chose B): they match the
+// templates she actually loads - Base / Power / Project day / Power endurance -
+// plus the two disciplines the planner could not express before, Board and Boulder.
+// Effort is declared here per subtype instead of being sniffed out of the name with
+// /board|project/i. That regex made "Easy Volume" a MODERATE day - and the season
+// auto-fills exactly that on deload Wednesdays and after Saturday legs - while a hard
+// boulder session also came out moderate. Renaming a subtype used to silently change
+// the load maths; now the mapping is explicit, and legacy names are aliased so old
+// planner entries keep their meaning.
+const CLIMB_SUB_EFFORT={
+  'base':             {lv:'moderate',rpe:DEFAULT_RPE.climb},
+  'power':            {lv:'hard',    rpe:DEFAULT_RPE.board},
+  'project day':      {lv:'hard',    rpe:DEFAULT_RPE.board},
+  'power endurance':  {lv:'hard',    rpe:DEFAULT_RPE.board},
+  'board':            {lv:'hard',    rpe:DEFAULT_RPE.board},
+  'boulder':          {lv:'moderate',rpe:6},
+  'easy volume':      {lv:'easy',    rpe:4},
+  'custom':           {lv:'moderate',rpe:DEFAULT_RPE.climb},
+  // pre-2026-11-21 names, kept so existing planner entries still resolve
+  'technique + volume':  {lv:'moderate',rpe:DEFAULT_RPE.climb},
+  'projects + strength': {lv:'hard',    rpe:DEFAULT_RPE.board},
+  'board + projects':    {lv:'hard',    rpe:DEFAULT_RPE.board}
+};
+function _climbSubEffort(sub){
+  const k=String(sub||'').trim().toLowerCase();
+  return CLIMB_SUB_EFFORT[k]||{lv:'moderate',rpe:DEFAULT_RPE.climb};
+}
 function _levelFromRpe(rpe,mins){
   rpe=parseFloat(rpe)||0;mins=parseInt(mins)||0;
   if(rpe<=0)return 'rest';
@@ -12258,11 +12285,11 @@ function _plannedFor(date){
         const long=(mins||60)>=CYCLE_RULES.hardGymMin;
         return long?(pct>=CYCLE_RULES.hardGymPct?'hard':'moderate'):'easy';
       })()
-      :t==='climb'?(/board|project/i.test(sub)?'hard':'moderate')
+      :t==='climb'?_climbSubEffort(sub).lv
       :'easy';
     // RPE + time (2026-11-02): your Planner RPE, else a typical one for the sport
     const defRpe=t==='tennis'?DEFAULT_RPE.tennis:t==='gym'?_GYM_LV_RPE[defLevel]
-      :t==='climb'?(/board|project/i.test(sub)?DEFAULT_RPE.board:DEFAULT_RPE.climb)
+      :t==='climb'?_climbSubEffort(sub).rpe
       :(DEFAULT_RPE[t]||3);
     const rpe=parseFloat(s.rpe)>0?parseFloat(s.rpe):defRpe;
     const level=_levelFromRpe(rpe,t==='gym'&&!mins?60:mins);
