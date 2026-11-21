@@ -8694,6 +8694,9 @@ function srpePick(n){
     _srpeCtx=null;
     closeModal('modal-srpe');
     savePlanField(weekKey,dayIdx,'workRpe',String(n));
+    try{renderPlanner();}catch(e){}
+    try{renderHome();}catch(e){}
+    toast(`Work RPE ${n}`);
     return;
   }
   if(_srpeCtx.mode==='planner'){
@@ -8701,6 +8704,9 @@ function srpePick(n){
     _srpeCtx=null;
     closeModal('modal-srpe');
     savePlanSessionField(weekKey,dayIdx,si,'rpe',String(n));
+    try{renderPlanner();}catch(e){}
+    try{renderHome();}catch(e){}
+    toast(`RPE ${n}`);
     return;
   }
   const {sport,date,mins}=_srpeCtx;
@@ -10345,9 +10351,15 @@ function renderMonthlyResume(){
   const el=document.getElementById('planner-monthly');
   if(!el)return;
 
+  // Jo chose C (2026-11-21): a monthly resume reports what HAPPENED, so nothing
+  // dated after today counts - not in the month list, not in the heatmap, not in
+  // the stats. Before this, planner weeks auto-filled by the season plan made a
+  // future month appear as a finished resume (Dec 2026 showing "11 sessions"),
+  // and the current month counted its own still-planned days as done.
+  const _resumeTo=today(), _resumeYm=_resumeTo.slice(0,7);
   // ── Collect all month keys ──
   const monthSet=new Set();
-  const addDate=d=>{if(d&&d.length>=7)monthSet.add(d.slice(0,7));};
+  const addDate=d=>{if(d&&d.length>=7&&d.slice(0,7)<=_resumeYm)monthSet.add(d.slice(0,7));};
   DB.gymSessions().forEach(s=>addDate(s.date));
   DB.climbSessions().forEach(s=>addDate(s.date));
   DB.fbSessions().forEach(s=>addDate(s.date));
@@ -10364,7 +10376,7 @@ function renderMonthlyResume(){
 
   // ── Build global day→activity map (for heatmap) ──
   const dayActs={};
-  function addAct(date,type){if(!date)return;if(!dayActs[date])dayActs[date]=new Set();dayActs[date].add(type);}
+  function addAct(date,type){if(!date||date>_resumeTo)return;if(!dayActs[date])dayActs[date]=new Set();dayActs[date].add(type);}
   DB.gymSessions().forEach(s=>addAct(s.date,'gym'));
   DB.climbSessions().forEach(s=>addAct(s.date,'climb'));
   DB.fbSessions().forEach(s=>addAct(s.date,'fb'));
@@ -10386,7 +10398,7 @@ function renderMonthlyResume(){
     const [y,m]=ym.split('-').map(Number);
     const firstDay=ym+'-01';
     const lastDay=ym+'-'+(new Date(y,m,0).getDate()).toString().padStart(2,'0');
-    const inMonth=d=>d&&d>=firstDay&&d<=lastDay;
+    const inMonth=d=>d&&d>=firstDay&&d<=lastDay&&d<=_resumeTo;
 
     const gymS=DB.gymSessions().filter(s=>inMonth(s.date));
     let gymMins=0,gymVol=0;
@@ -13904,9 +13916,17 @@ function renderHomeWeekCalendar(){
       <div class="home-cal-day-label">${dayNames[idx]}</div>
       <div class="home-cal-day-date">${dateNum}</div>
       <div class="week-icons">${sessionIcons.join('')}</div>
-      <div title="${_l.au?_l.au+' AU'+(_l.work?` (training ${_l.training} · work ${_l.work})`:'')+(_l.rpe?' · RPE '+_l.rpe:''):'no load'}${_l.unrated?' · '+_l.unrated+' unrated':''}"
-        style="height:4px;border-radius:2px;margin:3px 2px 1px;background:${LOAD_COLORS[_band]};opacity:${_band==='none'?0.35:1}"></div>
-      <div style="font-size:9px;line-height:1.2;text-align:center;color:var(--muted)">${_l.au?_l.au:''}${_l.unrated?'<span title="sessions with no RPE yet"> ·</span>':''}</div>
+      ${(()=>{
+        // A 4px hairline was too thin to read at a glance, and a title tooltip is
+        // unreachable on a phone - so the colour and the figure ride in one pill
+        // (Jo, 2026-11-21: "could we have the colour icon ... under the activities").
+        const c=LOAD_COLORS[_band];
+        const tip=(_l.au?_l.au+' AU'+(_l.work?` (training ${_l.training} · work ${_l.work})`:'')+(_l.rpe?' · RPE '+_l.rpe:''):'nothing rated')
+                 +(_l.unrated?` · ${_l.unrated} not rated`:'');
+        if(_l.au)return `<div title="${tip}" style="margin:4px 3px 0;padding:2px 0;border-radius:8px;font-size:11px;font-weight:800;line-height:1.5;text-align:center;color:${c};background:${c}22;border:1px solid ${c}66">${_l.au}</div>`;
+        if(_l.unrated)return `<div title="${tip}" style="margin:4px 3px 0;padding:2px 0;border-radius:8px;font-size:11px;font-weight:700;line-height:1.5;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--border)">–</div>`;
+        return '<div style="margin:4px 3px 0;padding:2px 0;line-height:1.5;font-size:11px">&nbsp;</div>';
+      })()}
     </div>`;
   }
 
@@ -13917,7 +13937,7 @@ function renderHomeWeekCalendar(){
     <span class="active-days-count">${activeDays}/7</span>
     <div style="flex-basis:100%;height:0"></div>
     <span class="active-days-label">Load this week${_wl.work?` · training ${_wl.training} + work ${_wl.work}`:''}${_wl.unrated?` · ${_wl.unrated} not rated yet`:''}:</span>
-    <span class="active-days-count">${_wl.au} AU</span>
+    <span class="active-days-count" style="white-space:nowrap">${_wl.au} AU</span>
   `;
 }
 
