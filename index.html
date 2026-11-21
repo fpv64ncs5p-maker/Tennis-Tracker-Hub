@@ -2888,7 +2888,10 @@ function generatePlan(){
   const _buildRanges=gymMacroDateRanges(_buildMacroData);
   const _buildIdx=currentGymMacroPhaseIndex(_buildRanges);
   const _bCyc=cycleWeekFor(_isPlanningGym()?_planningCtx.date:today()); // plan-ahead uses the planned date's week
-  const _buildPhaseLabel=_bCyc
+  const _bWeek=planWeekDefFor(_isPlanningGym()?_planningCtx.date:today()); // honours a manual phase override
+  const _buildPhaseLabel=(_bWeek&&_bWeek.manual)
+    ?` · ${_bWeek.emoji} ${_bWeek.label} (set by hand)`
+    :_bCyc
     ?` · ${_bCyc.week.emoji} ${_bCyc.week.id==='deload'?_bCyc.week.label:(SEASON_GYM[_bCyc.week.gymPhase]||{}).label} week ${_bCyc.wi+1}/${_bCyc.seg.weeks}`
     :(_buildIdx>=0&&_buildIdx<GYM_MACRO_PHASES.length)
     ?` · ${GYM_MACRO_PHASES[_buildIdx].emoji} ${GYM_MACRO_PHASES[_buildIdx].label} phase`:'';
@@ -2937,9 +2940,9 @@ function generatePlan(){
   let totalSec=0,plan=[];
   let maxSec=dur*60;
   // Deload week: cap the session length — otherwise the 2-set defaults just mean MORE exercises
-  if(_bCyc&&_bCyc.week.gymMaxMin&&dur>_bCyc.week.gymMaxMin){
-    maxSec=_bCyc.week.gymMaxMin*60;
-    toast(`${_bCyc.week.emoji} ${_bCyc.week.label} week — session capped at ${_bCyc.week.gymMaxMin} min`);
+  if(_bWeek&&_bWeek.gymMaxMin&&dur>_bWeek.gymMaxMin){
+    maxSec=_bWeek.gymMaxMin*60;
+    toast(`${_bWeek.emoji} ${_bWeek.label} week — session capped at ${_bWeek.gymMaxMin} min`);
   }
 
   // 1. Always include 1 warm-up if selected, with user-defined duration
@@ -2953,7 +2956,7 @@ function generatePlan(){
   }
 
   // Phase defaults for sets / reps / rest (applied to every non-warmup exercise)
-  const _phaseDef = _bCyc ? {sets:_bCyc.week.sets,reps:_bCyc.week.reps,rest:_bCyc.week.rest}
+  const _phaseDef = _bWeek ? {sets:_bWeek.sets,reps:_bWeek.reps,rest:_bWeek.rest}
     : _buildIdx >= 0 && _buildIdx < GYM_MACRO_PHASES.length
     ? phaseExDefaults(GYM_MACRO_PHASES[_buildIdx].id) : null;
 
@@ -3226,8 +3229,7 @@ function renderTemplates(){
 //   moderate = 3×10 @ week% −10 · light = 2×12 @ week% −20 (min 50%)
 //   deload week → every role is the deload prescription (2×10 @60%).
 function _roleDefaults(role,date){
-  const cw=cycleWeekFor(date||today());
-  const w=cw?cw.week:null;
+  const w=planWeekDefFor(date||today());
   const pct=w?w.pct:currentPhaseIntensity();
   const main=w?{sets:w.sets,reps:w.reps,rest:w.rest}:(currentPhaseExDefaults()||{sets:3,reps:'10',rest:"1'30\""});
   if((w&&w.id==='deload')||role==='heavy'||!role)return {...main,pct};
@@ -12461,12 +12463,49 @@ function continuePlannedSession(id){
 }
 
 // Sets/reps/rest for the week a date falls in (season week, else today's phase).
-function exDefaultsFor(date){
+// ── Planning: which week's prescription applies (2026-11-21) ───────────────
+// Two things were wrong when Jo planned a session for the DELOAD week while
+// today was still a Strength week:
+//  1. the Build tab's phase banner read cycleNow() - today - so it announced
+//     "Strength Wk 4/4 @ 85%" over a plan that was actually being built at 60%.
+//     The planning card below it said Deload. Two banners, contradicting.
+//  2. there was no way to override the phase by hand.
+// planWeekDefFor() is now the single place that answers "which prescription?"
+// and it honours a manual override while planning. Outside planning mode
+// _planOverride() is always null, so nothing else changes.
+function _planOverride(){
+  return (typeof _isPlanningGym==='function'&&_isPlanningGym()&&_planningCtx&&_planningCtx.phase)?_planningCtx.phase:null;
+}
+function planWeekDefFor(date){
+  const ov=_planOverride();
+  if(ov){
+    const d=phaseExDefaults(ov)||{sets:3,reps:'10',rest:"1'30\""};
+    const lbl=(GYM_MACRO_PHASES.find(p=>p.id===ov)||{}).label||ov;
+    return {id:ov==='deload'?'deload':'block',gymPhase:ov,goal:lbl,
+      pct:PHASE_INTENSITY[ov],sets:d.sets,reps:d.reps,rest:d.rest,
+      label:lbl,emoji:PHASE_EMOJI[ov]||'',manual:true,
+      gym:`${d.sets} × ${d.reps} @ ~${PHASE_INTENSITY[ov]}%`,
+      gymMaxMin:ov==='deload'?SEASON_DELOAD.gymMaxMin:undefined};
+  }
   const cw=cycleWeekFor(date);
-  if(cw)return {sets:cw.week.sets,reps:cw.week.reps,rest:cw.week.rest};
+  return cw?cw.week:null;
+}
+function setPlanningPhase(v){
+  if(!_planningCtx)return;
+  _planningCtx.phase=v||null;
+  const el=document.getElementById('build-intensity');
+  if(el)el.value=_intensityFor(_planningCtx.date);
+  renderPlanningBanners();
+  try{renderGymMacroContextBanner('gym-build-macro-banner');}catch(e){}
+  toast(v?'Planning as '+((GYM_MACRO_PHASES.find(p=>p.id===v)||{}).label||v):'Back to the season’s phase');
+}
+
+function exDefaultsFor(date){
+  const w=planWeekDefFor(date);
+  if(w)return {sets:w.sets,reps:w.reps,rest:w.rest};
   return currentPhaseExDefaults();
 }
-function _intensityFor(date){const cw=cycleWeekFor(date);return cw?cw.week.pct:currentPhaseIntensity();}
+function _intensityFor(date){const w=planWeekDefFor(date);return w?w.pct:currentPhaseIntensity();}
 
 // A fresh planner week (season template when the season covers it).
 function _newPlanWeek(wk){
@@ -12645,6 +12684,14 @@ function _planningBannerHtml(){
       <input type="date" value="${c.date}" min="${today()}" onchange="setPlanningDate(this.value)" style="flex:1;margin:0">
     </div>
     ${cw?`<div class="text-xs-muted" style="margin-top:6px">That week: ${cw.week.emoji} ${esc(cw.week.label)} · ${c.sport==='gym'?esc(cw.week.gym):esc(cw.week.climb)}</div>`:''}
+    ${c.sport==='gym'?`<div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+      <label style="margin:0;font-size:12px">Phase</label>
+      <select onchange="setPlanningPhase(this.value)" style="flex:1;margin:0;font-size:13px">
+        <option value=""${!c.phase?' selected':''}>Follow the season${cw?` (${esc(cw.week.id==='deload'?cw.week.label:(SEASON_GYM[cw.week.gymPhase]||{}).label||'')})`:''}</option>
+        ${GYM_MACRO_PHASES.map(p=>`<option value="${p.id}"${c.phase===p.id?' selected':''}>${p.emoji} ${esc(p.label)} — ${PHASE_INTENSITY[p.id]}%</option>`).join('')}
+      </select>
+    </div>
+    ${c.phase?`<div class="text-xxs-muted" style="margin-top:4px">Set by hand — the season says ${cw?esc(cw.week.label):'nothing for that date'}.</div>`:''}`:''}
     <div class="text-xs-muted" style="margin-top:4px">${c.sport==='gym'?'Generate (or edit) the plan below, then tap 💾 Save for the date.':'Pick and size a template, adjust the routes, then tap 💾 Save.'}</div>
     ${c.date===today()&&(c.sport==='gym'?(_buildState&&_buildState.plan.length):(_planningClimbPlan&&_planningClimbPlan.items.length))
       ?`<button class="btn ${c.sport==='gym'?'btn-gym':'btn-climb'}" style="width:100%;margin-top:8px" onclick="savePlanning(true)">▶ Save & start the session now</button>`:''}
@@ -12704,6 +12751,21 @@ function renderGymMacroContextBanner(targetId='gym-macro-context-banner'){
   if(targetId==='gym-macro-context-banner'){try{renderPlannedBanner('gym');}catch(e){}}
   const el=document.getElementById(targetId);
   if(!el)return;
+  // While planning ahead, the Build banner must describe the PLANNED week, not
+  // today's — otherwise it announced "Strength @85%" over a deload-week plan.
+  if(targetId==='gym-build-macro-banner'&&typeof _isPlanningGym==='function'&&_isPlanningGym()){
+    const w=planWeekDefFor(_planningCtx.date);
+    if(w){
+      el.innerHTML=`<div class="card" style="padding:8px 12px;margin-bottom:8px;border-left:3px solid var(--gym)">
+        <div style="font-size:13px;font-weight:700">${w.emoji||''} ${esc(w.label||'')}${w.manual?' (set by hand)':''}
+          <span class="text-xxs-muted" style="font-weight:400">· for ${esc(fmtDate(_planningCtx.date))}</span></div>
+        <div class="text-xs-muted">${esc(w.gym||((w.sets||'')+' × '+(w.reps||'')+' @ ~'+(w.pct||'')+'%'))}${w.rest?' · rest '+esc(w.rest):''}</div>
+      </div>`;
+      return;
+    }
+    el.innerHTML='';
+    return;
+  }
   const _cyc=cycleNow();
   if(_cyc){
     el.innerHTML=cycleGymBannerHtml(_cyc);
