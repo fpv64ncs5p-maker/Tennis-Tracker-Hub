@@ -324,7 +324,10 @@ select option{background:var(--surface2)}
 .next-session-detail{font-size:11px;color:var(--muted)}
 /* Week calendar */
 .week-calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:8px}
-.home-cal-day{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 4px;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);text-align:center}
+.home-cal-day{display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:8px 4px;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);text-align:center}
+.home-cal-day>*{flex-shrink:0}
+/* the load pill always sits on the bottom edge, however many icon rows the day has (2026-11-21) */
+.home-cal-load{margin-top:auto}
 .home-cal-day.today{border:2px solid var(--climb);color:var(--climb)}
 .home-cal-day-label{font-size:10px;color:var(--muted)}
 .home-cal-day-date{font-size:10px;color:var(--muted)}
@@ -13923,9 +13926,9 @@ function renderHomeWeekCalendar(){
         const c=LOAD_COLORS[_band];
         const tip=(_l.au?_l.au+' AU'+(_l.work?` (training ${_l.training} · work ${_l.work})`:'')+(_l.rpe?' · RPE '+_l.rpe:''):'nothing rated')
                  +(_l.unrated?` · ${_l.unrated} not rated`:'');
-        if(_l.au)return `<div title="${tip}" style="margin:4px 3px 0;padding:2px 0;border-radius:8px;font-size:11px;font-weight:800;line-height:1.5;text-align:center;color:${c};background:${c}22;border:1px solid ${c}66">${_l.au}</div>`;
-        if(_l.unrated)return `<div title="${tip}" style="margin:4px 3px 0;padding:2px 0;border-radius:8px;font-size:11px;font-weight:700;line-height:1.5;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--border)">–</div>`;
-        return '<div style="margin:4px 3px 0;padding:2px 0;line-height:1.5;font-size:11px">&nbsp;</div>';
+        if(_l.au)return `<div title="${tip}" class="home-cal-load" style="margin:4px 3px 0;padding:2px 0;border-radius:8px;font-size:11px;font-weight:800;line-height:1.5;text-align:center;color:${c};background:${c}22;border:1px solid ${c}66">${_l.au}</div>`;
+        if(_l.unrated)return `<div title="${tip}" class="home-cal-load" style="margin:4px 3px 0;padding:2px 0;border-radius:8px;font-size:11px;font-weight:700;line-height:1.5;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--border)">–</div>`;
+        return '<div class="home-cal-load" style="margin:4px 3px 0;padding:2px 0;line-height:1.5;font-size:11px">&nbsp;</div>';
       })()}
     </div>`;
   }
