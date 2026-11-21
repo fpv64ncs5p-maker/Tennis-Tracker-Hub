@@ -12680,16 +12680,35 @@ function computeWeekCheck(todayStr,nowStr){
   }
 
   // 2. Never 3 hard days in a row (incl. the last days of last week)
-  const seq=[addDays(mon,-2),addDays(mon,-1),...past];
-  let run=0,runEnd=null,flagged=false;
+  // Jo, 2026-11-21: show the PLANNED days too, not just the logged ones - the old
+  // version scanned `past` with the logged-only `_dayLevel(act[d])`, so it could only
+  // report a run after it had happened, when nothing could be moved. Now it scans the
+  // whole week with `dayLv` (logged, plus planned for today and later) and says which
+  // days of the run are still only planned, i.e. still movable.
+  const seq=[addDays(mon,-2),addDays(mon,-1),...days];
+  const _isLogged=d=>((act[d]||[]).length>0);
+  const runs=[];let cur=[];
   seq.forEach(d=>{
-    if(_dayLevel(act[d])==='hard'){run++;if(run>=3&&!flagged){flagged=true;runEnd=d;}}else run=0;
+    if(dayLv(d)==='hard')cur.push(d);
+    else{if(cur.length>=3)runs.push(cur);cur=[];}
   });
-  if(flagged)warn(`3 hard days in a row (ending ${_dow(runEnd)}) — next day should be rest.`);
-  else{
-    const y=addDays(todayStr,-1);
-    if(_dayLevel(act[y])==='hard'&&_dayLevel(act[todayStr])==='hard'&&todayStr<sun)
-      warn(`2 hard days in a row (${_dow(y)}, ${_dow(todayStr)}) — keep tomorrow easy or rest.`);
+  if(cur.length>=3)runs.push(cur);
+  const r3=runs[0];
+  if(r3){
+    const stillPlanned=r3.filter(d=>!_isLogged(d));
+    const after=addDays(r3[r3.length-1],1);
+    const names=r3.map(_dow).join(', ');
+    warn(stillPlanned.length
+      ? `${r3.length} hard days in a row: ${names} — ${stillPlanned.map(_dow).join(', ')} still planned, so make one lighter or move it.`
+      : `${r3.length} hard days in a row: ${names} — ${_dow(after)} should be rest.`);
+  }else{
+    const pairs2=[];
+    seq.forEach((d,i)=>{if(i&&dayLv(d)==='hard'&&dayLv(seq[i-1])==='hard')pairs2.push([seq[i-1],d]);});
+    const p2=pairs2[0];
+    if(p2&&p2[1]<=sun){
+      const planned2=p2.filter(d=>!_isLogged(d));
+      warn(`2 hard days in a row (${p2.map(_dow).join(', ')})${planned2.length?` — ${planned2.map(_dow).join(', ')} still planned`:''} — keep the next day easy or rest.`);
+    }
   }
 
   // 3. Recovery days (Jo chose A, 2026-11-02): a day with only easy activity (golf, rehab,
