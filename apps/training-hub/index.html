@@ -2068,7 +2068,7 @@ const BOULDER_PYRAMID = [
 
 const TRAINING_TYPES = {
   gym:    {icon:'💪', label:'Gym',      color:'#2ea043', subs:['Inferior + Core','Superior + Core','Superior + Wrist','Full Body','Custom']},
-  climb:  {icon:'🧗', label:'Climbing', color:'#388bfd', subs:['Base','Power','Project day','Power endurance','Board','Boulder','Easy volume','Custom']},
+  climb:  {icon:'🧗', label:'Climbing', color:'#388bfd', subs:['Base','Power','Project day','Power endurance','Board','Boulder','Fingerboard','Easy volume','Custom']},
   tennis: {icon:'🎾', label:'Tennis',   color:'#a78bfa', subs:['Match','Training Session','Hitting']},
   golf:   {icon:'⛳', label:'Golf',      color:'#34d399', subs:['Round','Practice','Driving Range']},
   rehab:  {icon:'🦵', label:'Rehab',    color:'#f0883e', subs:['Calf Protocol']},
@@ -8632,24 +8632,31 @@ function _rpeScaleHtml(sport){
      </div>`).join('');
 }
 let _srpeCtx=null;
-function _setPlannerRpe(date,sport,rpe,mins){
+function _setPlannerRpe(date,sport,rpe,mins,subtype){
   const data=DB.planData();
   const wk=getMonday(date);
   if(!data[wk])data[wk]=_newPlanWeek(wk);
   const day=data[wk].find(d=>d&&d.date===date);
   if(!day)return false;
   day.sessions=(day.sessions||[]).filter(s=>s!=null);
-  let slot=day.sessions.find(s=>s.trainingType===sport);
-  if(!slot){slot={trainingType:sport,trainingSubtype:'',duration:'',rpe:'',actual:''};day.sessions.push(slot);}
+  // With a subtype (fingerboard), prefer a slot already marked as that subtype,
+  // then an unlabelled slot of the sport, and only then add one - so a fingerboard
+  // rating never lands on a climbing slot that is there for an actual climb.
+  let slot=subtype
+    ? (day.sessions.find(s=>s.trainingType===sport&&String(s.trainingSubtype||'').toLowerCase()===String(subtype).toLowerCase())
+       ||day.sessions.find(s=>s.trainingType===sport&&!s.trainingSubtype))
+    : day.sessions.find(s=>s.trainingType===sport);
+  if(!slot){slot={trainingType:sport,trainingSubtype:subtype||'',duration:'',rpe:'',actual:''};day.sessions.push(slot);}
+  if(subtype&&!slot.trainingSubtype)slot.trainingSubtype=subtype;
   slot.rpe=String(rpe);
   if(!parseInt(slot.duration)&&mins>0)slot.duration=String(mins);
   DB.set('plan_data',data);
   return true;
 }
-function askSessionRpe(sport,date,mins){
+function askSessionRpe(sport,date,mins,subtype){
   if(!date)return;
-  _srpeCtx={sport,date,mins:parseInt(mins)||0};
-  const label=(TRAINING_TYPES[sport]&&TRAINING_TYPES[sport].label)||sport;
+  _srpeCtx={sport,date,mins:parseInt(mins)||0,subtype:subtype||''};
+  const label=subtype||(TRAINING_TYPES[sport]&&TRAINING_TYPES[sport].label)||sport;
   document.getElementById('srpe-title').textContent='How hard was that?';
   document.getElementById('srpe-sub').textContent=
     `${label} · ${fmtDate(date)}${_srpeCtx.mins?` · ${_srpeCtx.mins} min`:''} — rate the session as a whole, once you have caught your breath.`;
@@ -8712,8 +8719,8 @@ function srpePick(n){
     toast(`RPE ${n}`);
     return;
   }
-  const {sport,date,mins}=_srpeCtx;
-  const okw=_setPlannerRpe(date,sport,n,mins);
+  const {sport,date,mins,subtype}=_srpeCtx;
+  const okw=_setPlannerRpe(date,sport,n,mins,subtype);
   _srpeCtx=null;
   closeModal('modal-srpe');
   if(okw){
@@ -11705,6 +11712,7 @@ function saveFBSession(){
   document.getElementById('fb-end').value='';
   document.getElementById('fb-duration-display').style.display='none';
   toast(editing?'✅ Session updated':'✅ Climbing Gym session saved!');
+  try{askSessionRpe('climb',date,durationMins,'Fingerboard');}catch(e){}
 }
 
 // ── FB History ────────────────────────────────────
@@ -12448,6 +12456,7 @@ const CLIMB_SUB_EFFORT={
   'project day':      {lv:'hard',    rpe:DEFAULT_RPE.board},
   'power endurance':  {lv:'hard',    rpe:DEFAULT_RPE.board},
   'board':            {lv:'hard',    rpe:DEFAULT_RPE.board},
+  'fingerboard':      {lv:'hard',    rpe:DEFAULT_RPE.fb},
   'boulder':          {lv:'moderate',rpe:6},
   'easy volume':      {lv:'easy',    rpe:4},
   'custom':           {lv:'moderate',rpe:DEFAULT_RPE.climb},
