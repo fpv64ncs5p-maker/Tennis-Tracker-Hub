@@ -8524,11 +8524,12 @@ function dayLoad(dateStr){
     const r=parseFloat(s.rpe),m=parseInt(s.duration);
     if(r>0&&m>0){au+=r*m;mins+=m;rated++;}else{unrated++;}
   });
+  const unratedSess=unrated;  // sessions only — a shift is tracked separately below
   const wk=workLoad(dateStr);
   const d=_planDayRec(dateStr);
   if(d&&d.work&&!wk.rated)unrated++;
   const total=Math.round(au)+wk.au, allMins=mins+(wk.rated?wk.mins:0);
-  return {au:total,training:Math.round(au),work:wk.au,workMins:wk.mins,
+  return {au:total,training:Math.round(au),work:wk.au,workMins:wk.mins,unratedSess,
           mins:allMins,rpe:allMins?Math.round(total/allMins*100)/100:null,rated:rated+(wk.rated?1:0),unrated};
 }
 function weekLoad(mondayStr){
@@ -8556,6 +8557,36 @@ function loadBands(weeks){
   vals.sort((a,b)=>a-b);
   const q=p=>vals[Math.min(vals.length-1,Math.floor(vals.length*p))];
   return {easy:q(0.33),moderate:q(0.67),hard:q(0.90),n:vals.length,calibrated:true};
+}
+// Bands over TRAINING load only, for classifying a day as easy/moderate/hard.
+// Separate from loadBands(), which spans the day TOTAL (work included) and drives the
+// colours: Jo chose to keep work out of the hard-day count (2026-11-21), so the two
+// must not share thresholds - an 8 h shift would otherwise swamp every training day.
+const TRAIN_FALLBACK_BANDS={easy:300,moderate:700};
+function trainingBands(weeks){
+  const n=weeks||6, vals=[], mon=getMonday(today());
+  for(let w=0;w<n;w++){
+    const wkStart=addDays(mon,-w*7);
+    for(let i=0;i<7;i++){
+      const d=addDays(wkStart,i);
+      if(d>today())continue;
+      const t=dayLoad(d).training;
+      if(t>0)vals.push(t);
+    }
+  }
+  if(vals.length<10)return {...TRAIN_FALLBACK_BANDS,n:vals.length,calibrated:false};
+  vals.sort((a,b)=>a-b);
+  const q=pc=>vals[Math.min(vals.length-1,Math.floor(vals.length*pc))];
+  return {easy:q(0.33),moderate:q(0.70),n:vals.length,calibrated:true};
+}
+// Hybrid (Jo chose it, 2026-11-21): judge a day by its own load when every training
+// session on it is rated; otherwise return null so the caller falls back to the older
+// RPE/default rules. A forgotten rating must never turn a hard day into a quiet one.
+function loadDayLevel(d){
+  let l; try{l=dayLoad(d);}catch(e){return null;}
+  if(!l||l.unratedSess>0||!(l.training>0))return null;
+  const b=trainingBands();
+  return l.training<=b.easy?'easy':(l.training<=b.moderate?'moderate':'hard');
 }
 const LOAD_COLORS={none:'var(--border,#30363d)',easy:'#2ea043',moderate:'#d29922',hard:'#f0883e',peak:'#f85149'};
 function loadBandOf(au,b){
@@ -10434,10 +10465,15 @@ function renderMonthlyResume(){
   });
 
   // ── Per-month stats ──
-  function statsForMonth(ym){
+  // `upToDay` pro-rates a month to the same day of the month, so a month in progress
+  // is compared like-for-like against the one before it (Jo, 2026-11-21: November read
+  // as ▼ against October all month simply because it was not finished yet).
+  function statsForMonth(ym,upToDay){
     const [y,m]=ym.split('-').map(Number);
     const firstDay=ym+'-01';
-    const lastDay=ym+'-'+(new Date(y,m,0).getDate()).toString().padStart(2,'0');
+    const dim=new Date(y,m,0).getDate();
+    const lastD=upToDay?Math.min(dim,upToDay):dim;
+    const lastDay=ym+'-'+String(lastD).padStart(2,'0');
     const inMonth=d=>d&&d>=firstDay&&d<=lastDay&&d<=_resumeTo;
 
     const gymS=DB.gymSessions().filter(s=>inMonth(s.date));
@@ -10649,7 +10685,12 @@ function renderMonthlyResume(){
 
   // ── Render month cards ──
   el.innerHTML=`${renderTrendChart()}${allStats.map((st,idx)=>{
-    const prev=allStats[idx+1]||null;
+    // For the month in progress, re-measure the previous month over the same days.
+    const _curYm=months[idx], _isCur=_curYm===_resumeYm;
+    const _prevYm=months[idx+1];
+    const prev=_isCur&&_prevYm
+      ? statsForMonth(_prevYm,Number(_resumeTo.slice(8,10)))
+      : (allStats[idx+1]||null);
     const density=st.totalDays>0?Math.round(st.activeDays/st.totalDays*100):0;
 
     const chips=[];
@@ -12691,10 +12732,12 @@ function computeWeekCheck(todayStr,nowStr){
   // Day level = logged (past/today) combined with what's still planned (today/future).
   // Fix 2026-11-02: today's planned sessions were ignored (today counted as "past").
   const _LV={rest:0,easy:1,moderate:2,hard:3};
-  const dayLv=d=>_dayLevel(_dayItems(act,d,todayStr));
+  // Load first when the day is fully rated, old rules otherwise (Jo, 2026-11-21).
+  const dayLv=d=>loadDayLevel(d)||_dayLevel(_dayItems(act,d,todayStr));
   // 1. Hard days (a double day counts once)
-  const todayHardDone=_dayLevel(act[todayStr])==='hard';
-  const hardDone=past.filter(d=>d<todayStr&&_dayLevel(act[d])==='hard').concat(todayHardDone?[todayStr]:[]);
+  const _lvPast=d=>loadDayLevel(d)||_dayLevel(act[d]);
+  const todayHardDone=_lvPast(todayStr)==='hard';
+  const hardDone=past.filter(d=>d<todayStr&&_lvPast(d)==='hard').concat(todayHardDone?[todayStr]:[]);
   const hardPlanned=(todayHardDone?[]:[todayStr]).concat(future).filter(d=>d>=mon&&d<=sun&&dayLv(d)==='hard');
   const hardTotal=hardDone.length+hardPlanned.length;
   const hardTxt=`${hardDone.length} done${hardPlanned.length?` + ${hardPlanned.length} planned (${hardPlanned.map(_dow).join(', ')})`:''}`;
@@ -12773,7 +12816,14 @@ function computeWeekCheck(todayStr,nowStr){
     const after=addDays(r3[r3.length-1],1);
     const names=r3.map(_dowD).join(', ');
     const assumedTxt=assumed.length?` · ${assumed.map(_dowD).join(', ')} assumed hard (no RPE yet)`:'';
-    warn(`${r3.length} hard days in a row: ${names}${assumedTxt} — `+(stillPlanned.length
+    // If the day after is already rest or easy, the advice is met - say so with a tick
+    // instead of nagging (Jo, 2026-11-21: "when I have a deload day after, should stop
+    // being a warn, no?"). Beyond Sunday is unknown, so that still warns.
+    const _afterLv=after<=sun?dayLv(after):null;
+    const _covered=_afterLv==='rest'||_afterLv==='easy';
+    const _msg=`${r3.length} hard days in a row: ${names}${assumedTxt}`;
+    if(_covered)ok(`${_msg} — ${_dowD(after)} is ${_afterLv==='rest'?'rest':'easy'} ✓`);
+    else warn(`${_msg} — `+(stillPlanned.length
       ? `${stillPlanned.map(_dowD).join(', ')} still planned, so make one lighter or move it.`
       : `${_dowD(after)} should be rest.`));
   }else{
@@ -12783,8 +12833,13 @@ function computeWeekCheck(todayStr,nowStr){
     if(p2&&p2[1]<=sun){
       const planned2=p2.filter(d=>!_isLogged(d));
       const assumed2=p2.filter(d=>!_dayRated(d));
-      warn(`2 hard days in a row (${p2.map(_dowD).join(', ')})`
-        +(assumed2.length?` · ${assumed2.map(_dowD).join(', ')} assumed hard (no RPE yet)`:'')
+      const after2=addDays(p2[1],1);
+      const _aLv2=after2<=sun?dayLv(after2):null;
+      const _cov2=_aLv2==='rest'||_aLv2==='easy';
+      const _m2=`2 hard days in a row (${p2.map(_dowD).join(', ')})`
+        +(assumed2.length?` · ${assumed2.map(_dowD).join(', ')} assumed hard (no RPE yet)`:'');
+      if(_cov2)ok(`${_m2} — ${_dowD(after2)} is ${_aLv2==='rest'?'rest':'easy'} ✓`);
+      else warn(_m2
         +(planned2.length?` — ${planned2.map(_dowD).join(', ')} still planned`:'')
         +` — keep the next day easy or rest.`);
     }
