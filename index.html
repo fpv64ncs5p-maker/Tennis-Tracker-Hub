@@ -8462,10 +8462,20 @@ function pyramidAngleFilter(a){
 // The Planner is the single source: that is where session RPE lives, and it is
 // what the Week Check and the Monthly resume already read.
 const LOAD_FALLBACK_BANDS={easy:300,moderate:700,hard:1100};
+// Defensive on purpose: plan_data has years of history and a week is not
+// guaranteed to be a well-formed array of day objects. A display helper must
+// never be able to throw - on 2026-11-21 an assumption here blanked the whole
+// Planner day list and the Home week strip.
+function _planWeekArr(dateStr){
+  try{
+    const wk=DB.planData()[getMonday(dateStr)];
+    return Array.isArray(wk)?wk:[];
+  }catch(e){return [];}
+}
 function _loadSessionsFor(dateStr){
-  const days=DB.planData()[getMonday(dateStr)]||[];
-  const d=days.find(x=>x&&x.date===dateStr);
-  return ((d&&d.sessions)||[]).filter(s=>s&&s.trainingType&&s.trainingType!=='rest');
+  const d=_planDayRec(dateStr);
+  const ss=(d&&d.sessions);
+  return (Array.isArray(ss)?ss:[]).filter(s=>s&&s.trainingType&&s.trainingType!=='rest');
 }
 // A shift at the golf club is load on the same legs, so it counts towards the
 // DAY (Jo, 2026-11-21: "could it just make it counted for the Load of the day?").
@@ -8474,13 +8484,23 @@ function _loadSessionsFor(dateStr){
 // so the colour reads as a RECOVERY signal rather than training progression -
 // which is why `training` stays available separately alongside `total`.
 function _planDayRec(dateStr){
-  const days=DB.planData()[getMonday(dateStr)]||[];
-  return days.find(x=>x&&x.date===dateStr)||null;
+  return _planWeekArr(dateStr).find(x=>x&&x.date===dateStr)||null;
+}
+// Minutes between two HH:MM strings; a shift crossing midnight wraps, like
+// _climbDurationMins does for a session.
+function _minsBetween(a,b){
+  if(!a||!b)return 0;
+  const [sh,sm]=String(a).split(':').map(Number);
+  const [eh,em]=String(b).split(':').map(Number);
+  if([sh,sm,eh,em].some(n=>isNaN(n)))return 0;
+  let d=(eh*60+em)-(sh*60+sm);
+  if(d<0)d+=1440;
+  return d;
 }
 function workLoad(dateStr){
   const d=_planDayRec(dateStr);
   if(!d||!d.work)return {au:0,mins:0,rated:false};
-  const mins=minutesBetween(d.workStart,d.workEnd);
+  const mins=_minsBetween(d.workStart||'10:00',d.workEnd||'18:00');
   const r=parseFloat(d.workRpe);
   if(!(r>0)||!(mins>0))return {au:0,mins:mins>0?mins:0,rated:false};
   return {au:Math.round(r*mins),mins,rated:true};
@@ -10352,7 +10372,7 @@ function renderMonthlyResume(){
   _loggedRehabSessions().forEach(r=>addAct(r.date,'rehab'));
   const planData=DB.planData();
   Object.keys(planData).forEach(weekKey=>{
-    (planData[weekKey]||[]).forEach((d,di)=>{
+    (Array.isArray(planData[weekKey])?planData[weekKey]:[]).forEach((d,di)=>{
       const dayDate=d.date||addDays(weekKey,di);
       (d.sessions||[]).forEach(ps=>{
         if(!ps||!ps.trainingType||ps.trainingType==='rest')return;
@@ -10416,7 +10436,7 @@ function renderMonthlyResume(){
     let golfSess=0,golfMins=0,activeSess=0,activeMins=0,rehabSess=mRehab.length;
     const activeDaySet=new Set();
     Object.keys(planData).forEach(weekKey=>{
-      (planData[weekKey]||[]).forEach((d,di)=>{
+      (Array.isArray(planData[weekKey])?planData[weekKey]:[]).forEach((d,di)=>{
         const dayDate=d.date||addDays(weekKey,di);
         if(!inMonth(dayDate))return;
         (d.sessions||[]).forEach(ps=>{
@@ -10725,9 +10745,11 @@ function renderPlanner(){
     <span class="week-summary-chip" style="border-color:#2ea04344;color:#2ea043;background:#2ea04311">✅ ${doneDays} done</span>
     ${typeChips}
     <span class="week-summary-chip" title="Days not marked as work">🏖 ${7-workDays} off work</span>
-    ${(()=>{const wl=weekLoad(currentWeekStart),b=loadBands();
+    ${(()=>{try{
+      const wl=weekLoad(currentWeekStart),b=loadBands();
       return `<span class="week-summary-chip" style="border-color:${LOAD_COLORS[loadBandOf(Math.round(wl.au/7),b)]}66;color:var(--text)"
-        title="RPE x minutes, summed over the week${wl.work?` — training ${wl.training} AU + work ${wl.work} AU`:''}${wl.unrated?` · ${wl.unrated} with no RPE yet`:''}">⚡ ${wl.au} AU</span>`;})()}
+        title="RPE x minutes, summed over the week${wl.work?` — training ${wl.training} AU + work ${wl.work} AU`:''}${wl.unrated?` · ${wl.unrated} with no RPE yet`:''}">⚡ ${wl.au} AU</span>`;
+    }catch(e){return '';}})()}
     <span class="week-summary-chip" style="border-color:#64748b44;color:#64748b;background:#64748b11" title="Days with no training planned${fullRestDays?` · ${fullRestDays} full rest (no work either)`:''}">😴 ${restDays} rest${fullRestDays?` · ${fullRestDays} full`:''}</span>
   </div>`+days.map((d,i)=>{
     const sessions=d.sessions||[];
@@ -10762,9 +10784,10 @@ function renderPlanner(){
         <a href="javascript:void(0)" style="font-size:11px;color:#388bfd;text-decoration:underline"
           onclick="openWorkRpeScale('${weekKey}',${i})">📖 scale</a>
       </div>
-      ${(()=>{const wl=workLoad(d.date);
+      ${(()=>{try{const wl=workLoad(d.date);
         return wl.au?`<span class="text-xs-muted">= ${wl.au} AU</span>`
-             :(wl.mins?`<span class="text-xs-muted" title="Add an RPE and this shift counts towards the day's load">not rated</span>`:'');})()}
+             :(wl.mins?`<span class="text-xs-muted" title="Add an RPE and this shift counts towards the day's load">not rated</span>`:'');
+      }catch(e){return '';}})()}
     </div>`:'';
 
     // For work days: slot[0] above work block, slots[1+] below it (visual timeline)
@@ -13841,7 +13864,7 @@ function renderHomeWeekCalendar(){
   const dayNames=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   let activeDays=0;
   let html='';
-  const _bands=loadBands();
+  let _bands; try{_bands=loadBands();}catch(e){_bands=LOAD_FALLBACK_BANDS;}
 
   for(let idx=0;idx<7;idx++){
     const dayData=plan?plan[idx]:null;
@@ -13874,7 +13897,9 @@ function renderHomeWeekCalendar(){
 
     const dateObj=new Date(date);
     const dateNum=dateObj.getDate();
-    const _l=dayLoad(date), _band=loadBandOf(_l.au,_bands);
+    let _l,_band;
+    try{_l=dayLoad(date);_band=loadBandOf(_l.au,_bands);}
+    catch(e){_l={au:0,training:0,work:0,rpe:null,unrated:0};_band='none';}
     html+=`<div class="home-cal-day ${isToday?'today':''}">
       <div class="home-cal-day-label">${dayNames[idx]}</div>
       <div class="home-cal-day-date">${dateNum}</div>
@@ -13886,7 +13911,7 @@ function renderHomeWeekCalendar(){
   }
 
   document.getElementById('home-week-calendar').innerHTML=html;
-  const _wl=weekLoad(mondayStr);
+  let _wl; try{_wl=weekLoad(mondayStr);}catch(e){_wl={au:0,training:0,work:0,unrated:0};}
   document.getElementById('home-active-days').innerHTML=`
     <span class="active-days-label">Active days (Gym, Climb, Fingerboard, Tennis, Golf):</span>
     <span class="active-days-count">${activeDays}/7</span>
@@ -14124,7 +14149,7 @@ function getTennisTrends(){
   const planData=DB.planData();
   const plannedTennisDays=new Set();
   Object.keys(planData).forEach(weekKey=>{
-    (planData[weekKey]||[]).forEach((d,di)=>{
+    (Array.isArray(planData[weekKey])?planData[weekKey]:[]).forEach((d,di)=>{
       const dayDate=d.date||addDays(weekKey,di);
       (d.sessions||[]).forEach(ps=>{
         if(!ps||ps.trainingType!=='tennis')return;
@@ -16567,7 +16592,7 @@ function monthReportStats(ym){
   const plannedTennisDays=new Set();
   const planData=DB.planData();
   Object.keys(planData).forEach(wk=>{
-    (planData[wk]||[]).forEach((d,di)=>{
+    (Array.isArray(planData[wk])?planData[wk]:[]).forEach((d,di)=>{
       const ds=d.date||addDays(wk,di);
       if(!inMonth(ds)||ds>todayStr)return;
       if(d.work){days[ds].work=true;days[ds].workH=_mrHours(d.workStart,d.workEnd);}
