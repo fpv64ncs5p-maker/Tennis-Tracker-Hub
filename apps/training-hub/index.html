@@ -12703,10 +12703,28 @@ function renderPlanningBanners(){
 }
 
 // ── Planner: the plan strip inside a gym / climbing slot ─────────────────────
+// A plan still attached to a day whose type no longer matches it. Shown muted,
+// with no Start button, but WITH the bin - otherwise the plan is unreachable:
+// every route to a planned session goes through a slot's psId, so hiding it
+// completely would orphan it in the data with no way to see or delete it.
+function _psMismatchHtml(ps,slotType){
+  const label=(TRAINING_TYPES[slotType]&&TRAINING_TYPES[slotType].label)||slotType||'this day';
+  return `<div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <span class="text-xxs-muted">\u{1F4CB} ${esc(ps.sport==='gym'?'Gym':'Climbing')} plan still attached (day is now ${esc(label)})</span>
+    <button class="btn btn-ghost btn-sm" onclick="deletePlannedSession('${ps.id}')" aria-label="Delete plan">\u{1F5D1}</button>
+  </div>`;
+}
+
 function _psSlotHtml(weekKey,dayIdx,s){
-  if(!s||!(s.trainingType==='gym'||s.trainingType==='climb'))return '';
+  if(!s)return '';
+  if(!(s.trainingType==='gym'||s.trainingType==='climb')){
+    // a leftover plan on a day that changed type: keep it reachable
+    const orphan=s.psId?_psById(s.psId):null;
+    return orphan?_psMismatchHtml(orphan,s.trainingType):'';
+  }
   const date=addDays(weekKey,dayIdx);
   const ps=s.psId?_psById(s.psId):null;
+  if(ps&&ps.sport!==s.trainingType)return _psMismatchHtml(ps,s.trainingType);
   if(ps){
     const done=_psDoneSession(ps);
     if(done){
@@ -13453,6 +13471,11 @@ function renderHomeTodayFocus(){
         <div class="today-session-details">${duration}${rpe}</div>
         ${s.trainingSubtype?`<div class="today-session-gym">${s.trainingSubtype}</div>`:''}
         ${(()=>{const ps=s.psId&&_psById(s.psId);if(!ps)return '';
+          // The plan is attached to the SLOT, so changing the day's type (gym -> rest,
+          // e.g. "Being sick") used to leave a Rest day offering "Continue session".
+          // Keep the link - switching back restores it - but never invite training.
+          // (2026-11-21, Jo chose A.)
+          if(s.trainingType!==ps.sport)return _psMismatchHtml(ps,s.trainingType);
           const done=_psDoneSession(ps);
           if(done)return `<button class="btn btn-ghost btn-sm" style="margin-top:6px;color:var(--green,#16a34a)" onclick="viewPlannedDone('${ps.id}')">✅ Done · ${esc(_psDoneSummary(ps,done))}</button>`;
           return ps.loadedAt===today()
