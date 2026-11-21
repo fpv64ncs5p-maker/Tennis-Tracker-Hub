@@ -1008,6 +1008,15 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
               <div class="form-group" style="margin-bottom:0"><label>Started</label><input type="text" id="fb-start" placeholder="09:00" maxlength="5" inputmode="numeric" oninput="autoColonTime(this);updateFBDuration()"></div>
               <div class="form-group" style="margin-bottom:0"><label>Finished</label><input type="text" id="fb-end" placeholder="10:00" maxlength="5" inputmode="numeric" oninput="autoColonTime(this);updateFBDuration()"></div>
             </div>
+            <div class="form-row cols2" style="margin-top:10px">
+              <div class="form-group" style="margin-bottom:0">
+                <label>Session RPE (1–10)</label>
+                <input type="number" inputmode="decimal" min="1" max="10" id="fb-rpe" placeholder="8">
+                <div style="font-size:10px;margin-top:3px"><a href="javascript:void(0)" style="color:#388bfd;text-decoration:underline"
+                  onclick="openRpeScaleInto('fb-rpe','climb','Fingerboard')">📖 Fingerboard RPE scale</a></div>
+              </div>
+              <div class="form-group" style="margin-bottom:0"></div>
+            </div>
             <div id="fb-duration-display" style="display:none;margin-top:8px;padding:6px 10px;background:var(--gym-glow);border:1px solid rgba(22,163,74,.25);border-radius:var(--radius-sm);font-size:13px;font-weight:600;color:var(--gym);text-align:center"></div>
           </div>
           <div id="fb-exercises-list"></div>
@@ -8685,6 +8694,20 @@ function openRpeScale(weekKey,dayIdx,si,sport){
   document.getElementById('srpe-preview').textContent='';
   openModal('modal-srpe');
 }
+// Opens the scale to fill an input box (the Climbing Gym log), rather than to write
+// a Planner slot - the value is carried into the slot when the session is saved.
+function openRpeScaleInto(elId,sport,label){
+  _srpeCtx={mode:'input',elId,sport};
+  document.getElementById('srpe-title').textContent=(label||'Session')+' RPE scale';
+  document.getElementById('srpe-sub').textContent='Tap a number to set it, or just read the scale and close.';
+  document.getElementById('srpe-chips').innerHTML=[...Array(10)].map((_,i)=>{
+    const n=i+1;
+    return `<button class="btn btn-ghost" style="flex:1;min-width:38px;font-weight:800;font-size:15px" onclick="srpePick(${n})">${n}</button>`;
+  }).join('');
+  document.getElementById('srpe-scale').innerHTML=_rpeScaleHtml(sport);
+  document.getElementById('srpe-preview').textContent='';
+  openModal('modal-srpe');
+}
 function openWorkRpeScale(weekKey,dayIdx){
   _srpeCtx={mode:'work',weekKey,dayIdx};
   document.getElementById('srpe-title').textContent='Working-day RPE scale';
@@ -8699,6 +8722,13 @@ function openWorkRpeScale(weekKey,dayIdx){
 }
 function srpePick(n){
   if(!_srpeCtx)return closeModal('modal-srpe');
+  if(_srpeCtx.mode==='input'){
+    const el=document.getElementById(_srpeCtx.elId);
+    _srpeCtx=null;
+    closeModal('modal-srpe');
+    if(el){el.value=String(n);try{el.dispatchEvent(new Event('change'));}catch(e){}}
+    return;
+  }
   if(_srpeCtx.mode==='work'){
     const {weekKey,dayIdx}=_srpeCtx;
     _srpeCtx=null;
@@ -11690,6 +11720,8 @@ function saveFBSession(){
   const date=document.getElementById('fb-date').value;
   if(!date){toast('Add a date first');return;}
   if(!fbSession.exercises.length){toast('Add at least one exercise');return;}
+  // read BEFORE the form is reset further down, or it is already blank
+  const _logRpe=parseFloat((document.getElementById('fb-rpe')||{}).value);
   const bw=_normalizeKgInput(document.getElementById('fb-bw').value);
   const startTime=document.getElementById('fb-start').value;
   const endTime=document.getElementById('fb-end').value;
@@ -11708,11 +11740,17 @@ function saveFBSession(){
   renderFBExercises();
   document.getElementById('fb-date').value=today();
   document.getElementById('fb-bw').value='';
+  { const _re=document.getElementById('fb-rpe'); if(_re)_re.value=''; }
   document.getElementById('fb-start').value='';
   document.getElementById('fb-end').value='';
   document.getElementById('fb-duration-display').style.display='none';
   toast(editing?'✅ Session updated':'✅ Climbing Gym session saved!');
-  try{askSessionRpe('climb',date,durationMins,'Fingerboard');}catch(e){}
+  // Rated in the log → write it straight through and don't interrupt with the prompt.
+  // Left blank → ask, so a session is never filed with an assumed effort by accident.
+  try{
+    if(_logRpe>0){_setPlannerRpe(date,'climb',_logRpe,durationMins,'Fingerboard');try{renderHome();}catch(e){}}
+    else askSessionRpe('climb',date,durationMins,'Fingerboard');
+  }catch(e){}
 }
 
 // ── FB History ────────────────────────────────────
@@ -11815,6 +11853,9 @@ function editFBSession(id){
   fbSession.exercises=JSON.parse(JSON.stringify(s.exercises||[])); // deep copy, done-ticks kept
   document.getElementById('fb-date').value=s.date||today();
   document.getElementById('fb-bw').value=s.bodyWeight||'';
+  // prefill the session RPE from the Planner slot this session already wrote
+  { const _re=document.getElementById('fb-rpe');
+    if(_re){const _sl=_planSlot(s.date,['climb'],/finger|hang/i);_re.value=(_sl&&parseFloat(_sl.rpe)>0)?_sl.rpe:'';} }
   document.getElementById('fb-start').value=s.startTime||'';
   document.getElementById('fb-end').value=s.endTime||'';
   updateFBDuration();
