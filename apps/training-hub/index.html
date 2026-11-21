@@ -4592,6 +4592,7 @@ function saveGymSession(){
     clearDirty();
     showVolumeSummary(session);
   }
+  try{askSessionRpe('gym',date,durationMins);}catch(e){}
   gymSession={exercises:[]};
   _clearGymDraft();
   renderSessionExercises();
@@ -8056,6 +8057,7 @@ function saveClimbSession(){
     clearDirty();
     toast('✅ Session saved!');
   }
+  try{askSessionRpe('climb',date,duration);}catch(e){}
   climbSession={warmup:[],blocks:[],cooldown:[]};
   _clearDraftClimb();
   renderClimbBlocks();
@@ -8448,6 +8450,250 @@ function pyramidAngleFilter(a){
   });
   renderPyramid();
 }
+
+// ══════════════════════════════════════════════════
+//  SESSION-RPE TRAINING LOAD (2026-11-21, Jo chose A)
+// ══════════════════════════════════════════════════
+// Foster's session-RPE: load = RPE x minutes, in arbitrary units (AU).
+// Jo's objection to the old day labels was that they "assume hard as everything" -
+// they came from per-sport DEFAULT_RPE when nothing was typed. Load is computed
+// ONLY from sessions that actually carry both an RPE and a duration; anything
+// else is counted as unrated and shown as such, never filled with a guess.
+// The Planner is the single source: that is where session RPE lives, and it is
+// what the Week Check and the Monthly resume already read.
+const LOAD_FALLBACK_BANDS={easy:300,moderate:700,hard:1100};
+function _loadSessionsFor(dateStr){
+  const days=DB.planData()[getMonday(dateStr)]||[];
+  const d=days.find(x=>x&&x.date===dateStr);
+  return ((d&&d.sessions)||[]).filter(s=>s&&s.trainingType&&s.trainingType!=='rest');
+}
+// A shift at the golf club is load on the same legs, so it counts towards the
+// DAY (Jo, 2026-11-21: "could it just make it counted for the Load of the day?").
+// Minutes come from the workStart/workEnd she already enters; workRpe is new.
+// Consequence she accepted: the bands recalibrate onto days that include work,
+// so the colour reads as a RECOVERY signal rather than training progression -
+// which is why `training` stays available separately alongside `total`.
+function _planDayRec(dateStr){
+  const days=DB.planData()[getMonday(dateStr)]||[];
+  return days.find(x=>x&&x.date===dateStr)||null;
+}
+function workLoad(dateStr){
+  const d=_planDayRec(dateStr);
+  if(!d||!d.work)return {au:0,mins:0,rated:false};
+  const mins=minutesBetween(d.workStart,d.workEnd);
+  const r=parseFloat(d.workRpe);
+  if(!(r>0)||!(mins>0))return {au:0,mins:mins>0?mins:0,rated:false};
+  return {au:Math.round(r*mins),mins,rated:true};
+}
+// {au = total, training, work, mins, rpe (duration-weighted, training+work), rated, unrated}
+function dayLoad(dateStr){
+  let au=0,mins=0,rated=0,unrated=0;
+  _loadSessionsFor(dateStr).forEach(s=>{
+    const r=parseFloat(s.rpe),m=parseInt(s.duration);
+    if(r>0&&m>0){au+=r*m;mins+=m;rated++;}else{unrated++;}
+  });
+  const wk=workLoad(dateStr);
+  const d=_planDayRec(dateStr);
+  if(d&&d.work&&!wk.rated)unrated++;
+  const total=Math.round(au)+wk.au, allMins=mins+(wk.rated?wk.mins:0);
+  return {au:total,training:Math.round(au),work:wk.au,workMins:wk.mins,
+          mins:allMins,rpe:allMins?Math.round(total/allMins*100)/100:null,rated:rated+(wk.rated?1:0),unrated};
+}
+function weekLoad(mondayStr){
+  let au=0,training=0,work=0,unrated=0;
+  for(let i=0;i<7;i++){const l=dayLoad(addDays(mondayStr,i));au+=l.au;training+=l.training;work+=l.work;unrated+=l.unrated;}
+  return {au,training,work,unrated};
+}
+// Bands from Jo's OWN rolling window, not textbook numbers - they follow her as
+// her training changes. Only training days (au>0) count, so rest days don't drag
+// the thresholds down. Falls back to fixed bands until there is enough history.
+function loadBands(weeks){
+  const n=weeks||6;
+  const vals=[];
+  const mon=getMonday(today());
+  for(let w=0;w<n;w++){
+    const wk=addDays(mon,-w*7);
+    for(let i=0;i<7;i++){
+      const d=addDays(wk,i);
+      if(d>today())continue;
+      const au=dayLoad(d).au;
+      if(au>0)vals.push(au);
+    }
+  }
+  if(vals.length<10)return {...LOAD_FALLBACK_BANDS,n:vals.length,calibrated:false};
+  vals.sort((a,b)=>a-b);
+  const q=p=>vals[Math.min(vals.length-1,Math.floor(vals.length*p))];
+  return {easy:q(0.33),moderate:q(0.67),hard:q(0.90),n:vals.length,calibrated:true};
+}
+const LOAD_COLORS={none:'var(--border,#30363d)',easy:'#2ea043',moderate:'#d29922',hard:'#f0883e',peak:'#f85149'};
+function loadBandOf(au,b){
+  if(!au)return 'none';
+  const bands=b||loadBands();
+  if(au<=bands.easy)return 'easy';
+  if(au<=bands.moderate)return 'moderate';
+  if(au<=bands.hard)return 'hard';
+  return 'peak';
+}
+
+// ── Rate the session you just finished (2026-11-21) ───────────────────────
+// Jo: "incorporate this at the end of the sessions, so I try really to fill
+// what I am feeling". The RPE is written into that day's PLANNER slot, which is
+// where session RPE already lives and what the Week Check, the Monthly resume
+// and dayLoad() all read - rather than starting a second RPE store that would
+// disagree with the first. The slot is created if the session wasn't planned.
+// Per-sport scales, written by Jo (2026-11-21) - "every sports activity
+// should have its own scale". The NUMBERS are the same 1-10 everywhere, so the
+// load maths is untouched; only the descriptions change. Climbing, bouldering
+// and fingerboard deliberately share one scale (Jo's call) and are the only one
+// that splits 9 from 10 - rendered exactly as she wrote each.
+const SRPE_SCALE=[
+  {r:'1–2',c:'Very easy',t:'Barely taxing'},
+  {r:'3–4',c:'Easy–moderate',t:'Comfortable, plenty left in reserve'},
+  {r:'5–6',c:'Moderate–hard',t:'Some fatigue'},
+  {r:'7–8',c:'Very hard',t:'Significant fatigue'},
+  {r:'9–10',c:'Maximal',t:'Could not have sustained more'}
+];
+const SPORT_RPE_SCALE={
+  tennis:[
+    {r:'1–2',c:'Very easy',t:'Light hitting, technical work, minimal movement and fatigue.'},
+    {r:'3–4',c:'Easy–moderate',t:'Controlled rallies, moderate footwork, comfortable intensity.'},
+    {r:'5–6',c:'Moderate–hard',t:'Consistent rallies, increased movement, noticeable physical fatigue.'},
+    {r:'7–8',c:'Very hard',t:'Intensive drills or competitive matches, demanding rallies and significant fatigue.'},
+    {r:'9–10',c:'Maximal',t:'Extremely demanding session, near exhaustion, maximal physical effort.'}
+  ],
+  gym:[
+    {r:'1–2',c:'Very easy',t:'Light weights, mobility, activation and warm-up exercises.'},
+    {r:'3–4',c:'Easy–moderate',t:'Comfortable weights, controlled repetitions, plenty of energy remaining.'},
+    {r:'5–6',c:'Moderate–hard',t:'Moderate to challenging weights, noticeable muscular fatigue, good technique maintained.'},
+    {r:'7–8',c:'Very hard',t:'Heavy weights, demanding sets, significant muscular fatigue and limited repetitions in reserve.'},
+    {r:'9–10',c:'Maximal',t:'Very heavy loads, sets close to or at muscular failure, maximal effort.'}
+  ],
+  climb:[
+    {r:'1–2',c:'Very easy',t:'Social climbing, barely any load.'},
+    {r:'3–4',c:'Easy',t:'Easy session, comfortable climbing, plenty of recovery.'},
+    {r:'5–6',c:'Moderate–hard',t:'Moderate to hard, some muscular fatigue.'},
+    {r:'7–8',c:'Hard–very hard',t:'Significant forearm, grip and upper-body fatigue.'},
+    {r:'9',c:'Extremely hard',t:'Near maximal effort.'},
+    {r:'10',c:'Maximal',t:'Maximal effort, unable to sustain more work.'}
+  ],
+  golf:[
+    {r:'1–2',c:'Very easy',t:'Putting practice, short game or light technical work, minimal physical effort.'},
+    {r:'3–4',c:'Easy–moderate',t:'Light practice, limited walking, comfortable swings and little fatigue.'},
+    {r:'5–6',c:'Moderate–hard',t:'Full practice session or golf round, regular walking and noticeable physical fatigue.'},
+    {r:'7–8',c:'Very hard',t:'Long 18-hole round, extensive walking, demanding conditions and significant physical fatigue.'},
+    {r:'9–10',c:'Maximal',t:'Extremely demanding golf day, substantial accumulated fatigue and very high physical effort.'}
+  ],
+  rehab:[
+    {r:'1–2',c:'Very easy',t:'Gentle mobility, stretching, breathing exercises and light activation.'},
+    {r:'3–4',c:'Easy–moderate',t:'Light strengthening, controlled movements and minimal muscular fatigue.'},
+    {r:'5–6',c:'Moderate–hard',t:'Moderate strengthening, balance and coordination exercises, noticeable effort.'},
+    {r:'7–8',c:'Very hard',t:'Challenging rehabilitation exercises, significant muscular fatigue and demanding movements.'},
+    {r:'9–10',c:'Maximal',t:'Very demanding exercises, near-maximal muscular effort and substantial fatigue.'}
+  ]
+};
+SPORT_RPE_SCALE.work=[
+  {r:'1–2',c:'Very easy',t:'Quiet day, few guests, mostly desk work and plenty of time between tasks.'},
+  {r:'3–4',c:'Easy–moderate',t:'Normal day, moderate guest flow, regular duties and manageable workload.'},
+  {r:'5–6',c:'Moderate–hard',t:'Busy day, many guests, frequent serving, bar/kitchen duties and limited breaks.'},
+  {r:'7–8',c:'Very hard',t:'Very busy day, high guest volume, continuous activity, multiple responsibilities and little recovery time.'},
+  {r:'9–10',c:'Maximal',t:'Exceptionally busy day, extremely high guest volume, sustained workload and substantial fatigue.'}
+];
+SPORT_RPE_SCALE.fb=SPORT_RPE_SCALE.climb;      // fingerboard shares the climbing scale
+SPORT_RPE_SCALE.boulder=SPORT_RPE_SCALE.climb;
+function _rpeScaleFor(sport){return SPORT_RPE_SCALE[String(sport||'').toLowerCase()]||SRPE_SCALE;}
+function _rpeScaleHtml(sport){
+  return _rpeScaleFor(sport).map(x=>
+    `<div style="display:flex;gap:8px;align-items:baseline">
+       <strong style="color:var(--text);min-width:34px">${x.r}</strong>
+       <span><strong style="color:var(--text)">${esc(x.c)}</strong> — ${esc(x.t)}</span>
+     </div>`).join('');
+}
+let _srpeCtx=null;
+function _setPlannerRpe(date,sport,rpe,mins){
+  const data=DB.planData();
+  const wk=getMonday(date);
+  if(!data[wk])data[wk]=_newPlanWeek(wk);
+  const day=data[wk].find(d=>d&&d.date===date);
+  if(!day)return false;
+  day.sessions=(day.sessions||[]).filter(s=>s!=null);
+  let slot=day.sessions.find(s=>s.trainingType===sport);
+  if(!slot){slot={trainingType:sport,trainingSubtype:'',duration:'',rpe:'',actual:''};day.sessions.push(slot);}
+  slot.rpe=String(rpe);
+  if(!parseInt(slot.duration)&&mins>0)slot.duration=String(mins);
+  DB.set('plan_data',data);
+  return true;
+}
+function askSessionRpe(sport,date,mins){
+  if(!date)return;
+  _srpeCtx={sport,date,mins:parseInt(mins)||0};
+  const label=(TRAINING_TYPES[sport]&&TRAINING_TYPES[sport].label)||sport;
+  document.getElementById('srpe-title').textContent='How hard was that?';
+  document.getElementById('srpe-sub').textContent=
+    `${label} · ${fmtDate(date)}${_srpeCtx.mins?` · ${_srpeCtx.mins} min`:''} — rate the session as a whole, once you have caught your breath.`;
+  document.getElementById('srpe-chips').innerHTML=[...Array(10)].map((_,i)=>{
+    const n=i+1;
+    return `<button class="btn btn-ghost" style="flex:1;min-width:38px;font-weight:800;font-size:15px" onclick="srpePick(${n})">${n}</button>`;
+  }).join('');
+  document.getElementById('srpe-scale').innerHTML=_rpeScaleHtml(sport);
+  document.getElementById('srpe-preview').textContent=_srpeCtx.mins
+    ? `Your load for this session = RPE × ${_srpeCtx.mins} min.` : '';
+  openModal('modal-srpe');
+}
+// Opened from a Planner slot: same modal, but it writes straight into that slot
+// instead of looking one up - so the scale is available wherever an RPE is typed,
+// including tennis, which has no session log to save from.
+function openRpeScale(weekKey,dayIdx,si,sport){
+  _srpeCtx={mode:'planner',weekKey,dayIdx,si,sport};
+  const label=(TRAINING_TYPES[sport]&&TRAINING_TYPES[sport].label)||sport;
+  document.getElementById('srpe-title').textContent=`${label} RPE scale`;
+  document.getElementById('srpe-sub').textContent='Tap a number to set it, or just read the scale and close.';
+  document.getElementById('srpe-chips').innerHTML=[...Array(10)].map((_,i)=>{
+    const n=i+1;
+    return `<button class="btn btn-ghost" style="flex:1;min-width:38px;font-weight:800;font-size:15px" onclick="srpePick(${n})">${n}</button>`;
+  }).join('');
+  document.getElementById('srpe-scale').innerHTML=_rpeScaleHtml(sport);
+  document.getElementById('srpe-preview').textContent='';
+  openModal('modal-srpe');
+}
+function openWorkRpeScale(weekKey,dayIdx){
+  _srpeCtx={mode:'work',weekKey,dayIdx};
+  document.getElementById('srpe-title').textContent='Working-day RPE scale';
+  document.getElementById('srpe-sub').textContent='How hard was the shift? It counts towards the day\u2019s load.';
+  document.getElementById('srpe-chips').innerHTML=[...Array(10)].map((_,i)=>{
+    const n=i+1;
+    return `<button class="btn btn-ghost" style="flex:1;min-width:38px;font-weight:800;font-size:15px" onclick="srpePick(${n})">${n}</button>`;
+  }).join('');
+  document.getElementById('srpe-scale').innerHTML=_rpeScaleHtml('work');
+  document.getElementById('srpe-preview').textContent='';
+  openModal('modal-srpe');
+}
+function srpePick(n){
+  if(!_srpeCtx)return closeModal('modal-srpe');
+  if(_srpeCtx.mode==='work'){
+    const {weekKey,dayIdx}=_srpeCtx;
+    _srpeCtx=null;
+    closeModal('modal-srpe');
+    savePlanField(weekKey,dayIdx,'workRpe',String(n));
+    return;
+  }
+  if(_srpeCtx.mode==='planner'){
+    const {weekKey,dayIdx,si}=_srpeCtx;
+    _srpeCtx=null;
+    closeModal('modal-srpe');
+    savePlanSessionField(weekKey,dayIdx,si,'rpe',String(n));
+    return;
+  }
+  const {sport,date,mins}=_srpeCtx;
+  const okw=_setPlannerRpe(date,sport,n,mins);
+  _srpeCtx=null;
+  closeModal('modal-srpe');
+  if(okw){
+    toast(`Logged RPE ${n}${mins?` · ${n*mins} AU`:''}`);
+    try{renderHome();}catch(e){}
+    try{renderPlanner();}catch(e){}
+  }
+}
+function srpeSkip(){_srpeCtx=null;closeModal('modal-srpe');}
 
 // ══════════════════════════════════════════════════
 //  ROUTE PYRAMID LADDER (2026-11-19, Jo chose B)
@@ -9808,7 +10054,8 @@ function buildSessionSlotHTML(weekKey,dayIdx,si,s,label,removeFn){
         <label>RPE (1–10)</label>
         <input type="number" inputmode="decimal" min="1" max="10" value="${s.rpe||''}" placeholder="7"
           onchange="savePlanSessionField('${weekKey}',${dayIdx},${si},'rpe',this.value)">
-        <div style="font-size:10px;color:var(--muted);margin-top:3px">1–4 easy · 5–6 medium · 7+ hard · 2 h+ = one level up</div>
+        <div style="font-size:10px;margin-top:3px"><a href="javascript:void(0)" style="color:var(--accent,#388bfd);text-decoration:underline"
+          onclick="openRpeScale('${weekKey}',${dayIdx},${si},'${s.trainingType}')">📖 ${(TRAINING_TYPES[s.trainingType]&&TRAINING_TYPES[s.trainingType].label)||'Session'} RPE scale</a></div>
       </div>
     </div>
     <div class="form-group" style="margin-bottom:0">
@@ -10478,6 +10725,9 @@ function renderPlanner(){
     <span class="week-summary-chip" style="border-color:#2ea04344;color:#2ea043;background:#2ea04311">✅ ${doneDays} done</span>
     ${typeChips}
     <span class="week-summary-chip" title="Days not marked as work">🏖 ${7-workDays} off work</span>
+    ${(()=>{const wl=weekLoad(currentWeekStart),b=loadBands();
+      return `<span class="week-summary-chip" style="border-color:${LOAD_COLORS[loadBandOf(Math.round(wl.au/7),b)]}66;color:var(--text)"
+        title="RPE x minutes, summed over the week${wl.work?` — training ${wl.training} AU + work ${wl.work} AU`:''}${wl.unrated?` · ${wl.unrated} with no RPE yet`:''}">⚡ ${wl.au} AU</span>`;})()}
     <span class="week-summary-chip" style="border-color:#64748b44;color:#64748b;background:#64748b11" title="Days with no training planned${fullRestDays?` · ${fullRestDays} full rest (no work either)`:''}">😴 ${restDays} rest${fullRestDays?` · ${fullRestDays} full`:''}</span>
   </div>`+days.map((d,i)=>{
     const sessions=d.sessions||[];
@@ -10505,6 +10755,16 @@ function renderPlanner(){
         <input type="text" value="${d.workEnd||'18:00'}" placeholder="18:00" maxlength="5" inputmode="numeric" style="width:72px;font-size:13px"
           oninput="autoColonTime(this)" onchange="savePlanField('${weekKey}',${i},'workEnd',this.value)">
       </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="text-xs-muted">RPE</span>
+        <input type="number" inputmode="decimal" min="1" max="10" value="${d.workRpe||''}" placeholder="4" style="width:56px;font-size:13px"
+          onchange="savePlanField('${weekKey}',${i},'workRpe',this.value)">
+        <a href="javascript:void(0)" style="font-size:11px;color:#388bfd;text-decoration:underline"
+          onclick="openWorkRpeScale('${weekKey}',${i})">📖 scale</a>
+      </div>
+      ${(()=>{const wl=workLoad(d.date);
+        return wl.au?`<span class="text-xs-muted">= ${wl.au} AU</span>`
+             :(wl.mins?`<span class="text-xs-muted" title="Add an RPE and this shift counts towards the day's load">not rated</span>`:'');})()}
     </div>`:'';
 
     // For work days: slot[0] above work block, slots[1+] below it (visual timeline)
@@ -13581,6 +13841,7 @@ function renderHomeWeekCalendar(){
   const dayNames=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   let activeDays=0;
   let html='';
+  const _bands=loadBands();
 
   for(let idx=0;idx<7;idx++){
     const dayData=plan?plan[idx]:null;
@@ -13613,17 +13874,25 @@ function renderHomeWeekCalendar(){
 
     const dateObj=new Date(date);
     const dateNum=dateObj.getDate();
+    const _l=dayLoad(date), _band=loadBandOf(_l.au,_bands);
     html+=`<div class="home-cal-day ${isToday?'today':''}">
       <div class="home-cal-day-label">${dayNames[idx]}</div>
       <div class="home-cal-day-date">${dateNum}</div>
       <div class="week-icons">${sessionIcons.join('')}</div>
+      <div title="${_l.au?_l.au+' AU'+(_l.work?` (training ${_l.training} · work ${_l.work})`:'')+(_l.rpe?' · RPE '+_l.rpe:''):'no load'}${_l.unrated?' · '+_l.unrated+' unrated':''}"
+        style="height:4px;border-radius:2px;margin:3px 2px 1px;background:${LOAD_COLORS[_band]};opacity:${_band==='none'?0.35:1}"></div>
+      <div style="font-size:9px;line-height:1.2;text-align:center;color:var(--muted)">${_l.au?_l.au:''}${_l.unrated?'<span title="sessions with no RPE yet"> ·</span>':''}</div>
     </div>`;
   }
 
   document.getElementById('home-week-calendar').innerHTML=html;
+  const _wl=weekLoad(mondayStr);
   document.getElementById('home-active-days').innerHTML=`
     <span class="active-days-label">Active days (Gym, Climb, Fingerboard, Tennis, Golf):</span>
     <span class="active-days-count">${activeDays}/7</span>
+    <div style="flex-basis:100%;height:0"></div>
+    <span class="active-days-label">Load this week${_wl.work?` · training ${_wl.training} + work ${_wl.work}`:''}${_wl.unrated?` · ${_wl.unrated} not rated yet`:''}:</span>
+    <span class="active-days-count">${_wl.au} AU</span>
   `;
 }
 
@@ -16930,6 +17199,22 @@ function exportMonthReport(){
   </div>
 </div>
 
+<!-- SESSION RPE (2026-11-21) -->
+<div class="modal-overlay" role="dialog" aria-modal="true" id="modal-srpe">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-title" id="srpe-title">How hard was that?</div>
+      <button class="modal-close" aria-label="Close" onclick="srpeSkip()">✕</button>
+    </div>
+    <p class="text-xs-muted" id="srpe-sub" style="margin-bottom:10px"></p>
+    <div id="srpe-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+    <div id="srpe-scale" style="font-size:12px;line-height:1.7;color:var(--muted);margin-bottom:12px"></div>
+    <div id="srpe-preview" class="text-xs-muted" style="margin-bottom:10px"></div>
+    <button class="btn btn-ghost btn-block" onclick="srpeSkip()">Skip for now</button>
+    <div style="height:8px"></div>
+  </div>
+</div>
 <div id="print-root"></div>
 
 <script>/* Offline: service worker keeps a copy of the app (2026-11-14, sw.js in repo root) */
