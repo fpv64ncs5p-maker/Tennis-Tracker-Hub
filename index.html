@@ -12608,6 +12608,10 @@ function _plannedFor(date){
 }
 const _DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function _dow(d){return _DOW[new Date(d+'T12:00:00').getDay()];}
+// Day name WITH the date. Without it, a day from the previous week was
+// indistinguishable from this week's (Jo, 2026-11-21: "I have no hard days on
+// Sat, Sun and Mon?!" - the run was Sat 14/Sun 15/Mon 16, not that weekend).
+function _dowD(d){return _dow(d)+' '+Number(String(d).slice(8,10));}
 
 // Returns {items:[{ok,text}], next:[...]} — pure, so it can be tested.
 function computeWeekCheck(todayStr,nowStr){
@@ -12685,8 +12689,17 @@ function computeWeekCheck(todayStr,nowStr){
   // report a run after it had happened, when nothing could be moved. Now it scans the
   // whole week with `dayLv` (logged, plus planned for today and later) and says which
   // days of the run are still only planned, i.e. still movable.
-  const seq=[addDays(mon,-2),addDays(mon,-1),...days];
+  // Scoped to the CURRENT week (Jo, 2026-11-21). It used to start two days back, so
+  // a run ending on Monday was reported days later out of last weekend - stale and
+  // confusing. Trade-off accepted: a run that starts in the previous week and has
+  // only one or two days inside this one is no longer flagged.
+  const seq=[...days];
   const _isLogged=d=>((act[d]||[]).length>0);
+  // Option A (Jo, 2026-11-21): a day with no RPE typed anywhere is still allowed to
+  // count as hard - a forgotten rating should not silently remove an overtraining
+  // warning - but the message says the level was ASSUMED, so the guess is visible
+  // and she can fix it by rating the day.
+  const _dayRated=d=>{const r=_planDayRec(d);return !!(r&&(r.sessions||[]).some(x=>x&&parseFloat(x.rpe)>0));};
   const runs=[];let cur=[];
   seq.forEach(d=>{
     if(dayLv(d)==='hard')cur.push(d);
@@ -12696,18 +12709,24 @@ function computeWeekCheck(todayStr,nowStr){
   const r3=runs[0];
   if(r3){
     const stillPlanned=r3.filter(d=>!_isLogged(d));
+    const assumed=r3.filter(d=>!_dayRated(d));
     const after=addDays(r3[r3.length-1],1);
-    const names=r3.map(_dow).join(', ');
-    warn(stillPlanned.length
-      ? `${r3.length} hard days in a row: ${names} — ${stillPlanned.map(_dow).join(', ')} still planned, so make one lighter or move it.`
-      : `${r3.length} hard days in a row: ${names} — ${_dow(after)} should be rest.`);
+    const names=r3.map(_dowD).join(', ');
+    const assumedTxt=assumed.length?` · ${assumed.map(_dowD).join(', ')} assumed hard (no RPE yet)`:'';
+    warn(`${r3.length} hard days in a row: ${names}${assumedTxt} — `+(stillPlanned.length
+      ? `${stillPlanned.map(_dowD).join(', ')} still planned, so make one lighter or move it.`
+      : `${_dowD(after)} should be rest.`));
   }else{
     const pairs2=[];
     seq.forEach((d,i)=>{if(i&&dayLv(d)==='hard'&&dayLv(seq[i-1])==='hard')pairs2.push([seq[i-1],d]);});
     const p2=pairs2[0];
     if(p2&&p2[1]<=sun){
       const planned2=p2.filter(d=>!_isLogged(d));
-      warn(`2 hard days in a row (${p2.map(_dow).join(', ')})${planned2.length?` — ${planned2.map(_dow).join(', ')} still planned`:''} — keep the next day easy or rest.`);
+      const assumed2=p2.filter(d=>!_dayRated(d));
+      warn(`2 hard days in a row (${p2.map(_dowD).join(', ')})`
+        +(assumed2.length?` · ${assumed2.map(_dowD).join(', ')} assumed hard (no RPE yet)`:'')
+        +(planned2.length?` — ${planned2.map(_dowD).join(', ')} still planned`:'')
+        +` — keep the next day easy or rest.`);
     }
   }
 
