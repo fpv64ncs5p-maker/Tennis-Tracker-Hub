@@ -12637,8 +12637,16 @@ function computeWeekCheck(todayStr,nowStr){
   // 4-hard weeks (Jo, 2026-11-02): allowed when spaced out (no two hard days in a row, except a
   // gym day without legs before tennis), with ≥2 recovery days incl. 1 fully free — and only if
   // last week had ≤3. Deload weeks keep their own max.
-  const recDays=days.filter(d=>_LV[dayLv(d)]<=_LV.easy);
-  const freeDays=days.filter(d=>dayLv(d)==='rest');
+  // Work shifts count here too (Jo chose C, 2026-11-21). Until now `freeDays` asked
+  // only "was any training planned", so an 8 h shift at the golf club was reported as
+  // a FREE day - the Planner has distinguished rest (no training) from full rest (no
+  // training AND no work) since 2026-10-19, and this check had never adopted it.
+  //   A: a work day is never "free".
+  //   B: a shift rated hard (RPE > modMax) does not count as recovery at all.
+  const _isWork=d=>{const r=_planDayRec(d);return !!(r&&r.work);};
+  const _hardShift=d=>{const r=_planDayRec(d);return !!(r&&r.work&&parseFloat(r.workRpe)>EFFORT_RULES.modMax);};
+  const recDays=days.filter(d=>_LV[dayLv(d)]<=_LV.easy&&!_hardShift(d));
+  const freeDays=days.filter(d=>dayLv(d)==='rest'&&!_isWork(d));
   const hardDays=[...hardDone,...hardPlanned].sort();
   const prevMon=addDays(mon,-7);
   const actPrev=_weekActivity(prevMon,addDays(mon,-1),nowStr);
@@ -12686,10 +12694,12 @@ function computeWeekCheck(todayStr,nowStr){
 
   // 3. Recovery days (Jo chose A, 2026-11-02): a day with only easy activity (golf, rehab,
   //    short core) counts as recovery. Aim: ≥2 recovery days, at least 1 of them fully free.
-  const recTxt=recDays.length?`${recDays.length} (${recDays.map(d=>_dow(d)+(freeDays.includes(d)?' free':'')).join(', ')})`:'0';
-  if(!freeDays.length)warn(`Recovery days: ${recTxt} — keep one day fully free (no training at all).`);
-  else if(recDays.length<CYCLE_RULES.restDays)warn(`Recovery days: ${recTxt} — aim for ${CYCLE_RULES.restDays}: 1 fully free + 1 easy day (golf, rehab or nothing).`);
-  else ok(`Recovery days: ${recTxt}`);
+  const recTxt=recDays.length?`${recDays.length} (${recDays.map(d=>_dow(d)+(freeDays.includes(d)?' free':(_isWork(d)?' work':''))).join(', ')})`:'0';
+  const _hardShiftDays=days.filter(_hardShift);
+  const _shiftTxt=_hardShiftDays.length?` · hard shift ${_hardShiftDays.map(_dow).join(', ')} (not recovery)`:'';
+  if(!freeDays.length)warn(`Recovery days: ${recTxt}${_shiftTxt} — keep one day fully free (no training and no shift).`);
+  else if(recDays.length<CYCLE_RULES.restDays)warn(`Recovery days: ${recTxt}${_shiftTxt} — aim for ${CYCLE_RULES.restDays}: 1 fully free + 1 easy day (golf, rehab or nothing).`);
+  else ok(`Recovery days: ${recTxt}${_shiftTxt}`);
 
   // 4. Climbing + tennis on one day (the Wednesday double) only in Load / Peak weeks.
   //    Gym upper + tennis on Monday is part of the normal plan, so it is not flagged.
