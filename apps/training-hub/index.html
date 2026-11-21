@@ -12467,7 +12467,15 @@ const CLIMB_SUB_EFFORT={
 };
 function _climbSubEffort(sub){
   const k=String(sub||'').trim().toLowerCase();
-  return CLIMB_SUB_EFFORT[k]||{lv:'moderate',rpe:DEFAULT_RPE.climb};
+  if(CLIMB_SUB_EFFORT[k])return CLIMB_SUB_EFFORT[k];
+  // Subtypes are free text, so an exact-key lookup misses what Jo actually types -
+  // "fingertraining" is not "fingerboard" (2026-11-21). Match the obvious variants
+  // before falling back, rather than silently calling the session moderate.
+  if(/finger|hang/.test(k))return CLIMB_SUB_EFFORT.fingerboard;
+  if(/board/.test(k))return CLIMB_SUB_EFFORT.board;
+  if(/boulder/.test(k))return CLIMB_SUB_EFFORT.boulder;
+  if(/project/.test(k))return CLIMB_SUB_EFFORT['project day'];
+  return {lv:'moderate',rpe:DEFAULT_RPE.climb};
 }
 function _levelFromRpe(rpe,mins){
   rpe=parseFloat(rpe)||0;mins=parseInt(mins)||0;
@@ -12479,15 +12487,18 @@ function _levelFromRpe(rpe,mins){
 }
 const _GYM_LV_RPE={hard:7,moderate:5,easy:4};
 // The Planner entry for that date + sport (first one with an RPE, else the first one)
-function _planSlot(date,types){
+function _planSlot(date,types,subRe){
   const days=DB.planData()[getMonday(date)]||[];
   const d=days.find(x=>x&&x.date===date);
-  const ss=((d&&d.sessions)||[]).filter(x=>x&&types.includes(x.trainingType));
+  let ss=((d&&d.sessions)||[]).filter(x=>x&&types.includes(x.trainingType));
+  // With a subtype pattern, prefer the slots that match it - on a day holding both a
+  // climb and a fingerboard entry, the fingerboard RPE must not be read off the climb.
+  if(subRe){const m=ss.filter(x=>subRe.test(String(x.trainingSubtype||'')));if(m.length)ss=m;}
   return ss.find(x=>parseFloat(x.rpe)>0)||ss[0]||null;
 }
 // Effort of one logged session: Planner RPE wins over the sport default; minutes from the log, else the Planner.
-function _effort(date,types,defRpe,mins){
-  const sl=_planSlot(date,types);
+function _effort(date,types,defRpe,mins,subRe){
+  const sl=_planSlot(date,types,subRe);
   const rpe=(sl&&parseFloat(sl.rpe)>0)?parseFloat(sl.rpe):defRpe;
   const m=mins||(sl?parseInt(sl.duration)||0:0);
   return {level:_levelFromRpe(rpe,m),rpe,mins:m,rpeSrc:(sl&&parseFloat(sl.rpe)>0)?'yours':'default'};
@@ -12523,7 +12534,15 @@ function _weekActivity(from,to,todayStr){
     const _e=_effort(s.date,['climb'],board?DEFAULT_RPE.board:DEFAULT_RPE.climb,parseInt(s.duration)||0);
     add(s.date,{kind:'climb',level:_e.level,rpe:_e.rpe,mins:_e.mins,fingers:board,label:board?'🟫 Board climbing':'🧗 Climbing'});
   });
-  DB.fbSessions().filter(s=>inR(s.date)).forEach(s=>add(s.date,{kind:'fb',level:_levelFromRpe(DEFAULT_RPE.fb,parseInt(s.durationMins)||0),mins:parseInt(s.durationMins)||0,fingers:true,label:'🖐 Fingerboard'}));
+  // Every other sport reads the Planner RPE through _effort; fingerboard alone was
+  // hardwired to DEFAULT_RPE.fb (8 = hard), so an RPE Jo typed was ignored and the day
+  // came out hard whatever she had entered (found 2026-11-21: "the fingerboard I typed
+  // in the Climbing: fingertraining and as a 5").
+  DB.fbSessions().filter(s=>inR(s.date)).forEach(s=>{
+    const _m=parseInt(s.durationMins)||0;
+    const _e=_effort(s.date,['climb'],DEFAULT_RPE.fb,_m,/finger|hang/i);
+    add(s.date,{kind:'fb',level:_e.level,rpe:_e.rpe,mins:_m,fingers:true,label:'🖐 Fingerboard'});
+  });
   const tennisDates=new Set();
   try{_loggedTennisForTotals().filter(m=>inR(m.date)).forEach(m=>{tennisDates.add(m.date);const _e=_effort(m.date,['tennis'],DEFAULT_RPE.tennis,m.mins);add(m.date,{kind:'tennis',level:_e.level,rpe:_e.rpe,mins:_e.mins,label:'🎾 Tennis'});});}catch(e){}
   try{_loggedRehabSessions().filter(r=>inR(r.date)).forEach(r=>{const _e=_effort(r.date,['rehab'],parseFloat(r.rpe)||DEFAULT_RPE.rehab,0);add(r.date,{kind:'rehab',level:_e.level,label:'🦵 Rehab'});});}catch(e){}
