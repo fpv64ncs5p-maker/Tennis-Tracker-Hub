@@ -6320,7 +6320,12 @@ let _tmplGradeFilter='6c+';           // default to nearest grade
 // Legacy climbBlocks reference for compatibility
 let climbBlocks=[];
 
-const CLIMB_GRADES=['3','4a','4b','4c','5a','5a+','5b','5b+','5c','5c+','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','8a'];
+// 7c and 7c+ were missing entirely - the list jumped 7b+ -> 8a - so they could not
+// be logged and every step-based walk (shiftGrade, derived templates, grade ranking)
+// was off by two grades above 7b+. 8a+ added at Jo's request (2026-11-21).
+// Inserting above 7b+ leaves every index at or below it unchanged, so the pyramid
+// ladder and all existing data are unaffected.
+const CLIMB_GRADES=['3','4a','4b','4c','5a','5a+','5b','5b+','5c','5c+','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','7c','7c+','8a','8a+'];
 
 /* ── Climbing session templates — from "MyClimbing doc Challenge" ─────────────
    The doc is a 12-table grid = 6 grade levels × Base/Power. The page is laid
@@ -6444,6 +6449,15 @@ const _DOC_PLUS_DERIVED=[...CLIMB_DOC_TEMPLATES,
   // 6b+ sits one above the real 6b table; 6c one below the real 6c+ table.
   deriveTemplate('6b-base', '6b+',+1), deriveTemplate('6b-power', '6b+',+1),
   deriveTemplate('6c+-base','6c', -1), deriveTemplate('6c+-power','6c', -1),
+  // Above the doc (Jo 2026-11-21): the hardest real table is 7a+, so everything
+  // harder is that ladder shifted up. Pair these with a warm-up top you set
+  // yourself - the derived warm-up would otherwise also be out of reach.
+  deriveTemplate('7a+-base','7b', +1), deriveTemplate('7a+-power','7b', +1),
+  deriveTemplate('7a+-base','7b+',+2), deriveTemplate('7a+-power','7b+',+2),
+  deriveTemplate('7a+-base','7c', +3), deriveTemplate('7a+-power','7c', +3),
+  deriveTemplate('7a+-base','7c+',+4), deriveTemplate('7a+-power','7c+',+4),
+  deriveTemplate('7a+-base','8a', +5), deriveTemplate('7a+-power','8a', +5),
+  deriveTemplate('7a+-base','8a+',+6), deriveTemplate('7a+-power','8a+',+6),
 ];
 const CLIMB_TEMPLATES=[..._DOC_PLUS_DERIVED,
   ...[...new Set(_DOC_PLUS_DERIVED.map(t=>t.grade))].flatMap(G=>[projectDayTemplate(G),powerEnduranceTemplate(G)]),
@@ -6460,6 +6474,10 @@ function tmplRouteCount(t){return t.warmup.length+t.sets.reduce((n,s)=>n+s.lengt
    ~3 (as even as possible); the doc's set pattern is repeated if more sets are needed
    and the last sets are dropped if fewer. Settings are a per-device convenience. */
 const TMPL_TOTALS=[null,10,15,20], TMPL_WARMS=[4,5,6,7,8];
+// Warm-up top grade. null = derived from the template (the old behaviour).
+// Jo always warms up at her own level rather than the suggested one, and a
+// derived 7b+ session would otherwise want a 6c+ warm-up. (2026-11-21)
+const TMPL_WARM_TOPS=[null,'5c','6a','6a+','6b','6b+','6c'];
 // Default 15 routes + 6 warm-up (2026-11-12, Jo: she warms up on 6–8 routes;
 // the doc's own warm-up is 2). A device that still has the old "As doc" default
 // is moved to 15 once (flag _climb_tmpl_size_v2); choosing "As doc" after that sticks.
@@ -6471,9 +6489,9 @@ function _tmplSize(){
       localStorage.setItem('_climb_tmpl_size',JSON.stringify(v));
       localStorage.setItem('_climb_tmpl_size_v2','1');
     }
-    if(v)return {total:v.total??null,warm:v.warm||6,cool:v.cool!==false};
+    if(v)return {total:v.total??null,warm:v.warm||6,cool:v.cool!==false,warmTop:v.warmTop||null};
   }catch(e){}
-  return {total:15,warm:6,cool:true};
+  return {total:15,warm:6,cool:true,warmTop:null};
 }
 function setTmplSize(k,v){
   const z=_tmplSize();z[k]=v;
@@ -6483,7 +6501,9 @@ function setTmplSize(k,v){
 function sizeTemplate(t,z){
   if(!z||!z.total)return t;
   const idx=g=>CLIMB_GRADES.indexOf(g);
-  const top=[...t.warmup].sort((a,b)=>idx(b)-idx(a))[0]||shiftGrade(t.grade,-4);
+  // An explicit warm-up top wins over the template's derived one.
+  const top=(z.warmTop&&idx(z.warmTop)>=0)?z.warmTop
+    :([...t.warmup].sort((a,b)=>idx(b)-idx(a))[0]||shiftGrade(t.grade,-4));
   // Ramp of up to 4 grades below the top warm-up grade, never below 4a
   const span=Math.min(z.warm-1,4,Math.max(0,idx(top)-idx('4a')));
   const warmup=[...Array(z.warm)].map((_,k)=>shiftGrade(top,-Math.round(span*(z.warm-1-k)/Math.max(1,z.warm-1))));
@@ -6856,6 +6876,7 @@ function renderClimbTemplates(){
   const sizeHtml=`<div style="background:var(--surface2);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:12px">
     ${_row('Routes',TMPL_TOTALS.map(n=>_chip(_z.total===n,n?n:'As doc',`setTmplSize('total',${n})`)).join(''))}
     ${_z.total?_row('Warm-up',TMPL_WARMS.map(n=>_chip(_z.warm===n,n,`setTmplSize('warm',${n})`)).join(''))
+      +_row('Warm-up top',TMPL_WARM_TOPS.map(g=>_chip(_z.warmTop===g,g||'As template',`setTmplSize('warmTop',${g?`'${g}'`:'null'})`)).join(''))
       +_row('Cool-down',_chip(_z.cool,'On',"setTmplSize('cool',true)")+_chip(!_z.cool,'Off',"setTmplSize('cool',false)")):''}
   </div>`;
   const gradeChips=grades.map(g=>`
@@ -10072,8 +10093,7 @@ function renderMonthlyResume(){
 
   // ── Grade ranking ──
   const GRADE_RANK={};
-  const CLIMB_GRADES=['3','4a','4b','4c','5a','5a+','5b','5b+','5c','5c+','6a','6a+','6b','6b+','6c','6c+','7a','7a+','7b','7b+','8a'];
-  CLIMB_GRADES.forEach((g,i)=>GRADE_RANK[g]=i);
+  CLIMB_GRADES.forEach((g,i)=>GRADE_RANK[g]=i); // the single global list (was a stale duplicate missing 7c/7c+)
 
   // ── Build global day→activity map (for heatmap) ──
   const dayActs={};
