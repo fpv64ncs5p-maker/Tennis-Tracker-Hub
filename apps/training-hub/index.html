@@ -1953,6 +1953,9 @@ const EXERCISES = [
   {name:"Sling Chest Stretch",cat:"Sling",equip:"bw",sets:2,reps:"30''",rest:"-"},
   {name:"Sling Upper Back Stretch",cat:"Sling",equip:"bw",sets:2,reps:"30''",rest:"-"},
   {name:"Stretching",cat:"Stretching",equip:"bw",sets:6,reps:"1×1'",rest:"30''"},
+  // ── Gym barbell / rack work (2026-11-22) — her gym has a rack, trap bar and Smith machine ──
+  {name:"Trap Bar Deadlift",cat:"Inferior Members",equip:"bw",sets:4,reps:"5",rest:"3'"},
+  {name:"Smith Machine Squat",cat:"Inferior Members",equip:"m",sets:4,reps:"6",rest:"3'"},
   // ── Impact / plyometrics (2026-11-22) — reps = ground CONTACTS per set ──
   {name:"Step-up / Step-down",cat:"Impact",equip:"bw",sets:3,reps:"10",rest:"1'"},
   {name:"Pogo Hops",cat:"Impact",equip:"bw",sets:3,reps:"10",rest:"1'"},
@@ -4934,6 +4937,11 @@ const BONE_DOSE_PCT=80;
 // pretending otherwise is the failure mode this card exists to avoid.
 const BONE_TAGS={
   'Barbell Deadlift':{sites:['spine','hip'],axial:true,capped:false},
+  // Hex/trap bar: lower peak lumbar moment than a straight bar (Swinton 2011 —
+  // lower peak moments at lumbar spine, hip and ankle, higher at the knee),
+  // which is why it suits her back. Hip only, deliberately — see above.
+  'Trap Bar Deadlift':{sites:['hip'],axial:true,capped:false},
+  'Smith Machine Squat':{sites:['spine','hip'],axial:true,capped:false},
   'Barbell Squat':{sites:['spine','hip'],axial:true,capped:false},
   'Sumo Deadlift (DB/KB)':{sites:['spine','hip'],axial:true,capped:true},
   'Barbell Romanian Deadlift':{sites:['spine','hip'],axial:true},
@@ -4971,6 +4979,8 @@ function _boneCapped(name,cat,lib){
   if(_isImpactCat(cat))return false;
   if(cat==='Sling')return true;
   if(BONE_CAPPED_RE.test(String(name||'')))return true;
+  // the hyperextension bench is loaded by your own torso, so it caps itself
+  if(/back\s*extension|hyper-?extension|roman\s*chair/i.test(String(name||'')))return true;
   // a bodyweight-only axial pattern cannot be progressed past your own mass
   if(lib&&lib.equip==='bw'&&!/barbell/i.test(String(name||'')))return true;
   return false;
@@ -4980,6 +4990,10 @@ function _boneCapped(name,cat,lib){
 // muscle tags were written for the body diagram and proved far too broad to
 // count with (2026-11-17). No regex lookbehind (older iOS Safari).
 const BONE_GUESS=[
+  // Back extension / Roman chair: torso as the lever, hips supported — trains the
+  // erectors (which is protective against vertebral fracture in its own right)
+  // but is not axial compression, so it reads as trained-not-loaded.
+  [/back\s*extension|hyper-?extension|roman\s*chair/, ['spine'], false, false],
   [/pogo|\bhop\b|jump|landing/,            ['tibia','hip'], true,  true ],
   [/step-?up/,                             ['tibia','hip'], true,  false],
   [/dead\s*lift|romanian|\brdl\b/,         ['spine','hip'], true,  false],
