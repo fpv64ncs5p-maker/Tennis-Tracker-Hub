@@ -3715,7 +3715,7 @@ function _renderNexBone(src){
     const on=_nexBone.sites.indexOf(k)>=0;
     return '<button type="button" class="chip'+(on?' active':'')+'" style="padding:5px 10px;font-size:12px;border-radius:14px;border:1px solid '+(on?'#a78bfa':'var(--border)')+';background:'+(on?'#a78bfa':'var(--surface2)')+';color:'+(on?'#fff':'var(--text)')+'" onclick="toggleNexBoneSite(\''+k+'\')">'+BONE_SITES[k]+'</button>';
   }).join('');
-  const flags=[['axial','axial (through a standing spine / hip)'],['impact','impact (landing)']].map(function(f){
+  const flags=[['axial','axial (through a standing spine / hip)'],['impact','impact (landing)'],['capped','load-capped (hands / bodyweight limit the load)']].map(function(f){
     const on=!!_nexBone[f[0]];
     return '<button type="button" class="chip'+(on?' active':'')+'" style="padding:5px 10px;font-size:12px;border-radius:14px;border:1px dashed '+(on?'#a78bfa':'var(--border)')+';background:'+(on?'#a78bfa33':'var(--surface2)')+';color:var(--text)" onclick="toggleNexBoneFlag(\''+f[0]+'\')">'+(on?'✓ ':'')+f[1]+'</button>';
   }).join('');
@@ -3734,12 +3734,12 @@ function toggleNexBoneFlag(f){_nexBoneTouched=true;_nexBone[f]=!_nexBone[f];_ren
 function _nexStartBone(name,cat){
   _nexBoneTouched=false;
   const b=exBone(name,cat);
-  _nexBone={sites:b.sites.slice(),axial:b.axial,impact:b.impact};
+  _nexBone={sites:b.sites.slice(),axial:b.axial,impact:b.impact,capped:!!b.capped};
   _renderNexBone(b.src);
 }
 // What to store: undefined = keep the default/guess live, object = your own tag
 function _nexBoneToSave(prev){
-  if(_nexBoneTouched)return {sites:_nexBone.sites.slice(),axial:!!_nexBone.axial,impact:!!_nexBone.impact};
+  if(_nexBoneTouched)return {sites:_nexBone.sites.slice(),axial:!!_nexBone.axial,impact:!!_nexBone.impact,capped:!!_nexBone.capped};
   return (prev&&Array.isArray(prev.sites))?prev:undefined;
 }
 
@@ -3748,8 +3748,9 @@ function _nexNameInput(){
   _nexMuscles=guessMuscles(document.getElementById('nex-name').value);_nexMuscles2=[];
   _renderNexMuscles(_nexMuscles.length?'guess':'category');
   if(!_nexBoneTouched){
-    const g=guessBone(document.getElementById('nex-name').value,document.getElementById('nex-cat').value);
-    _nexBone={sites:g.sites.slice(),axial:g.axial,impact:g.impact};
+    const nm=document.getElementById('nex-name').value,ct=document.getElementById('nex-cat').value;
+    const g=guessBone(nm,ct);
+    _nexBone={sites:g.sites.slice(),axial:g.axial,impact:g.impact,capped:_boneCapped(nm,ct,null)};
     _renderNexBone(g.sites.length?'guess':'none');
   }
 }
@@ -3846,7 +3847,7 @@ function openNewExercise(){
   document.getElementById('nex-rpm-label').value='';
   onNewExTypeChange();
   _nexMuscles=[];_nexMuscles2=[];_nexMusclesTouched=false;_renderNexMuscles('category');
-  _nexBone={sites:[],axial:false,impact:false};_nexBoneTouched=false;_renderNexBone('none');
+  _nexBone={sites:[],axial:false,impact:false,capped:false};_nexBoneTouched=false;_renderNexBone('none');
   _nexMore(null);
   openModal('modal-new-exercise');
 }
@@ -4160,7 +4161,7 @@ function renderExLibrary(listOnly){
           </div>
           <div style="font-size:12px;margin-top:2px">${mus||'<span style="color:var(--muted)">tap to set muscles</span>'}</div>
           ${(function(){const b=exBone(e.name,e.cat);if(!b.sites.length||e.cardio)return '';
-            return `<div style="font-size:11px;margin-top:2px;color:#a78bfa">🦴 ${b.sites.map(x=>BONE_SITES[x]||x).join(' · ')}${b.axial?' · axial':''}${b.impact?' · impact':''}${b.src==='guess'?' <span style="color:var(--muted)">(guess)</span>':''}</div>`})()}
+            return `<div style="font-size:11px;margin-top:2px;color:#a78bfa">🦴 ${b.sites.map(x=>BONE_SITES[x]||x).join(' · ')}${b.axial?' · axial':''}${b.impact?' · impact':''}${b.capped?' · <span style="color:#f0883e">load-capped</span>':''}${b.src==='guess'?' <span style="color:var(--muted)">(guess)</span>':''}</div>`})()}
         </div>`}).join('');
   }).join('');
   const delHtml=_libShowDeleted&&deleted.length?`<div style="font-size:11px;font-weight:700;color:#dc2626;margin:18px 0 6px">🗑 DELETED · ${deleted.length} — tap to restore</div>`+
@@ -4932,13 +4933,13 @@ const BONE_DOSE_PCT=80;
 // EMPTY site list on purpose: an abductor machine loads no fracture site, and
 // pretending otherwise is the failure mode this card exists to avoid.
 const BONE_TAGS={
-  'Barbell Deadlift':{sites:['spine','hip'],axial:true},
-  'Barbell Squat':{sites:['spine','hip'],axial:true},
+  'Barbell Deadlift':{sites:['spine','hip'],axial:true,capped:false},
+  'Barbell Squat':{sites:['spine','hip'],axial:true,capped:false},
+  'Sumo Deadlift (DB/KB)':{sites:['spine','hip'],axial:true,capped:true},
   'Barbell Romanian Deadlift':{sites:['spine','hip'],axial:true},
-  'Sumo Deadlift (DB/KB)':{sites:['spine','hip'],axial:true},
   'Barbell Overhead Press':{sites:['spine'],axial:true},
   'Barbell Bent-over Row':{sites:['spine'],axial:true},
-  'Bulgarian Split Squat (step)':{sites:['hip'],axial:true},
+  'Bulgarian Split Squat (step)':{sites:['hip'],axial:true,capped:true},
   'Single-leg Romanian deadlift':{sites:['spine','hip'],axial:true},
   'Leg Press':{sites:['hip'],axial:false},
   'Hip Thrust Machine':{sites:['hip'],axial:false},
@@ -4955,6 +4956,26 @@ const BONE_TAGS={
   'Hip Adductor':{sites:[],axial:false},
   'Ext. Quadriceps':{sites:[],axial:false}
 };
+// LOAD-CAPPED (2026-11-22, Jo chose B). % of 1RM is RELATIVE; bone responds to
+// absolute force (magnitudes above ~450 N are thought to clear the osteogenic
+// threshold, and ACSM specifies intensity "in terms of bone-loading forces",
+// not as a percentage). So an exercise whose load is limited by something other
+// than the target site — a 10 kg goblet squat capped by the hands, a sling squat,
+// a bodyweight split squat — can sit at 85% of a grip- or bodyweight-limited 1RM
+// and still put a fraction of a barbell squat's strain through the spine. Such
+// sets still count, but they are labelled so the card cannot quietly claim a
+// site is covered when it is not. Impact is NOT capped: it works through strain
+// rate, not magnitude, so a bodyweight landing is the real thing.
+const BONE_CAPPED_RE=/goblet|dumbbell|\bdb\b|kettlebell|\bkb\b|hand-?held|sling|\bband\b/i;
+function _boneCapped(name,cat,lib){
+  if(_isImpactCat(cat))return false;
+  if(cat==='Sling')return true;
+  if(BONE_CAPPED_RE.test(String(name||'')))return true;
+  // a bodyweight-only axial pattern cannot be progressed past your own mass
+  if(lib&&lib.equip==='bw'&&!/barbell/i.test(String(name||'')))return true;
+  return false;
+}
+
 // Ordered name rules — first match wins. Written NARROW, for counting: the
 // muscle tags were written for the body diagram and proved far too broad to
 // count with (2026-11-17). No regex lookbehind (older iOS Safari).
@@ -4983,12 +5004,13 @@ function guessBone(name,cat){
 // Your own tag → built-in tag → name guess → nothing.
 function exBone(name,cat){
   const lib=EXERCISES.find(x=>x.name===name);
+  const def=_boneCapped(name,cat||(lib&&lib.cat),lib);
   const own=lib&&lib.bone;
-  if(own&&Array.isArray(own.sites))return {sites:own.sites.slice(),axial:!!own.axial,impact:!!own.impact,src:'yours'};
+  if(own&&Array.isArray(own.sites))return {sites:own.sites.slice(),axial:!!own.axial,impact:!!own.impact,capped:own.capped!==undefined?!!own.capped:def,src:'yours'};
   const t=BONE_TAGS[name];
-  if(t)return {sites:(t.sites||[]).slice(),axial:!!t.axial,impact:!!t.impact,src:'built-in'};
+  if(t)return {sites:(t.sites||[]).slice(),axial:!!t.axial,impact:!!t.impact,capped:t.capped!==undefined?!!t.capped:def,src:'built-in'};
   const g=guessBone(name,cat||(lib&&lib.cat));
-  return {sites:g.sites,axial:g.axial,impact:g.impact,src:g.sites.length?'guess':'none'};
+  return {sites:g.sites,axial:g.axial,impact:g.impact,capped:def,src:g.sites.length?'guess':'none'};
 }
 // Impact counts as a dose through strain RATE, not through % 1RM — a landing has
 // no intensity field and does not need one.
@@ -5011,10 +5033,10 @@ function calcBoneLoad(exercises){
     if(!sets&&!contacts)return;
     const hard=_boneSetIsHard(e);
     b.sites.forEach(function(si){
-      const o=out[si]||(out[si]={sets:0,hard:0,axial:0,axialHard:0,contacts:0});
+      const o=out[si]||(out[si]={sets:0,hard:0,axial:0,axialHard:0,axialHardCapped:0,contacts:0});
       o.sets+=sets;o.contacts+=contacts;
       if(hard)o.hard+=sets;
-      if(b.axial){o.axial+=sets;if(hard)o.axialHard+=sets;}
+      if(b.axial){o.axial+=sets;if(hard){o.axialHard+=sets;if(b.capped)o.axialHardCapped+=sets;}}
     });
   });
   return out;
@@ -5026,8 +5048,8 @@ function boneLoadByWeek(){
     const m=calcBoneLoad(s.exercises);
     if(!out[k])out[k]={};
     Object.entries(m).forEach(function(kv){
-      const o=out[k][kv[0]]||(out[k][kv[0]]={sets:0,hard:0,axial:0,axialHard:0,contacts:0});
-      ['sets','hard','axial','axialHard','contacts'].forEach(function(f){o[f]+=kv[1][f]});
+      const o=out[k][kv[0]]||(out[k][kv[0]]={sets:0,hard:0,axial:0,axialHard:0,axialHardCapped:0,contacts:0});
+      ['sets','hard','axial','axialHard','axialHardCapped','contacts'].forEach(function(f){o[f]+=(kv[1][f]||0)});
     });
   });
   return out;
@@ -5037,7 +5059,13 @@ function boneLoadByWeek(){
 function boneVerdict(v){
   if(!v||(!v.sets&&!v.contacts))return {lv:'none',txt:'nothing logged'};
   if(v.contacts&&!v.sets)return {lv:'ok',txt:v.contacts+' impact contacts'};
-  if(v.axialHard)return {lv:'ok',txt:_setsFmt(v.axialHard)+' axial sets at '+BONE_DOSE_PCT+'%+'+(v.contacts?' · '+v.contacts+' contacts':'')};
+  if(v.axialHard){
+    const cap=v.axialHardCapped||0;
+    const tail=(v.contacts?' · '+v.contacts+' contacts':'');
+    if(cap>=v.axialHard)return {lv:'warn',txt:_setsFmt(v.axialHard)+' axial sets at '+BONE_DOSE_PCT+'%+, but all load-capped — the % is relative to a grip- or bodyweight-limited lift, not a barbell'+tail};
+    if(cap)return {lv:'ok',txt:_setsFmt(v.axialHard-cap)+' axial sets at '+BONE_DOSE_PCT+'%+ ('+_setsFmt(cap)+' more load-capped)'+tail};
+    return {lv:'ok',txt:_setsFmt(v.axialHard)+' axial sets at '+BONE_DOSE_PCT+'%+'+tail};
+  }
   if(v.contacts)return {lv:'ok',txt:v.contacts+' impact contacts · '+_setsFmt(v.sets)+' sets, none axial at '+BONE_DOSE_PCT+'%+'};
   if(v.hard&&!v.axial)return {lv:'warn',txt:_setsFmt(v.hard)+' hard sets, but none axial — load never passes through this site standing'};
   if(v.hard)return {lv:'warn',txt:_setsFmt(v.hard)+' hard sets, none of them axial'};
@@ -5445,6 +5473,8 @@ function renderBoneLoad(){
       'Bone adapts only where it is loaded, so each site is judged on its own: <b>axial</b> means the load passes through it standing, '+
       'and a set counts as a dose at <b>'+BONE_DOSE_PCT+'% 1RM or above</b> (the research uses 5 reps above 85%). '+
       'Impact counts through speed of loading, not %, so contacts have no threshold. '+
+      '<b>Load-capped</b> marks a lift limited by something other than the site — held dumbbells, a sling, bodyweight: '+
+      'its % is relative to a grip- or bodyweight-limited 1RM, so 85% there is not 85% of what a barbell would put through your spine. '+
       'Wrist is the weakest evidence here — climbing and fingerboard load it unusually, but that is not the same grade of proof as spine and hip. '+
       'Tennis, climbing and fingerboard sessions are not gym sessions, so nothing on this card counts them.'+
       (untagged?' '+untagged+' of '+(untagged+tagged)+' logged exercises in this window carry no bone tag — set them in Gym → Library.':'')+
