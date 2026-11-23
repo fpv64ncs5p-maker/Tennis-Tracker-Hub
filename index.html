@@ -2241,6 +2241,7 @@ const DB = {
   deleteExerciseOverride(name){const a=this.exerciseOverrides();delete a[name];this.set('exercise_overrides',a)},
   gymTemplates(){return this.get('gym_templates')||[]},
   saveTemplate(t){const a=this.gymTemplates();a.push(t);this.set('gym_templates',a)},
+  updateTemplate(t){const a=this.gymTemplates().map(x=>String(x.id)===String(t.id)?t:x);this.set('gym_templates',a)},
   deleteTemplate(id){const a=this.gymTemplates().filter(t=>t.id!==id);this.set('gym_templates',a)},
   fbSessions(){return this.get('fb_sessions')||[]},
   saveFB(s){const a=this.fbSessions();a.unshift(s);this.set('fb_sessions',a)},
@@ -3314,13 +3315,17 @@ function renderTemplates(){
   const ts=DB.gymTemplates();
   const el=document.getElementById('templates-section');
   if(!el)return;
+  if(_tmplEdit){
+    if(!ts.some(t=>String(t.id)===String(_tmplEdit.id))){_tmplEdit=null;}
+    else{renderTemplateEditor(el);return;}
+  }
   if(!ts.length){el.innerHTML='';return;}
   el.innerHTML=`<div style="margin-bottom:12px">
     <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px">YOUR TEMPLATES</div>
     <div style="display:flex;flex-direction:column;gap:6px">
       ${ts.map(t=>`<div style="display:flex;align-items:center;gap:6px">
         <button class="btn btn-ghost" style="flex:1;text-align:left;font-size:13px;padding:8px 12px" onclick="loadTemplate('${t.id}')">⭐ ${esc(t.name)}</button>
-        <button class="btn btn-ghost" style="padding:7px 10px;font-size:13px" onclick="renameTemplate('${t.id}')" aria-label="Rename template">✏️</button>
+        <button class="btn btn-ghost" style="padding:7px 10px;font-size:13px" onclick="editTemplate('${t.id}')" aria-label="Edit template">✏️</button>
         <button class="btn btn-ghost" style="padding:7px 12px;color:var(--muted);font-size:14px" onclick="confirmDeleteTemplate('${t.id}')">✕</button>
       </div>`).join('')}
     </div>
@@ -3519,6 +3524,143 @@ function loadTemplate(id){
   const _phaseId=currentGymPhaseId();
   loadPlanIntoLog(t.exercises, currentPhaseIntensity(), _phaseId);
   toast(`⭐ "${t.name}" loaded — add more exercises below`);
+}
+
+// ══ EDIT A SAVED TEMPLATE (2026-11-23, Jo chose B) ═════════════════════════
+// Templates could only be loaded, renamed or deleted — changing their contents
+// meant loading one into the log, editing there and saving a second template.
+//
+// THE TRAP this editor exists to avoid: a template row stores a ROLE
+// ('heavy'/'moderate'/'light'/'fixed'/'ballistic'), not fixed numbers, and the
+// role is what makes it follow the season week — the same template gives
+// 4x5 @85% in a Strength week and 2x10 @60% in a deload. So the editor edits
+// the RAW rows and never writes a resolved sets/reps back. Rows are mutated in
+// place; anything it does not touch is carried through untouched.
+let _tmplEdit=null,_tmplEdSeen={};
+const TMPL_ROLES=[['','— no role (fixed sets/reps)'],['heavy','Heavy'],['moderate','Moderate'],['light','Light'],['fixed','Fixed (timed hold)'],['ballistic','Ballistic']];
+
+function editTemplate(id){
+  id=_tmplId(id);
+  const t=DB.gymTemplates().find(x=>x.id===id);
+  if(!t){toast('That template no longer exists');return;}
+  _tmplEdit={id:t.id,name:t.name,rows:(t.exercises||[]).map(e=>({...e}))};
+  _tmplEdSeen={};
+  renderTemplates();
+  document.getElementById('templates-section')?.scrollIntoView({block:'start'});
+}
+function tmplEdCancel(){_tmplEdit=null;_tmplEdSeen={};renderTemplates();}
+function tmplEdRemove(i){
+  if(!_tmplEdit)return;
+  const r=_tmplEdit.rows[i];if(!r)return;
+  _tmplEdit.rows.splice(i,1);
+  renderTemplates();
+  toast('Removed '+r.name+' — not saved yet');
+}
+function tmplEdRole(i,v){
+  if(!_tmplEdit)return;
+  const r=_tmplEdit.rows[i];if(!r)return;
+  if(v)r.role=v;else delete r.role;
+  renderTemplates();
+}
+// Swap for the next library exercise in the same area, cycling and never
+// duplicating one already in the template. Keeps the row's role / superset flag.
+function tmplEdSwap(i){
+  if(!_tmplEdit)return;
+  const cur=_tmplEdit.rows[i];if(!cur)return;
+  const inT=new Set(_tmplEdit.rows.map(x=>x.name));
+  const seen=_tmplEdSeen[i]||(_tmplEdSeen[i]=new Set([cur.name]));
+  const freq={};DB.gymSessions().forEach(s=>(s.exercises||[]).forEach(e=>{if(e.name)freq[e.name]=(freq[e.name]||0)+1;}));
+  const pool=EXERCISES.filter(e=>e&&e.cat&&!e.hidden&&!e.deleted&&!e.cat.startsWith('CG'))
+    .sort((a,b)=>(freq[b.name]||0)-(freq[a.name]||0));
+  let next=pool.find(e=>_buildSameArea(e.cat,cur.cat)&&!inT.has(e.name)&&!seen.has(e.name));
+  if(!next){seen.clear();seen.add(cur.name);
+    next=pool.find(e=>_buildSameArea(e.cat,cur.cat)&&!inT.has(e.name)&&e.name!==cur.name);}
+  if(!next){toast('No other '+cur.cat+' exercise to swap in');return;}
+  seen.add(next.name);
+  cur.name=next.name;cur.cat=next.cat;
+  cur.perSide=exDefaultPerSide(next.name);
+  if(!cur.role){cur.sets=next.sets;cur.reps=next.reps;cur.rest=next.rest;}
+  renderTemplates();
+}
+function tmplEdAdd(name){
+  if(!_tmplEdit||!name)return;
+  const ex=EXERCISES.find(e=>e.name===name);if(!ex)return;
+  const usesRoles=_tmplEdit.rows.some(r=>r.role);
+  const row={name:ex.name,cat:ex.cat,perSide:exDefaultPerSide(ex.name)};
+  if(usesRoles)row.role='moderate';else{row.sets=ex.sets;row.reps=ex.reps;row.rest=ex.rest;}
+  if(ex.cardio){row.type='cardio';row.cardio=true;row.duration='5';row.rpmLabel=ex.rpmLabel||'Avg RPM';row.distLabel=ex.distLabel||'Distance (km)';delete row.role;}
+  _tmplEdit.rows.push(row);
+  renderTemplates();
+  toast('＋ '+ex.name+' added — not saved yet');
+}
+function tmplEdSave(){
+  if(!_tmplEdit)return;
+  if(!_tmplEdit.rows.length){toast('A template needs at least one exercise');return;}
+  const a=DB.gymTemplates();
+  const t=a.find(x=>String(x.id)===String(_tmplEdit.id));
+  if(!t){toast('That template no longer exists');_tmplEdit=null;renderTemplates();return;}
+  DB.updateTemplate({...t,name:_tmplEdit.name,exercises:_tmplEdit.rows.map(r=>({...r}))});
+  const n=_tmplEdit.rows.length;
+  _tmplEdit=null;_tmplEdSeen={};
+  renderTemplates();
+  toast('💾 Template saved · '+n+' exercises');
+}
+function tmplEdRename(){
+  if(!_tmplEdit)return;
+  showTextModal('Rename Template',_tmplEdit.name,'Save Name',function(name){
+    name=(name||'').trim();if(!name)return;
+    _tmplEdit.name=name;renderTemplates();
+  });
+}
+function renderTemplateEditor(el){
+  const st=_tmplEdit;
+  const d=today();
+  const used=new Set(st.rows.map(r=>r.name));
+  const addOpts=['<option value="">＋ Add an exercise…</option>'];
+  const byCat={};
+  EXERCISES.filter(e=>e&&e.cat&&!e.hidden&&!e.deleted&&!e.cat.startsWith('CG')&&!used.has(e.name))
+    .forEach(e=>{(byCat[e.cat]||(byCat[e.cat]=[])).push(e);});
+  Object.keys(byCat).forEach(c=>{
+    addOpts.push('<optgroup label="'+esc(c)+'">'+byCat[c].map(e=>'<option value="'+esc(e.name)+'">'+(e.custom?'★ ':'')+esc(e.name)+'</option>').join('')+'</optgroup>');
+  });
+  const rows=st.rows.map(function(r,i){
+    const isCardio=r.type==='cardio'||r.cardio||r.cat==='Warm-up';
+    let resolved='';
+    if(!isCardio){
+      try{
+        const a=_applyRole(r,d);
+        resolved=a.sets+'×'+a.reps+(a.pct?' @'+a.pct+'%':'')+(r.perSide?' /side':'');
+      }catch(e){resolved=(r.sets||'')+'×'+(r.reps||'');}
+    }
+    const roleSel=isCardio?'<span class="text-xxs-muted">warm-up</span>':
+      '<select onchange="tmplEdRole('+i+',this.value)" style="font-size:11px;padding:3px 6px;max-width:120px">'+
+      TMPL_ROLES.map(function(o){return '<option value="'+o[0]+'"'+((r.role||'')===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select>';
+    return '<div style="display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--border,#30363d)">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:600">'+esc(r.name)+(r.ss?' <span class="text-xxs-muted">· 🔗 superset</span>':'')+'</div>'+
+        '<div class="text-xxs-muted">'+esc(r.cat||'')+(resolved?' · this week '+resolved:'')+'</div>'+
+      '</div>'+
+      roleSel+
+      (isCardio?'':'<button class="btn btn-ghost" style="padding:5px 8px;font-size:12px" onclick="tmplEdSwap('+i+')" aria-label="Swap">🔄</button>')+
+      '<button class="btn btn-ghost" style="padding:5px 9px;font-size:13px;color:var(--muted)" onclick="tmplEdRemove('+i+')" aria-label="Remove">✕</button>'+
+    '</div>';
+  }).join('');
+  el.innerHTML='<div class="card" style="padding:12px;margin-bottom:12px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px">'+
+      '<div style="font-size:14px;font-weight:700">✏️ '+esc(st.name)+'</div>'+
+      '<button class="btn btn-ghost" style="font-size:11px;padding:3px 9px" onclick="tmplEdRename()">Rename</button>'+
+    '</div>'+
+    rows+
+    '<select onchange="tmplEdAdd(this.value);this.value=\'\'" style="width:100%;margin-top:10px;font-size:13px">'+addOpts.join('')+'</select>'+
+    '<div style="display:flex;gap:6px;margin-top:10px">'+
+      '<button class="btn btn-gym" style="flex:1" onclick="tmplEdSave()">💾 Save template</button>'+
+      '<button class="btn btn-ghost" style="flex:1" onclick="tmplEdCancel()">Cancel</button>'+
+    '</div>'+
+    '<div class="text-xxs-muted" style="margin-top:8px;line-height:1.5">'+
+      'A role follows your season week, so the same template is heavier in a Strength week and lighter in a deload — '+
+      '"this week" above shows what each row resolves to today, but the template stores the role, not those numbers.'+
+    '</div>'+
+  '</div>';
 }
 
 function renameTemplate(id){
