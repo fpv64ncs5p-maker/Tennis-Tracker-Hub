@@ -3537,7 +3537,7 @@ function loadTemplate(id){
 // the RAW rows and never writes a resolved sets/reps back. Rows are mutated in
 // place; anything it does not touch is carried through untouched.
 let _tmplEdit=null,_tmplEdSeen={};
-const TMPL_ROLES=[['','— no role (fixed sets/reps)'],['heavy','Heavy'],['moderate','Moderate'],['light','Light'],['fixed','Fixed (timed hold)'],['ballistic','Ballistic']];
+const TMPL_ROLES=[['','— no role (follows the week, like Heavy)'],['heavy','Heavy'],['moderate','Moderate'],['light','Light'],['fixed','Fixed (timed hold)'],['ballistic','Ballistic']];
 
 function editTemplate(id){
   id=_tmplId(id);
@@ -6775,17 +6775,24 @@ function onExWeightChange(){
 }
 
 // Live "new 1RM" preview under the RIR field. prefix = 'ex' (add modal) | 'edit-hist' (edit modal)
+const RIR_USEFUL_PCT=70;   // below this, reps in reserve can't be judged or converted
 function renderRirPreview(prefix){
   const box=document.getElementById(prefix+'-rir-preview');
   if(!box)return;
   const val=id=>{const el=document.getElementById(prefix+'-'+id);return el?el.value:'';};
   const rirRaw=val('rir');
-  const hint='RIR = reps left in the tank (0 = failure). Fill it in to update your 1RM.';
+  // What % this set is prescribed at — the field if set, else the phase default
+  let _rpPct=parseFloat(_normalizeKgInput(val('intensity')));
+  if(isNaN(_rpPct)||_rpPct<=0){try{_rpPct=currentPhaseIntensity()}catch(e){_rpPct=NaN}}
+  const _rpLight=!isNaN(_rpPct)&&_rpPct>0&&_rpPct<RIR_USEFUL_PCT;
+  const hint=_rpLight
+    ? `At ${Math.round(_rpPct)}% you'll have more than ${RIR_MAX} reps in reserve — leave this blank. Blank means no 1RM update, which is right for a light set. Fill it in on your heavy sets.`
+    : 'RIR = reps left in the tank (0 = failure). Fill it in to update your 1RM.';
   if(String(rirRaw).trim()===''){box.textContent=hint;return;}
   const orm=ormFromSet({type:'strength',weight:val('weight'),reps:val('reps'),rir:rirRaw});
   if(orm==null){
     const r=parseFloat(_normalizeKgInput(rirRaw));
-    box.textContent=(isNaN(r)||r<0||r>RIR_MAX)?`RIR must be 0–${RIR_MAX}.`
+    box.textContent=(isNaN(r)||r<0||r>RIR_MAX)?`RIR must be 0–${RIR_MAX} — this will NOT update your 1RM.`+(_rpLight?` At ${Math.round(_rpPct)}% leave it blank instead.`:'')
       :!(parseFloat(_normalizeKgInput(val('weight')))>0)?'Add the weight to calculate the 1RM.'
       :'1RM needs a plain rep count (e.g. 10) — ranges or times can\'t be converted.';
     return;
